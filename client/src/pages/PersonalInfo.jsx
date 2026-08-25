@@ -351,6 +351,14 @@ const PersonalInfo = () => {
           salary:
             Number(formData.salary) || 0,
 
+          // Keep the current machine explicit on update.
+          // The backend should use this to scope the record.
+          ...(editId
+            ? {
+                _id: editId,
+              }
+            : {}),
+
         };
 
 
@@ -427,10 +435,21 @@ const PersonalInfo = () => {
   const handleEdit =
     (user) => {
 
-      // Never edit another machine's record
+      // The list is already filtered by the current machine
+      // in fetchUsers(). Do NOT reject the record here when
+      // machineType is missing from an older API response.
+      if (!user || !user._id) {
+        toast.error(
+          'Invalid user record'
+        );
+
+        return;
+      }
+
       if (
-        user.machineType !==
-        currentMachine
+        user.machineType &&
+        currentMachine &&
+        user.machineType !== currentMachine
       ) {
 
         toast.error(
@@ -440,12 +459,14 @@ const PersonalInfo = () => {
         return;
       }
 
-
+      // Set edit mode first so the button changes to Update.
       setEditId(
         user._id
       );
 
-
+      // Populate every form field.
+      // Password is intentionally blank because passwords
+      // should never be loaded back into the edit form.
       reset({
 
         date:
@@ -469,21 +490,24 @@ const PersonalInfo = () => {
           '',
 
         salary:
-          user.salary ??
-          '',
+          user.salary !== null &&
+          user.salary !== undefined
+            ? user.salary
+            : '',
 
         phone:
           user.phone ||
           '',
 
-
       });
 
-
-      window.scrollTo({
-        top: 0,
-        behavior: 'smooth',
-      });
+      // Scroll to the form after React has switched to edit mode.
+      setTimeout(() => {
+        window.scrollTo({
+          top: 0,
+          behavior: 'smooth',
+        });
+      }, 50);
 
     };
 
