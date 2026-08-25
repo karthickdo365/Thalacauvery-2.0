@@ -22,12 +22,17 @@ import {
   TablePagination,
   InputAdornment,
   Chip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 
 import SearchIcon from '@mui/icons-material/Search';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import VisibilityIcon from '@mui/icons-material/Visibility';
+import CloseIcon from '@mui/icons-material/Close';
 import InventoryIcon from '@mui/icons-material/Inventory';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 
@@ -170,6 +175,18 @@ const Materials = () => {
 
   const [billFile, setBillFile] =
     useState(null);
+
+  // Bill preview popup state.
+  // The bill is loaded as a Blob through the authenticated API,
+  // then displayed inside this page instead of opening another tab.
+  const [billPreview, setBillPreview] =
+    useState({
+      open: false,
+      url: '',
+      type: '',
+      name: '',
+      loading: false,
+    });
 
 
   // ==========================================================
@@ -626,130 +643,33 @@ const Materials = () => {
         );
 
         return;
-
       }
 
+      const filename =
+        material.billFile
+          .split('/')
+          .pop();
 
-      // IMPORTANT:
-      // Open the tab immediately from the
-      // user's click event.
-      //
-      // This prevents Chrome from blocking
-      // it as a popup.
-      const billWindow =
-        window.open(
-          'about:blank',
-          '_blank'
-        );
-
-
-      if (!billWindow) {
+      if (!filename) {
 
         toast.error(
-          'Please allow pop-ups to view the bill'
+          'Invalid bill filename'
         );
 
         return;
-
       }
 
-
-      // --------------------------------------------------------
-      // LOADING PAGE
-      // --------------------------------------------------------
-
-      billWindow.document.write(`
-        <html>
-          <head>
-            <title>Loading Bill...</title>
-
-            <style>
-              body {
-                margin: 0;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                height: 100vh;
-                font-family: Arial, sans-serif;
-                background: #f5f5f5;
-              }
-
-              .loading {
-                text-align: center;
-                color: #333;
-              }
-
-              .spinner {
-                width: 40px;
-                height: 40px;
-                border: 4px solid #ddd;
-                border-top-color: #14b8a6;
-                border-radius: 50%;
-                animation: spin 1s linear infinite;
-                margin: 0 auto 15px;
-              }
-
-              @keyframes spin {
-                to {
-                  transform: rotate(360deg);
-                }
-              }
-            </style>
-          </head>
-
-          <body>
-            <div class="loading">
-              <div class="spinner"></div>
-              <div>Loading bill...</div>
-            </div>
-          </body>
-        </html>
-      `);
-
-      billWindow.document.close();
-
+      // Open the popup immediately inside the page.
+      // No window.open(), no new tab, no browser popup blocker.
+      setBillPreview({
+        open: true,
+        url: '',
+        type: '',
+        name: filename,
+        loading: true,
+      });
 
       try {
-
-        // ------------------------------------------------------
-        // GET FILE NAME
-        // ------------------------------------------------------
-
-        // Backend stores something like:
-        //
-        // /uploads/materials/123456-bill.jpg
-        //
-        // We only need:
-        //
-        // 123456-bill.jpg
-
-        const filename =
-          material.billFile
-            .split('/')
-            .pop();
-
-
-        if (!filename) {
-
-          throw new Error(
-            'Invalid bill filename'
-          );
-
-        }
-
-
-        // ------------------------------------------------------
-        // FETCH BILL
-        // ------------------------------------------------------
-
-        // This uses the existing Axios instance.
-        //
-        // The backend endpoint is:
-        //
-        // GET /materials/bill/:filename
-        //
-        // responseType blob is important because
-        // the response is an image/PDF file.
 
         const response =
           await api.get(
@@ -759,21 +679,11 @@ const Materials = () => {
             }
           );
 
-
-        // ------------------------------------------------------
-        // CONTENT TYPE
-        // ------------------------------------------------------
-
         const contentType =
           response.headers?.[
             'content-type'
           ] ||
           'application/octet-stream';
-
-
-        // ------------------------------------------------------
-        // CREATE BLOB
-        // ------------------------------------------------------
 
         const blob =
           new Blob(
@@ -783,39 +693,16 @@ const Materials = () => {
             }
           );
 
-
-        // ------------------------------------------------------
-        // CREATE TEMPORARY URL
-        // ------------------------------------------------------
-
         const blobUrl =
-          URL.createObjectURL(
-            blob
-          );
+          URL.createObjectURL(blob);
 
-
-        // ------------------------------------------------------
-        // OPEN BILL IN ALREADY OPENED TAB
-        // ------------------------------------------------------
-
-        billWindow.location.href =
-          blobUrl;
-
-
-        // ------------------------------------------------------
-        // CLEANUP
-        // ------------------------------------------------------
-
-        setTimeout(
-          () => {
-
-            URL.revokeObjectURL(
-              blobUrl
-            );
-
-          },
-          10 * 60 * 1000
-        );
+        setBillPreview({
+          open: true,
+          url: blobUrl,
+          type: contentType,
+          name: filename,
+          loading: false,
+        });
 
       } catch (error) {
 
@@ -824,19 +711,8 @@ const Materials = () => {
           error
         );
 
-
-        // ------------------------------------------------------
-        // ERROR MESSAGE
-        // ------------------------------------------------------
-
         let message =
           'The bill file could not be loaded.';
-
-
-        // Sometimes the backend returns JSON
-        // even though responseType is blob.
-        //
-        // Try to read that JSON error.
 
         if (
           error.response?.data instanceof Blob
@@ -849,18 +725,26 @@ const Materials = () => {
 
             if (text) {
 
-              const parsed =
-                JSON.parse(text);
+              try {
 
-              message =
-                parsed.message ||
-                message;
+                const parsed =
+                  JSON.parse(text);
+
+                message =
+                  parsed.message ||
+                  message;
+
+              } catch {
+
+                if (text.length < 300) {
+                  message = text;
+                }
+
+              }
 
             }
 
-          } catch (
-            parseError
-          ) {
+          } catch (parseError) {
 
             console.error(
               'Could not parse bill error:',
@@ -869,8 +753,7 @@ const Materials = () => {
 
           }
 
-        }
-        else {
+        } else {
 
           message =
             error.response?.data?.message ||
@@ -879,67 +762,45 @@ const Materials = () => {
 
         }
 
-
-        // ------------------------------------------------------
-        // SHOW ERROR IN TAB
-        // ------------------------------------------------------
-
-        try {
-
-          billWindow.document.open();
-
-          billWindow.document.write(`
-            <html>
-
-              <head>
-                <title>Bill Error</title>
-              </head>
-
-              <body
-                style="
-                  font-family: Arial, sans-serif;
-                  padding: 40px;
-                  text-align: center;
-                "
-              >
-
-                <h2>
-                  Unable to open bill
-                </h2>
-
-                <p>
-                  ${message}
-                </p>
-
-                <p>
-                  Please close this tab and try again.
-                </p>
-
-              </body>
-
-            </html>
-          `);
-
-          billWindow.document.close();
-
-        } catch (
-          windowError
-        ) {
-
-          console.error(
-            'Bill window error:',
-            windowError
-          );
-
-        }
-
+        setBillPreview({
+          open: true,
+          url: '',
+          type: 'error',
+          name: filename,
+          loading: false,
+          error: message,
+        });
 
         toast.error(
           message
         );
+      }
+    };
 
+
+  // ==========================================================
+  // CLOSE BILL POPUP
+  // ==========================================================
+
+  const handleCloseBill =
+    () => {
+
+      if (
+        billPreview.url
+      ) {
+
+        URL.revokeObjectURL(
+          billPreview.url
+        );
       }
 
+      setBillPreview({
+        open: false,
+        url: '',
+        type: '',
+        name: '',
+        loading: false,
+      });
     };
 
 
@@ -2010,6 +1871,272 @@ const Materials = () => {
         </CardContent>
 
       </Card>
+
+
+      {/* ======================================================
+          BILL PREVIEW POPUP
+      ====================================================== */}
+
+      <Dialog
+        open={billPreview.open}
+        onClose={handleCloseBill}
+        fullWidth
+        maxWidth="lg"
+        scroll="paper"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            minHeight: {
+              xs: '70vh',
+              md: '80vh',
+            },
+          },
+        }}
+      >
+
+        <DialogTitle
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            pr: 1,
+          }}
+        >
+
+          <Typography
+            component="span"
+            sx={{
+              fontWeight: 700,
+              fontSize: '1.05rem',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              pr: 2,
+            }}
+          >
+            Bill Preview
+          </Typography>
+
+          <IconButton
+            onClick={handleCloseBill}
+            size="small"
+            aria-label="Close bill"
+          >
+            <CloseIcon />
+          </IconButton>
+
+        </DialogTitle>
+
+
+        <DialogContent
+          dividers
+          sx={{
+            p: {
+              xs: 1,
+              md: 2,
+            },
+            backgroundColor: '#f5f7fa',
+            minHeight: {
+              xs: '60vh',
+              md: '70vh',
+            },
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+
+          {billPreview.loading && (
+
+            <Box
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minHeight: '50vh',
+                gap: 2,
+              }}
+            >
+
+              <Box
+                sx={{
+                  width: 42,
+                  height: 42,
+                  border: '4px solid #ddd',
+                  borderTopColor: '#14b8a6',
+                  borderRadius: '50%',
+                  animation:
+                    'materialsBillSpin 1s linear infinite',
+                  '@keyframes materialsBillSpin': {
+                    from: {
+                      transform: 'rotate(0deg)',
+                    },
+                    to: {
+                      transform: 'rotate(360deg)',
+                    },
+                  },
+                }}
+              />
+
+              <Typography
+                color="text.secondary"
+              >
+                Loading bill...
+              </Typography>
+
+            </Box>
+
+          )}
+
+
+          {!billPreview.loading &&
+            billPreview.type === 'error' && (
+
+            <Box
+              sx={{
+                textAlign: 'center',
+                py: 8,
+                px: 3,
+              }}
+            >
+
+              <Typography
+                variant="h6"
+                sx={{
+                  fontWeight: 700,
+                  mb: 1,
+                }}
+              >
+                Unable to open bill
+              </Typography>
+
+              <Typography
+                color="text.secondary"
+              >
+                {billPreview.error ||
+                  'The bill file could not be loaded.'}
+              </Typography>
+
+            </Box>
+
+          )}
+
+
+          {!billPreview.loading &&
+            billPreview.url &&
+            billPreview.type.startsWith('image/') && (
+
+            <Box
+              component="img"
+              src={billPreview.url}
+              alt="Bill"
+              sx={{
+                display: 'block',
+                maxWidth: '100%',
+                maxHeight: '68vh',
+                width: 'auto',
+                height: 'auto',
+                objectFit: 'contain',
+                borderRadius: 1,
+                boxShadow:
+                  '0 2px 12px rgba(0,0,0,0.12)',
+                backgroundColor: '#fff',
+              }}
+            />
+
+          )}
+
+
+          {!billPreview.loading &&
+            billPreview.url &&
+            billPreview.type === 'application/pdf' && (
+
+            <Box
+              component="iframe"
+              src={billPreview.url}
+              title="Bill PDF Preview"
+              sx={{
+                width: '100%',
+                height: '68vh',
+                border: 0,
+                borderRadius: 1,
+                backgroundColor: '#fff',
+              }}
+            />
+
+          )}
+
+
+          {!billPreview.loading &&
+            billPreview.url &&
+            !billPreview.type.startsWith('image/') &&
+            billPreview.type !== 'application/pdf' && (
+
+            <Box
+              sx={{
+                width: '100%',
+                height: '60vh',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 2,
+                backgroundColor: '#fff',
+                borderRadius: 1,
+              }}
+            >
+
+              <Typography
+                variant="h6"
+                sx={{
+                  fontWeight: 600,
+                }}
+              >
+                Bill loaded
+              </Typography>
+
+              <Typography
+                color="text.secondary"
+                align="center"
+              >
+                This file type cannot be previewed directly.
+              </Typography>
+
+              <Button
+                variant="contained"
+                color="secondary"
+                href={billPreview.url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Open File
+              </Button>
+
+            </Box>
+
+          )}
+
+        </DialogContent>
+
+
+        <DialogActions
+          sx={{
+            px: 2,
+            py: 1.5,
+          }}
+        >
+
+          <Button
+            variant="outlined"
+            onClick={handleCloseBill}
+          >
+            Close
+          </Button>
+
+        </DialogActions>
+
+      </Dialog>
 
 
       {/* ======================================================
