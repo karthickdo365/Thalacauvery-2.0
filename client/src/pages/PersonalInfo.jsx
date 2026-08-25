@@ -1,3 +1,6 @@
+
+
+
 import { useState, useEffect, useCallback } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 
@@ -182,6 +185,7 @@ const PersonalInfo = () => {
     reset,
     watch,
     control,
+    setValue,
     formState: {
       errors,
     },
@@ -465,40 +469,81 @@ const PersonalInfo = () => {
       );
 
       // Populate every form field.
-      // Password is intentionally blank because passwords
-      // should never be loaded back into the edit form.
+      // Use reset AND setValue so the MUI fields registered
+      // through react-hook-form visibly receive the selected
+      // record values immediately.
+      const editDate =
+        user.date
+          ? dayjs(user.date)
+          : dayjs();
+
+      const editType =
+        user.type ||
+        'Employee';
+
+      const editName =
+        user.name ??
+        '';
+
+      const editPhone =
+        user.phone ??
+        '';
+
+      const editUsername =
+        user.username ??
+        '';
+
+      const editSalary =
+        user.salary !== null &&
+        user.salary !== undefined
+          ? user.salary
+          : '';
+
       reset({
+        date: editDate,
+        type: editType,
+        name: editName,
+        username: editUsername,
+        password: '',
+        salary: editSalary,
+        phone: editPhone,
+      });
 
-        date:
-          user.date
-            ? dayjs(user.date)
-            : dayjs(),
+      // Explicitly set values as well. This prevents fields such
+      // as Type, Name and Phone from appearing empty after reset.
+      setValue('date', editDate, {
+        shouldDirty: false,
+        shouldTouch: false,
+      });
 
-        type:
-          user.type ||
-          'Employee',
+      setValue('type', editType, {
+        shouldDirty: false,
+        shouldTouch: false,
+      });
 
-        name:
-          user.name ||
-          '',
+      setValue('name', editName, {
+        shouldDirty: false,
+        shouldTouch: false,
+      });
 
-        username:
-          user.username ||
-          '',
+      setValue('username', editUsername, {
+        shouldDirty: false,
+        shouldTouch: false,
+      });
 
-        password:
-          '',
+      setValue('password', '', {
+        shouldDirty: false,
+        shouldTouch: false,
+      });
 
-        salary:
-          user.salary !== null &&
-          user.salary !== undefined
-            ? user.salary
-            : '',
+      setValue('salary', editSalary, {
+        shouldDirty: false,
+        shouldTouch: false,
+      });
 
-        phone:
-          user.phone ||
-          '',
-
+      setValue('phone', editPhone, {
+        shouldDirty: false,
+        shouldTouch: false,
       });
 
       // Scroll to the form after React has switched to edit mode.
