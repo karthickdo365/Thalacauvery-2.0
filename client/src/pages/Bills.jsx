@@ -33,7 +33,6 @@ import {
 import SearchIcon from '@mui/icons-material/Search';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
-import ReceiptIcon from '@mui/icons-material/Receipt';
 import WaterDropIcon from '@mui/icons-material/WaterDrop';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 
@@ -364,12 +363,6 @@ const BorewellBills = () => {
 
   const [deleteDialog, setDeleteDialog] =
     useState(null);
-
-  const [billDialog, setBillDialog] =
-    useState(null);
-
-  const [customerEmail, setCustomerEmail] =
-    useState('');
 
   const [payAnchor, setPayAnchor] =
     useState(null);
@@ -1016,12 +1009,19 @@ const BorewellBills = () => {
           point.rodFlushingAmount ||
           '',
 
+        // Load saved bill adjustments when editing.
+        // Support both current and older backend field names.
+        // Nullish coalescing keeps a saved value of 0 visible.
         discountAmount:
-          point.discountAmount ||
+          point.discountAmount ??
+          point.discount ??
+          point.breakdown?.discountAmount ??
           '',
 
         otherAmount:
-          point.otherAmount ||
+          point.otherAmount ??
+          point.other ??
+          point.breakdown?.otherAmount ??
           '',
 
         paymentStatus:
@@ -1091,55 +1091,6 @@ const BorewellBills = () => {
         toast.error(
           error.response?.data?.message ||
           'Delete failed'
-        );
-
-      }
-
-    };
-
-
-  // ==========================================================
-  // GENERATE BILL
-  // ==========================================================
-
-  const handleGenerateBill =
-    async (email) => {
-
-      if (!billDialog) {
-        return;
-      }
-
-
-      try {
-
-        await api.post(
-          `/borewell-points/${billDialog}/generate-bill`,
-          {
-            email,
-          }
-        );
-
-
-        toast.success(
-          email
-            ? 'Customer bill generated & emailed!'
-            : 'Customer bill generated!'
-        );
-
-
-        setBillDialog(
-          null
-        );
-
-        setCustomerEmail('');
-
-        fetchPoints();
-
-      } catch (error) {
-
-        toast.error(
-          error.response?.data?.message ||
-          'Bill generation failed'
         );
 
       }
@@ -2500,34 +2451,7 @@ const BorewellBills = () => {
                           )}
 
 
-                          <IconButton
-                            size="small"
-                            sx={{
-                              color:
-                                TEAL_DARK,
-                            }}
-                            title="Generate Bill"
-                            onClick={() => {
-
-                              setBillDialog(
-                                point._id
-                              );
-
-                              setCustomerEmail(
-                                point
-                                  .brokerId
-                                  ?.email ||
-                                ''
-                              );
-
-                            }}
-                          >
-
-                            <ReceiptIcon
-                              fontSize="small"
-                            />
-
-                          </IconButton>
+                          
 
                         </Box>
 
@@ -2879,111 +2803,6 @@ const BorewellBills = () => {
         }
       />
 
-
-      {/* ======================================================
-          GENERATE BILL DIALOG
-      ====================================================== */}
-
-      <Dialog
-        open={
-          !!billDialog
-        }
-        onClose={() =>
-          setBillDialog(
-            null
-          )
-        }
-        PaperProps={{
-          sx: {
-            minWidth:
-              360,
-          },
-        }}
-      >
-
-        <DialogTitle
-          sx={{
-            fontWeight:
-              700,
-
-            borderBottom:
-              `3px solid ${TEAL}`,
-          }}
-        >
-          Generate Customer Bill
-        </DialogTitle>
-
-
-        <DialogContent
-          sx={{
-            pt: 2,
-          }}
-        >
-
-          <TextField
-            fullWidth
-            label="Customer Email (optional)"
-            margin="normal"
-            size="small"
-            value={
-              customerEmail
-            }
-            onChange={(e) =>
-              setCustomerEmail(
-                e.target.value
-              )
-            }
-          />
-
-        </DialogContent>
-
-
-        <DialogActions
-          sx={{
-            px: 3,
-            pb: 2,
-            gap: 1,
-          }}
-        >
-
-          <Button
-            onClick={() =>
-              setBillDialog(
-                null
-              )
-            }
-            color="inherit"
-          >
-            Cancel
-          </Button>
-
-
-          <Button
-            variant="outlined"
-            color="secondary"
-            onClick={() =>
-              handleGenerateBill()
-            }
-          >
-            Generate Bill
-          </Button>
-
-
-          <Button
-            variant="contained"
-            color="secondary"
-            onClick={() =>
-              handleGenerateBill(
-                customerEmail
-              )
-            }
-          >
-            Generate & Email Customer
-          </Button>
-
-        </DialogActions>
-
-      </Dialog>
 
     </Box>
 
