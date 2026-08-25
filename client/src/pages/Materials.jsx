@@ -557,6 +557,7 @@ const Materials = () => {
 
         }
 
+
         // ------------------------------------------------------
         // CREATE
         // ------------------------------------------------------
@@ -614,80 +615,332 @@ const Materials = () => {
   // ==========================================================
   // VIEW BILL
   // ==========================================================
-  // Fetch the protected bill through axios so the normal
-  // authentication headers/cookies are included. Opening the
-  // upload URL directly would bypass the axios authentication.
-  // ==========================================================
 
-  const handleViewBill = async (material) => {
-    if (!material?.billFile) {
-      toast.error('Bill file not found');
-      return;
-    }
+  const handleViewBill =
+    async (material) => {
 
-    // Open the tab immediately so popup blockers do not stop it.
-    const fileWindow = window.open(
-      'about:blank',
-      '_blank',
-      'noopener,noreferrer'
-    );
+      if (!material?.billFile) {
 
-    if (!fileWindow) {
-      toast.error('Please allow pop-ups to view the bill');
-      return;
-    }
+        toast.error(
+          'Bill is not available'
+        );
 
-    try {
-      const filename = material.billFile
-        .split('/')
-        .filter(Boolean)
-        .pop();
+        return;
 
-      if (!filename) {
-        throw new Error('Invalid bill file');
       }
 
-      const response = await api.get(
-        `/materials/bill/${encodeURIComponent(filename)}`,
-        {
-          responseType: 'blob',
+
+      // IMPORTANT:
+      // Open the tab immediately from the
+      // user's click event.
+      //
+      // This prevents Chrome from blocking
+      // it as a popup.
+      const billWindow =
+        window.open(
+          'about:blank',
+          '_blank'
+        );
+
+
+      if (!billWindow) {
+
+        toast.error(
+          'Please allow pop-ups to view the bill'
+        );
+
+        return;
+
+      }
+
+
+      // --------------------------------------------------------
+      // LOADING PAGE
+      // --------------------------------------------------------
+
+      billWindow.document.write(`
+        <html>
+          <head>
+            <title>Loading Bill...</title>
+
+            <style>
+              body {
+                margin: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+                font-family: Arial, sans-serif;
+                background: #f5f5f5;
+              }
+
+              .loading {
+                text-align: center;
+                color: #333;
+              }
+
+              .spinner {
+                width: 40px;
+                height: 40px;
+                border: 4px solid #ddd;
+                border-top-color: #14b8a6;
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+                margin: 0 auto 15px;
+              }
+
+              @keyframes spin {
+                to {
+                  transform: rotate(360deg);
+                }
+              }
+            </style>
+          </head>
+
+          <body>
+            <div class="loading">
+              <div class="spinner"></div>
+              <div>Loading bill...</div>
+            </div>
+          </body>
+        </html>
+      `);
+
+      billWindow.document.close();
+
+
+      try {
+
+        // ------------------------------------------------------
+        // GET FILE NAME
+        // ------------------------------------------------------
+
+        // Backend stores something like:
+        //
+        // /uploads/materials/123456-bill.jpg
+        //
+        // We only need:
+        //
+        // 123456-bill.jpg
+
+        const filename =
+          material.billFile
+            .split('/')
+            .pop();
+
+
+        if (!filename) {
+
+          throw new Error(
+            'Invalid bill filename'
+          );
+
         }
-      );
 
-      const contentType =
-        response.headers?.['content-type'] ||
-        response.data?.type ||
-        'application/octet-stream';
 
-      const blob = new Blob(
-        [response.data],
-        { type: contentType }
-      );
+        // ------------------------------------------------------
+        // FETCH BILL
+        // ------------------------------------------------------
 
-      const blobUrl =
-        window.URL.createObjectURL(blob);
+        // This uses the existing Axios instance.
+        //
+        // The backend endpoint is:
+        //
+        // GET /materials/bill/:filename
+        //
+        // responseType blob is important because
+        // the response is an image/PDF file.
 
-      fileWindow.location.href = blobUrl;
+        const response =
+          await api.get(
+            `/materials/bill/${encodeURIComponent(filename)}`,
+            {
+              responseType: 'blob',
+            }
+          );
 
-      // Give the browser time to load the image/PDF before
-      // releasing the temporary Blob URL.
-      window.setTimeout(() => {
-        window.URL.revokeObjectURL(blobUrl);
-      }, 60000);
-    } catch (error) {
-      console.error(
-        'View bill error:',
-        error
-      );
 
-      fileWindow.close();
+        // ------------------------------------------------------
+        // CONTENT TYPE
+        // ------------------------------------------------------
 
-      toast.error(
-        error.response?.data?.message ||
-        'Unable to open bill'
-      );
-    }
-  };
+        const contentType =
+          response.headers?.[
+            'content-type'
+          ] ||
+          'application/octet-stream';
+
+
+        // ------------------------------------------------------
+        // CREATE BLOB
+        // ------------------------------------------------------
+
+        const blob =
+          new Blob(
+            [response.data],
+            {
+              type: contentType,
+            }
+          );
+
+
+        // ------------------------------------------------------
+        // CREATE TEMPORARY URL
+        // ------------------------------------------------------
+
+        const blobUrl =
+          URL.createObjectURL(
+            blob
+          );
+
+
+        // ------------------------------------------------------
+        // OPEN BILL IN ALREADY OPENED TAB
+        // ------------------------------------------------------
+
+        billWindow.location.href =
+          blobUrl;
+
+
+        // ------------------------------------------------------
+        // CLEANUP
+        // ------------------------------------------------------
+
+        setTimeout(
+          () => {
+
+            URL.revokeObjectURL(
+              blobUrl
+            );
+
+          },
+          10 * 60 * 1000
+        );
+
+      } catch (error) {
+
+        console.error(
+          'View bill error:',
+          error
+        );
+
+
+        // ------------------------------------------------------
+        // ERROR MESSAGE
+        // ------------------------------------------------------
+
+        let message =
+          'The bill file could not be loaded.';
+
+
+        // Sometimes the backend returns JSON
+        // even though responseType is blob.
+        //
+        // Try to read that JSON error.
+
+        if (
+          error.response?.data instanceof Blob
+        ) {
+
+          try {
+
+            const text =
+              await error.response.data.text();
+
+            if (text) {
+
+              const parsed =
+                JSON.parse(text);
+
+              message =
+                parsed.message ||
+                message;
+
+            }
+
+          } catch (
+            parseError
+          ) {
+
+            console.error(
+              'Could not parse bill error:',
+              parseError
+            );
+
+          }
+
+        }
+        else {
+
+          message =
+            error.response?.data?.message ||
+            error.message ||
+            message;
+
+        }
+
+
+        // ------------------------------------------------------
+        // SHOW ERROR IN TAB
+        // ------------------------------------------------------
+
+        try {
+
+          billWindow.document.open();
+
+          billWindow.document.write(`
+            <html>
+
+              <head>
+                <title>Bill Error</title>
+              </head>
+
+              <body
+                style="
+                  font-family: Arial, sans-serif;
+                  padding: 40px;
+                  text-align: center;
+                "
+              >
+
+                <h2>
+                  Unable to open bill
+                </h2>
+
+                <p>
+                  ${message}
+                </p>
+
+                <p>
+                  Please close this tab and try again.
+                </p>
+
+              </body>
+
+            </html>
+          `);
+
+          billWindow.document.close();
+
+        } catch (
+          windowError
+        ) {
+
+          console.error(
+            'Bill window error:',
+            windowError
+          );
+
+        }
+
+
+        toast.error(
+          message
+        );
+
+      }
+
+    };
 
 
   // ==========================================================
@@ -1650,7 +1903,9 @@ const Materials = () => {
                           </IconButton>
 
                         ) : (
+
                           '—'
+
                         )}
 
                       </TableCell>
