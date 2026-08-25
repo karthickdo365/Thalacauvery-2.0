@@ -1,6 +1,3 @@
-
-
-
 import { useState, useEffect, useCallback } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 
@@ -860,29 +857,35 @@ const PersonalInfo = () => {
                     md={3}
                   >
 
-                    <TextField
-                      fullWidth
-                      select
-                      label="Type"
-                      size="small"
-                      {...register(
-                        'type'
+                    <Controller
+                      name="type"
+                      control={control}
+                      render={({ field }) => (
+                        <TextField
+                          {...field}
+                          fullWidth
+                          select
+                          label="Type"
+                          size="small"
+                          value={field.value || ''}
+                          onChange={(event) =>
+                            field.onChange(event.target.value)
+                          }
+                        >
+                          <MenuItem value="Partner">
+                            Partner
+                          </MenuItem>
+
+                          <MenuItem value="Employee">
+                            Employee
+                          </MenuItem>
+
+                          <MenuItem value="Broker">
+                            Broker
+                          </MenuItem>
+                        </TextField>
                       )}
-                    >
-
-                      <MenuItem value="Partner">
-                        Partner
-                      </MenuItem>
-
-                      <MenuItem value="Employee">
-                        Employee
-                      </MenuItem>
-
-                      <MenuItem value="Broker">
-                        Broker
-                      </MenuItem>
-
-                    </TextField>
+                    />
 
                   </Grid>
 
@@ -896,23 +899,23 @@ const PersonalInfo = () => {
                     md={3}
                   >
 
-                    <TextField
-                      fullWidth
-                      label="Name"
-                      size="small"
-                      {...register(
-                        'name',
-                        {
-                          required:
-                            'Name is required',
-                        }
+                    <Controller
+                      name="name"
+                      control={control}
+                      rules={{
+                        required: 'Name is required',
+                      }}
+                      render={({ field, fieldState }) => (
+                        <TextField
+                          {...field}
+                          fullWidth
+                          label="Name"
+                          size="small"
+                          value={field.value ?? ''}
+                          error={!!fieldState.error}
+                          helperText={fieldState.error?.message}
+                        />
                       )}
-                      error={
-                        !!errors.name
-                      }
-                      helperText={
-                        errors.name?.message
-                      }
                     />
 
                   </Grid>
@@ -927,23 +930,23 @@ const PersonalInfo = () => {
                     md={3}
                   >
 
-                    <TextField
-                      fullWidth
-                      label="Phone Number"
-                      size="small"
-                      {...register(
-                        'phone',
-                        {
-                          required:
-                            'Phone number is required',
-                        }
+                    <Controller
+                      name="phone"
+                      control={control}
+                      rules={{
+                        required: 'Phone number is required',
+                      }}
+                      render={({ field, fieldState }) => (
+                        <TextField
+                          {...field}
+                          fullWidth
+                          label="Phone Number"
+                          size="small"
+                          value={field.value ?? ''}
+                          error={!!fieldState.error}
+                          helperText={fieldState.error?.message}
+                        />
                       )}
-                      error={
-                        !!errors.phone
-                      }
-                      helperText={
-                        errors.phone?.message
-                      }
                     />
 
                   </Grid>
@@ -1013,21 +1016,29 @@ const PersonalInfo = () => {
                       md={3}
                     >
 
-                      <TextField
-                        fullWidth
-                        label="Salary"
-                        type="number"
-                        size="small"
-                        {...register(
-                          'salary'
+                      <Controller
+                        name="salary"
+                        control={control}
+                        render={({ field }) => (
+                          <TextField
+                            {...field}
+                            fullWidth
+                            label="Salary"
+                            type="number"
+                            size="small"
+                            value={field.value ?? ''}
+                            inputProps={{
+                              min: 0,
+                              step: '0.01',
+                            }}
+                            onChange={(event) =>
+                              field.onChange(event.target.value)
+                            }
+                            onWheel={(e) =>
+                              e.target.blur()
+                            }
+                          />
                         )}
-                        inputProps={{
-                          min: 0,
-                          step: '0.01',
-                        }}
-                        onWheel={(e) =>
-                          e.target.blur()
-                        }
                       />
 
                     </Grid>
