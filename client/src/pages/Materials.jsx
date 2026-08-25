@@ -21,7 +21,6 @@ import {
   IconButton,
   TablePagination,
   InputAdornment,
-  Link,
   Chip,
 } from '@mui/material';
 
@@ -82,14 +81,6 @@ const exportColumns = [
     accessor: 'amount',
   },
 ];
-
-
-// ============================================================
-// API BASE
-// ============================================================
-
-const API_BASE =
-  import.meta.env.VITE_API_BASE || '';
 
 
 // ============================================================
@@ -618,6 +609,85 @@ const Materials = () => {
       }
 
     };
+
+
+  // ==========================================================
+  // VIEW BILL
+  // ==========================================================
+  // Fetch the protected bill through axios so the normal
+  // authentication headers/cookies are included. Opening the
+  // upload URL directly would bypass the axios authentication.
+  // ==========================================================
+
+  const handleViewBill = async (material) => {
+    if (!material?.billFile) {
+      toast.error('Bill file not found');
+      return;
+    }
+
+    // Open the tab immediately so popup blockers do not stop it.
+    const fileWindow = window.open(
+      'about:blank',
+      '_blank',
+      'noopener,noreferrer'
+    );
+
+    if (!fileWindow) {
+      toast.error('Please allow pop-ups to view the bill');
+      return;
+    }
+
+    try {
+      const filename = material.billFile
+        .split('/')
+        .filter(Boolean)
+        .pop();
+
+      if (!filename) {
+        throw new Error('Invalid bill file');
+      }
+
+      const response = await api.get(
+        `/materials/bill/${encodeURIComponent(filename)}`,
+        {
+          responseType: 'blob',
+        }
+      );
+
+      const contentType =
+        response.headers?.['content-type'] ||
+        response.data?.type ||
+        'application/octet-stream';
+
+      const blob = new Blob(
+        [response.data],
+        { type: contentType }
+      );
+
+      const blobUrl =
+        window.URL.createObjectURL(blob);
+
+      fileWindow.location.href = blobUrl;
+
+      // Give the browser time to load the image/PDF before
+      // releasing the temporary Blob URL.
+      window.setTimeout(() => {
+        window.URL.revokeObjectURL(blobUrl);
+      }, 60000);
+    } catch (error) {
+      console.error(
+        'View bill error:',
+        error
+      );
+
+      fileWindow.close();
+
+      toast.error(
+        error.response?.data?.message ||
+        'Unable to open bill'
+      );
+    }
+  };
 
 
   // ==========================================================
@@ -1560,29 +1630,27 @@ const Materials = () => {
 
                       <TableCell>
 
-                        {material.billFile && (
+                        {material.billFile ? (
 
-                          <Link
-                            href={
-                              `${API_BASE}${material.billFile}`
+                          <IconButton
+                            size="small"
+                            color="secondary"
+                            title="View Bill"
+                            onClick={() =>
+                              handleViewBill(
+                                material
+                              )
                             }
-                            target="_blank"
-                            rel="noopener noreferrer"
                           >
 
-                            <IconButton
-                              size="small"
-                              color="secondary"
-                            >
+                            <VisibilityIcon
+                              fontSize="small"
+                            />
 
-                              <VisibilityIcon
-                                fontSize="small"
-                              />
+                          </IconButton>
 
-                            </IconButton>
-
-                          </Link>
-
+                        ) : (
+                          '—'
                         )}
 
                       </TableCell>

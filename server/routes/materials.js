@@ -1,3 +1,8 @@
+// ============================================================
+// MATERIAL ROUTES
+// Complete updated backend
+// ============================================================
+
 import express from 'express';
 import multer from 'multer';
 import fs from 'fs';
@@ -5,7 +10,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import Material from '../models/Material.js';
-import { protect, requireWrite } from '../middleware/auth.js';
+import {
+  protect,
+  requireWrite,
+} from '../middleware/auth.js';
+
 import asyncHandler from '../middleware/asyncHandler.js';
 import logActivity from '../utils/activityLog.js';
 
@@ -14,86 +23,138 @@ import logActivity from '../utils/activityLog.js';
 // PATHS
 // ============================================================
 
-const __dirname = path.dirname(
-  fileURLToPath(import.meta.url)
-);
+const __filename =
+  fileURLToPath(import.meta.url);
 
-const UPLOAD_DIR = path.join(
-  __dirname,
-  '../uploads/materials'
-);
+const __dirname =
+  path.dirname(__filename);
 
+
+// Material bills are stored here
+const UPLOAD_DIR =
+  path.join(
+    __dirname,
+    '../uploads/materials'
+  );
+
+
+// Make sure folder exists
 fs.mkdirSync(
   UPLOAD_DIR,
-  { recursive: true }
+  {
+    recursive: true,
+  }
 );
 
 
 // ============================================================
-// MULTER
+// MULTER STORAGE
 // ============================================================
 
-const storage = multer.diskStorage({
+const storage =
+  multer.diskStorage({
 
-  destination: (req, file, cb) => {
-    cb(null, UPLOAD_DIR);
-  },
+    destination: (
+      req,
+      file,
+      cb
+    ) => {
 
-  filename: (req, file, cb) => {
-
-    const safeName =
-      file.originalname.replace(
-        /[^\w.\-]/g,
-        '_'
+      cb(
+        null,
+        UPLOAD_DIR
       );
 
-    cb(
-      null,
-      `${Date.now()}-${safeName}`
-    );
-
-  },
-
-});
+    },
 
 
-const upload = multer({
+    filename: (
+      req,
+      file,
+      cb
+    ) => {
 
-  storage,
+      // Clean original filename
+      const safeName =
+        file.originalname.replace(
+          /[^\w.\-]/g,
+          '_'
+        );
 
-  limits: {
-    fileSize: 10 * 1024 * 1024,
-  },
 
-  fileFilter: (req, file, cb) => {
+      const filename =
+        `${Date.now()}-${safeName}`;
 
-    const allowed =
-      /^image\//.test(file.mimetype) ||
-      file.mimetype === 'application/pdf';
 
-    if (!allowed) {
-
-      return cb(
-        new Error(
-          'Only images and PDF bills are allowed'
-        )
+      cb(
+        null,
+        filename
       );
 
-    }
+    },
 
-    cb(null, true);
+  });
 
-  },
 
-});
+// ============================================================
+// MULTER UPLOAD
+// ============================================================
+
+const upload =
+  multer({
+
+    storage,
+
+    limits: {
+      fileSize:
+        10 * 1024 * 1024,
+    },
+
+
+    fileFilter: (
+      req,
+      file,
+      cb
+    ) => {
+
+      const allowed =
+        /^image\//.test(
+          file.mimetype
+        ) ||
+        file.mimetype ===
+          'application/pdf';
+
+
+      if (!allowed) {
+
+        return cb(
+          new Error(
+            'Only images and PDF bills are allowed'
+          )
+        );
+
+      }
+
+
+      cb(
+        null,
+        true
+      );
+
+    },
+
+  });
 
 
 // ============================================================
 // ROUTER
 // ============================================================
 
-const router = express.Router();
+const router =
+  express.Router();
 
+
+// All material routes require login
 router.use(protect);
 
 
@@ -105,8 +166,9 @@ const log = (
   req,
   action,
   description
-) =>
-  logActivity(
+) => {
+
+  return logActivity(
     req,
     {
       action,
@@ -115,21 +177,39 @@ const log = (
     }
   );
 
+};
+
+
+// ============================================================
+// MACHINE VALIDATION
+// ============================================================
 
 const isValidMachine = (
   machineType
-) =>
-  machineType === 'big' ||
-  machineType === 'small';
+) => {
+
+  return (
+    machineType === 'big' ||
+    machineType === 'small'
+  );
+
+};
 
 
 const getMachine = (
   machineType
 ) => {
 
-  if (!isValidMachine(machineType)) {
+  if (
+    !isValidMachine(
+      machineType
+    )
+  ) {
+
     return null;
+
   }
+
 
   return machineType;
 
@@ -137,20 +217,36 @@ const getMachine = (
 
 
 // ============================================================
+// MATERIAL TYPES
+// ============================================================
+
+const ALLOWED_TYPES = [
+  'Diesel',
+  'Petrol',
+  'Pipe',
+  'Bit',
+  'Hammer',
+  'Others',
+];
+
+
+// ============================================================
 // GET /api/materials
 //
-// IMPORTANT:
-// machineType is REQUIRED.
-//
 // Example:
-// /api/materials?machineType=small
+//
 // /api/materials?machineType=big
+//
+// /api/materials?machineType=small
 // ============================================================
 
 router.get(
   '/',
   asyncHandler(
-    async (req, res) => {
+    async (
+      req,
+      res
+    ) => {
 
       const {
         search,
@@ -167,19 +263,23 @@ router.get(
       // --------------------------------------------------------
 
       const machine =
-        getMachine(machineType);
+        getMachine(
+          machineType
+        );
 
 
       if (!machine) {
 
-        return res.status(400).json({
+        return res
+          .status(400)
+          .json({
 
-          success: false,
+            success: false,
 
-          message:
-            'machineType must be either big or small',
+            message:
+              'machineType must be either big or small',
 
-        });
+          });
 
       }
 
@@ -190,8 +290,8 @@ router.get(
 
       const query = {
 
-        // THIS IS THE IMPORTANT PART
-        machineType: machine,
+        machineType:
+          machine,
 
       };
 
@@ -206,15 +306,19 @@ router.get(
 
           {
             type: {
-              $regex: search,
-              $options: 'i',
+              $regex:
+                search,
+              $options:
+                'i',
             },
           },
 
           {
             description: {
-              $regex: search,
-              $options: 'i',
+              $regex:
+                search,
+              $options:
+                'i',
             },
           },
 
@@ -238,7 +342,9 @@ router.get(
         if (startDate) {
 
           query.date.$gte =
-            new Date(startDate);
+            new Date(
+              startDate
+            );
 
         }
 
@@ -246,7 +352,9 @@ router.get(
         if (endDate) {
 
           query.date.$lte =
-            new Date(endDate);
+            new Date(
+              endDate
+            );
 
         }
 
@@ -263,6 +371,7 @@ router.get(
           1
         );
 
+
       const pageLimit =
         Math.min(
           Math.max(
@@ -274,7 +383,9 @@ router.get(
 
 
       const skip =
-        (pageNumber - 1) *
+        (
+          pageNumber - 1
+        ) *
         pageLimit;
 
 
@@ -285,29 +396,36 @@ router.get(
       const [
         total,
         materials,
-      ] = await Promise.all([
+      ] =
+        await Promise.all([
 
-        Material.countDocuments(
-          query
-        ),
+          Material.countDocuments(
+            query
+          ),
 
-        Material.find(query)
-          .sort({
-            date: -1,
-            createdAt: -1,
-          })
-          .skip(skip)
-          .limit(pageLimit)
-          .lean(),
+          Material.find(
+            query
+          )
+            .sort({
+              date: -1,
+              createdAt: -1,
+            })
+            .skip(
+              skip
+            )
+            .limit(
+              pageLimit
+            )
+            .lean(),
 
-      ]);
+        ]);
 
 
       // --------------------------------------------------------
       // RESPONSE
       // --------------------------------------------------------
 
-      res.json({
+      return res.json({
 
         success: true,
 
@@ -323,62 +441,353 @@ router.get(
 
 
 // ============================================================
-// GET /api/materials/:id
+// VIEW BILL
+//
+// GET /api/materials/bill/:filename
+//
+// This endpoint is protected by the router.use(protect)
+// above.
+//
+// Frontend can use Axios with authentication and then
+// open the returned Blob.
+//
+// IMPORTANT:
+// This route MUST be BEFORE /:id.
+// ============================================================
+
+router.get(
+  '/bill/:filename',
+  asyncHandler(
+    async (
+      req,
+      res
+    ) => {
+
+      const requestedFilename =
+        req.params.filename || '';
+
+
+      // --------------------------------------------------------
+      // SECURITY
+      // Prevent path traversal:
+      //
+      // ../../something
+      // --------------------------------------------------------
+
+      const filename =
+        path.basename(
+          requestedFilename
+        );
+
+
+      if (
+        !filename ||
+        filename !==
+          requestedFilename
+      ) {
+
+        return res
+          .status(400)
+          .json({
+
+            success: false,
+
+            message:
+              'Invalid bill filename',
+
+          });
+
+      }
+
+
+      // --------------------------------------------------------
+      // BUILD FILE PATH
+      // --------------------------------------------------------
+
+      const filePath =
+        path.join(
+          UPLOAD_DIR,
+          filename
+        );
+
+
+      // --------------------------------------------------------
+      // EXTRA SECURITY CHECK
+      // --------------------------------------------------------
+
+      const resolvedUploadDir =
+        path.resolve(
+          UPLOAD_DIR
+        );
+
+
+      const resolvedFilePath =
+        path.resolve(
+          filePath
+        );
+
+
+      if (
+        !resolvedFilePath.startsWith(
+          resolvedUploadDir +
+            path.sep
+        )
+      ) {
+
+        return res
+          .status(400)
+          .json({
+
+            success: false,
+
+            message:
+              'Invalid file path',
+
+          });
+
+      }
+
+
+      // --------------------------------------------------------
+      // CHECK FILE EXISTS
+      // --------------------------------------------------------
+
+      if (
+        !fs.existsSync(
+          resolvedFilePath
+        )
+      ) {
+
+        return res
+          .status(404)
+          .json({
+
+            success: false,
+
+            message:
+              'Bill file not found',
+
+          });
+
+      }
+
+
+      // --------------------------------------------------------
+      // CHECK IT IS ACTUALLY A FILE
+      // --------------------------------------------------------
+
+      const stats =
+        fs.statSync(
+          resolvedFilePath
+        );
+
+
+      if (
+        !stats.isFile()
+      ) {
+
+        return res
+          .status(404)
+          .json({
+
+            success: false,
+
+            message:
+              'Bill file not found',
+
+          });
+
+      }
+
+
+      // --------------------------------------------------------
+      // DETERMINE CONTENT TYPE
+      // --------------------------------------------------------
+
+      const extension =
+        path.extname(
+          filename
+        )
+          .toLowerCase();
+
+
+      let contentType =
+        'application/octet-stream';
+
+
+      if (
+        extension === '.jpg' ||
+        extension === '.jpeg'
+      ) {
+
+        contentType =
+          'image/jpeg';
+
+      }
+      else if (
+        extension === '.png'
+      ) {
+
+        contentType =
+          'image/png';
+
+      }
+      else if (
+        extension === '.gif'
+      ) {
+
+        contentType =
+          'image/gif';
+
+      }
+      else if (
+        extension === '.webp'
+      ) {
+
+        contentType =
+          'image/webp';
+
+      }
+      else if (
+        extension === '.pdf'
+      ) {
+
+        contentType =
+          'application/pdf';
+
+      }
+
+
+      // --------------------------------------------------------
+      // RESPONSE HEADERS
+      // --------------------------------------------------------
+
+      res.setHeader(
+        'Content-Type',
+        contentType
+      );
+
+
+      res.setHeader(
+        'Content-Length',
+        stats.size
+      );
+
+
+      // Browser should display the file
+      // instead of downloading it.
+      res.setHeader(
+        'Content-Disposition',
+        `inline; filename="${filename}"`
+      );
+
+
+      // Prevent caching stale bills
+      res.setHeader(
+        'Cache-Control',
+        'private, no-cache, no-store, must-revalidate'
+      );
+
+
+      // --------------------------------------------------------
+      // SEND FILE
+      // --------------------------------------------------------
+
+      return res.sendFile(
+        resolvedFilePath
+      );
+
+    }
+  )
+);
+
+
+// ============================================================
+// GET SINGLE MATERIAL
+//
+// GET /api/materials/:id?machineType=big
 // ============================================================
 
 router.get(
   '/:id',
   asyncHandler(
-    async (req, res) => {
+    async (
+      req,
+      res
+    ) => {
 
       const {
         machineType,
       } = req.query;
 
 
+      // --------------------------------------------------------
+      // MACHINE VALIDATION
+      // --------------------------------------------------------
+
       const machine =
-        getMachine(machineType);
+        getMachine(
+          machineType
+        );
 
 
       if (!machine) {
 
-        return res.status(400).json({
+        return res
+          .status(400)
+          .json({
 
-          success: false,
+            success: false,
 
-          message:
-            'machineType must be either big or small',
+            message:
+              'machineType must be either big or small',
 
-        });
+          });
 
       }
 
+
+      // --------------------------------------------------------
+      // FIND MATERIAL
+      // --------------------------------------------------------
 
       const material =
         await Material.findOne({
 
-          _id: req.params.id,
+          _id:
+            req.params.id,
 
-          machineType: machine,
+          machineType:
+            machine,
 
         }).lean();
 
 
+      // --------------------------------------------------------
+      // NOT FOUND
+      // --------------------------------------------------------
+
       if (!material) {
 
-        return res.status(404).json({
+        return res
+          .status(404)
+          .json({
 
-          success: false,
+            success: false,
 
-          message:
-            'Material not found for this machine',
+            message:
+              'Material not found for this machine',
 
-        });
+          });
 
       }
 
 
-      res.json({
+      // --------------------------------------------------------
+      // RESPONSE
+      // --------------------------------------------------------
+
+      return res.json({
 
         success: true,
 
@@ -393,15 +802,21 @@ router.get(
 
 // ============================================================
 // POST /api/materials
+// CREATE MATERIAL
 // ============================================================
 
 router.post(
   '/',
   requireWrite,
-  upload.single('billFile'),
+  upload.single(
+    'billFile'
+  ),
 
   asyncHandler(
-    async (req, res) => {
+    async (
+      req,
+      res
+    ) => {
 
       const {
         machineType,
@@ -413,19 +828,23 @@ router.post(
       // --------------------------------------------------------
 
       const machine =
-        getMachine(machineType);
+        getMachine(
+          machineType
+        );
 
 
       if (!machine) {
 
-        return res.status(400).json({
+        return res
+          .status(400)
+          .json({
 
-          success: false,
+            success: false,
 
-          message:
-            'Valid machineType is required: big or small',
+            message:
+              'Valid machineType is required: big or small',
 
-        });
+          });
 
       }
 
@@ -434,30 +853,22 @@ router.post(
       // TYPE VALIDATION
       // --------------------------------------------------------
 
-      const allowedTypes = [
-        'Diesel',
-        'Petrol',
-        'Pipe',
-        'Bit',
-        'Hammer',
-        'Others',
-      ];
-
-
       if (
-        !allowedTypes.includes(
+        !ALLOWED_TYPES.includes(
           req.body.type
         )
       ) {
 
-        return res.status(400).json({
+        return res
+          .status(400)
+          .json({
 
-          success: false,
+            success: false,
 
-          message:
-            'Invalid material type',
+            message:
+              'Invalid material type',
 
-        });
+          });
 
       }
 
@@ -470,7 +881,8 @@ router.post(
 
         ...req.body,
 
-        machineType: machine,
+        machineType:
+          machine,
 
         createdBy:
           req.user.name,
@@ -501,7 +913,7 @@ router.post(
 
 
       // --------------------------------------------------------
-      // LOG
+      // ACTIVITY LOG
       // --------------------------------------------------------
 
       log(
@@ -515,13 +927,15 @@ router.post(
       // RESPONSE
       // --------------------------------------------------------
 
-      res.status(201).json({
+      return res
+        .status(201)
+        .json({
 
-        success: true,
+          success: true,
 
-        material,
+          material,
 
-      });
+        });
 
     }
   )
@@ -530,15 +944,21 @@ router.post(
 
 // ============================================================
 // PUT /api/materials/:id
+// UPDATE MATERIAL
 // ============================================================
 
 router.put(
   '/:id',
   requireWrite,
-  upload.single('billFile'),
+  upload.single(
+    'billFile'
+  ),
 
   asyncHandler(
-    async (req, res) => {
+    async (
+      req,
+      res
+    ) => {
 
       const {
         machineType,
@@ -550,47 +970,55 @@ router.put(
       // --------------------------------------------------------
 
       const machine =
-        getMachine(machineType);
+        getMachine(
+          machineType
+        );
 
 
       if (!machine) {
 
-        return res.status(400).json({
+        return res
+          .status(400)
+          .json({
 
-          success: false,
+            success: false,
 
-          message:
-            'Valid machineType is required: big or small',
+            message:
+              'Valid machineType is required: big or small',
 
-        });
+          });
 
       }
 
 
       // --------------------------------------------------------
-      // FIND ONLY INSIDE CURRENT MACHINE
+      // FIND MATERIAL
       // --------------------------------------------------------
 
       const material =
         await Material.findOne({
 
-          _id: req.params.id,
+          _id:
+            req.params.id,
 
-          machineType: machine,
+          machineType:
+            machine,
 
         });
 
 
       if (!material) {
 
-        return res.status(404).json({
+        return res
+          .status(404)
+          .json({
 
-          success: false,
+            success: false,
 
-          message:
-            'Material not found for this machine',
+            message:
+              'Material not found for this machine',
 
-        });
+          });
 
       }
 
@@ -599,31 +1027,23 @@ router.put(
       // TYPE VALIDATION
       // --------------------------------------------------------
 
-      const allowedTypes = [
-        'Diesel',
-        'Petrol',
-        'Pipe',
-        'Bit',
-        'Hammer',
-        'Others',
-      ];
-
-
       if (
         req.body.type &&
-        !allowedTypes.includes(
+        !ALLOWED_TYPES.includes(
           req.body.type
         )
       ) {
 
-        return res.status(400).json({
+        return res
+          .status(400)
+          .json({
 
-          success: false,
+            success: false,
 
-          message:
-            'Invalid material type',
+            message:
+              'Invalid material type',
 
-        });
+          });
 
       }
 
@@ -638,18 +1058,64 @@ router.put(
       );
 
 
-      // NEVER allow machine to change
-      // through accidental form data.
-
+      // Never allow machine type
+      // to change accidentally.
       material.machineType =
         machine;
 
 
       // --------------------------------------------------------
-      // BILL
+      // NEW BILL
       // --------------------------------------------------------
 
       if (req.file) {
+
+        // Delete previous bill if it exists
+        if (
+          material.billFile
+        ) {
+
+          const oldFilename =
+            path.basename(
+              material.billFile
+            );
+
+
+          const oldFilePath =
+            path.join(
+              UPLOAD_DIR,
+              oldFilename
+            );
+
+
+          if (
+            fs.existsSync(
+              oldFilePath
+            )
+          ) {
+
+            try {
+
+              fs.unlinkSync(
+                oldFilePath
+              );
+
+            }
+            catch (
+              deleteError
+            ) {
+
+              console.error(
+                'Could not delete old bill:',
+                deleteError
+              );
+
+            }
+
+          }
+
+        }
+
 
         material.billFile =
           `/uploads/materials/${req.file.filename}`;
@@ -660,15 +1126,15 @@ router.put(
       // --------------------------------------------------------
       // SAVE
       //
-      // Material model pre-save hook
-      // recalculates totalPrice.
+      // Your Material model pre-save hook can
+      // recalculate totalPrice.
       // --------------------------------------------------------
 
       await material.save();
 
 
       // --------------------------------------------------------
-      // LOG
+      // ACTIVITY LOG
       // --------------------------------------------------------
 
       log(
@@ -682,7 +1148,7 @@ router.put(
       // RESPONSE
       // --------------------------------------------------------
 
-      res.json({
+      return res.json({
 
         success: true,
 
@@ -704,7 +1170,10 @@ router.delete(
   requireWrite,
 
   asyncHandler(
-    async (req, res) => {
+    async (
+      req,
+      res
+    ) => {
 
       const {
         machineType,
@@ -716,53 +1185,111 @@ router.delete(
       // --------------------------------------------------------
 
       const machine =
-        getMachine(machineType);
+        getMachine(
+          machineType
+        );
 
 
       if (!machine) {
 
-        return res.status(400).json({
+        return res
+          .status(400)
+          .json({
 
-          success: false,
+            success: false,
 
-          message:
-            'machineType must be either big or small',
+            message:
+              'machineType must be either big or small',
 
-        });
+          });
 
       }
 
 
       // --------------------------------------------------------
-      // DELETE ONLY FROM CURRENT MACHINE
+      // FIND AND DELETE
       // --------------------------------------------------------
 
       const material =
         await Material.findOneAndDelete({
 
-          _id: req.params.id,
+          _id:
+            req.params.id,
 
-          machineType: machine,
+          machineType:
+            machine,
 
         });
 
 
       if (!material) {
 
-        return res.status(404).json({
+        return res
+          .status(404)
+          .json({
 
-          success: false,
+            success: false,
 
-          message:
-            'Material not found for this machine',
+            message:
+              'Material not found for this machine',
 
-        });
+          });
 
       }
 
 
       // --------------------------------------------------------
-      // LOG
+      // DELETE BILL FILE
+      // --------------------------------------------------------
+
+      if (
+        material.billFile
+      ) {
+
+        const filename =
+          path.basename(
+            material.billFile
+          );
+
+
+        const filePath =
+          path.join(
+            UPLOAD_DIR,
+            filename
+          );
+
+
+        if (
+          fs.existsSync(
+            filePath
+          )
+        ) {
+
+          try {
+
+            fs.unlinkSync(
+              filePath
+            );
+
+          }
+          catch (
+            fileError
+          ) {
+
+            console.error(
+              'Could not delete bill file:',
+              fileError
+            );
+
+          }
+
+        }
+
+      }
+
+
+      // --------------------------------------------------------
+      // ACTIVITY LOG
       // --------------------------------------------------------
 
       log(
@@ -776,7 +1303,7 @@ router.delete(
       // RESPONSE
       // --------------------------------------------------------
 
-      res.json({
+      return res.json({
 
         success: true,
 
@@ -789,5 +1316,9 @@ router.delete(
   )
 );
 
+
+// ============================================================
+// EXPORT
+// ============================================================
 
 export default router;
