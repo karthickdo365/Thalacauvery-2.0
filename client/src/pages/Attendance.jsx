@@ -554,13 +554,29 @@ export default function Attendance() {
           `/users?machineType=${currentMachine}`
         );
 
-      const list = extractList(data, [
+      const allUsers = extractList(data, [
         'users',
         'records',
         'personalUsers',
         'employees',
         'data',
       ]);
+
+      // Attendance & Salary is only for employees.
+      // Brokers must not appear in this dropdown.
+      // Keep the broker records in the database; only filter them here.
+      const list = allUsers.filter((item) => {
+        const type = String(
+          item?.type ||
+          item?.userType ||
+          item?.role ||
+          ''
+        )
+          .trim()
+          .toLowerCase();
+
+        return type !== 'broker';
+      });
 
       setEmployees(list);
 
@@ -2312,9 +2328,6 @@ export default function Attendance() {
                   value={item._id}
                 >
                   {item.name}
-                  {item.type
-                    ? ` (${item.type})`
-                    : ''}
                 </option>
               )
             )}
