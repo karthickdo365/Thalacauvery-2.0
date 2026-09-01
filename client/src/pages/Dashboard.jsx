@@ -152,6 +152,7 @@ const getDiscount = (point) => {
     point?.discountAmount ??
       point?.discount ??
       point?.discountValue ??
+      point?.breakdown?.discountAmount ??
       0
   );
 };

@@ -287,6 +287,20 @@ router.get(
               },
             },
 
+
+            // --------------------------------------------------
+            // DISCOUNT
+            // --------------------------------------------------
+
+            discountAmount: {
+              $sum: {
+                $ifNull: [
+                  '$breakdown.discountAmount',
+                  0,
+                ],
+              },
+            },
+
           },
         },
 
@@ -350,6 +364,9 @@ router.get(
 
         pendingAmount:
           bills.pendingAmount || 0,
+
+        discountAmount:
+          bills.discountAmount || 0,
 
       },
 
