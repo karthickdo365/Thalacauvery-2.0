@@ -446,32 +446,118 @@ const BorewellBills = () => {
 
     const loadBrokers = async () => {
       try {
-        // Use the exact same broker source as Agent Information.
-        // This prevents deleted brokers from appearing in Points.
-        const { data } = await api.get('/users/brokers', {
-          params: {
-            machineType: currentMachine,
-          },
-        });
+        // IMPORTANT:
+        // Broker dropdown must come ONLY from Agent Information
+        // rate-card records, not from /users/brokers.
+        //
+        // Agent Information is stored in /points. A broker is shown
+        // here only when that broker has at least one configured rate
+        // for the currently selected machine.
+        const allAgentInfo = [];
+        let pageNumber = 1;
+        const limit = 500;
 
-        console.log('[BorewellBills] current broker list:', data);
+        while (true) {
+          const { data } = await api.get('/points', {
+            params: {
+              machineType: currentMachine,
+              page: pageNumber,
+              limit,
+            },
+          });
 
-        const list = Array.isArray(data)
-          ? data
-          : Array.isArray(data?.users)
-            ? data.users
+          const pageItems = Array.isArray(data?.points)
+            ? data.points
             : [];
 
-        setBrokers(list);
+          allAgentInfo.push(...pageItems);
+
+          if (
+            pageItems.length < limit ||
+            pageNumber * limit >= toNum(data?.total)
+          ) {
+            break;
+          }
+
+          pageNumber += 1;
+        }
+
+        // The rate-card structure used by Agent Information.
+        const pipeRows =
+          currentMachine === 'big'
+            ? BIG_PIPES_NO_JI_OUTER
+            : SMALL_PIPES;
+
+        const configuredRateCards = allAgentInfo.filter((point) => {
+          if (!point || point.machineType !== currentMachine) {
+            return false;
+          }
+
+          const hasPipeRate = pipeRows.some(({ rateKey }) =>
+            toNum(point?.[rateKey]?.rate) > 0
+          );
+
+          const hasDepthRate = Array.isArray(point?.depthDetails) &&
+            point.depthDetails.some(
+              (item) => toNum(item?.rate) > 0
+            );
+
+          return hasPipeRate || hasDepthRate;
+        });
+
+        // One broker can have only one dropdown entry, even if
+        // Agent Information contains multiple rate-card records.
+        const uniqueBrokers = new Map();
+
+        configuredRateCards.forEach((point) => {
+          const broker = point?.brokerId;
+
+          const brokerId =
+            typeof broker === 'string'
+              ? broker
+              : broker?._id || broker?.id;
+
+          const brokerName =
+            typeof broker === 'object'
+              ? broker?.name ||
+                broker?.fullName ||
+                broker?.username
+              : point?.brokerName ||
+                point?.broker?.name;
+
+          if (brokerId && brokerName) {
+            uniqueBrokers.set(String(brokerId), {
+              _id: brokerId,
+              name: brokerName,
+            });
+          }
+        });
+
+        const brokerList = Array.from(
+          uniqueBrokers.values()
+        ).sort((a, b) =>
+          String(a.name).localeCompare(
+            String(b.name),
+            undefined,
+            { sensitivity: 'base' }
+          )
+        );
+
+        console.log(
+          '[BorewellBills] brokers from Agent Information rate cards:',
+          brokerList
+        );
+
+        setBrokers(brokerList);
       } catch (error) {
         console.error(
-          '[BorewellBills] broker fetch failed:',
+          '[BorewellBills] Agent Information broker fetch failed:',
           error.response?.data || error
         );
         setBrokers([]);
         toast.error(
           error.response?.data?.message ||
-          'Failed to load brokers'
+          'Failed to load Agent Information brokers'
         );
       }
     };
