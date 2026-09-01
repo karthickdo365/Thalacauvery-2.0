@@ -628,55 +628,36 @@ const AgentInformation = () => {
   // ONLY current machine brokers.
   // ==========================================================
 
-  useEffect(() => {
+  const fetchBrokers = useCallback(async () => {
 
     if (
       currentMachine !== 'big' &&
       currentMachine !== 'small'
     ) {
-
       setBrokers([]);
-
       return;
     }
 
+    try {
+      const { data } = await api.get(
+        '/users/brokers',
+        {
+          params: {
+            machineType: currentMachine,
+          },
+        }
+      );
 
-    api.get(
-      '/users/brokers',
-      {
-        params: {
-          machineType:
-            currentMachine,
-        },
-      }
-    )
-
-      .then(({ data }) => {
-
-        setBrokers(
-          data || []
-        );
-
-      })
-
-      .catch((error) => {
-
-        console.error(
-          'Fetch brokers error:',
-          error
-        );
-
-        setBrokers([]);
-
-        toast.error(
-          'Failed to load brokers'
-        );
-
-      });
-
-  }, [
-    currentMachine,
-  ]);
+      setBrokers(data || []);
+    } catch (error) {
+      console.error(
+        'Fetch brokers error:',
+        error
+      );
+      setBrokers([]);
+      toast.error('Failed to load brokers');
+    }
+  }, [currentMachine]);
 
 
   // ==========================================================
@@ -684,11 +665,11 @@ const AgentInformation = () => {
   // ==========================================================
 
   useEffect(() => {
-
     fetchPoints();
-
+    fetchBrokers();
   }, [
     fetchPoints,
+    fetchBrokers,
   ]);
 
 
