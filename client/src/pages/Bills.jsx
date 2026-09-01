@@ -446,17 +446,15 @@ const BorewellBills = () => {
 
     const loadBrokers = async () => {
       try {
-        // Same API contract used by Personal Information.
-        const { data } = await api.get('/users', {
+        // Use the exact same broker source as Agent Information.
+        // This prevents deleted brokers from appearing in Points.
+        const { data } = await api.get('/users/brokers', {
           params: {
-            type: 'Broker',
             machineType: currentMachine,
-            page: 1,
-            limit: 500,
           },
         });
 
-        console.log('[BorewellBills] broker API response:', data);
+        console.log('[BorewellBills] current broker list:', data);
 
         const list = Array.isArray(data)
           ? data
