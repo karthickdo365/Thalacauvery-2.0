@@ -936,12 +936,9 @@ export default function Attendance() {
       );
 
     const finalSalary =
-      Math.max(
-        grossSalary -
-          absentDeduction -
-          totalAdvance,
-        0
-      );
+      grossSalary -
+      absentDeduction -
+      totalAdvance;
 
     return {
       monthsWorked,
