@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -11,10 +12,7 @@ import {
 
 import { useMachine } from '../context/MachineContext';
 import { NAVY } from '../utils/constants';
-
-import bigMachineImage from '../asserts/big-machine.png';
-import smallMachineImage from '../asserts/small-machine.jpeg';
-
+import { MACHINES, RigViewer } from '../utils/rig3d';
 const MACHINE_CARDS = [
   {
     key: 'big',
@@ -22,7 +20,6 @@ const MACHINE_CARDS = [
     title: 'BIG MACHINE',
     tagline: 'Heavy-Duty Rig',
     desc: 'Built for deep bores, high-volume output and large-diameter drilling.',
-    image: bigMachineImage,
     color: '#16a34a',
   },
   {
@@ -31,19 +28,79 @@ const MACHINE_CARDS = [
     title: 'SMALL MACHINE',
     tagline: 'Compact Rig',
     desc: 'Perfect for narrow sites, quick jobs and tight-access drilling.',
-    image: smallMachineImage,
     color: '#d97706',
   },
 ];
+
+const STORAGE_KEY = 'thalacauvery_machine';
 
 const MachineSelection = () => {
   const navigate = useNavigate();
   const { setMachine } = useMachine();
 
+  const canvasRefs = useRef({});
+  const viewers = useRef({});
+  const rafRef = useRef(null);
+  const lastRef = useRef(0);
+  const navigatingRef = useRef(false);
+
+  const [hintVisible, setHintVisible] = useState({ big: true, small: true });
+  const [lastUsed, setLastUsed] = useState(null);
+
+  // Mount one interactive 3D rig per card, run a single shared render loop,
+  // and clean everything up on unmount.
+  useEffect(() => {
+    try {
+      setLastUsed(localStorage.getItem(STORAGE_KEY));
+    } catch (e) {
+      /* localStorage unavailable */
+    }
+
+    MACHINE_CARDS.forEach(({ key }) => {
+      const canvas = canvasRefs.current[key];
+      if (!canvas) return;
+      const viewer = new RigViewer({ canvas, machine: key });
+      viewer.firstDragCb = () => setHintVisible((prev) => ({ ...prev, [key]: false }));
+      viewers.current[key] = viewer;
+    });
+
+    lastRef.current = performance.now();
+    const tick = (now) => {
+      const dt = Math.min(0.05, (now - lastRef.current) / 1000);
+      lastRef.current = now;
+      const t = now / 1000;
+      Object.values(viewers.current).forEach((v) => {
+        if (v.active && v.w) v.update(dt, t);
+      });
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      Object.values(viewers.current).forEach((v) => v.dispose());
+      viewers.current = {};
+    };
+  }, []);
+
+  const handleHover = (key, hovered) => {
+    viewers.current[key]?.setHover(hovered);
+  };
+
   const handleSelect = (machine) => {
+    if (navigatingRef.current) return;
+    navigatingRef.current = true;
+
+    viewers.current[machine]?.powerFlash();
     setMachine(machine);
-    localStorage.setItem('thalacauvery_machine', machine);
-    navigate('/dashboard');
+    try {
+      localStorage.setItem(STORAGE_KEY, machine);
+    } catch (e) {
+      /* localStorage unavailable */
+    }
+
+    // Let the power-on flash play out briefly before leaving the page.
+    setTimeout(() => navigate('/dashboard'), 260);
   };
 
   return (
@@ -210,229 +267,285 @@ const MachineSelection = () => {
             direction={{ xs: 'column', md: 'row' }}
             spacing={{ xs: 3, md: 4 }}
           >
-            {MACHINE_CARDS.map((card, i) => (
-              <Card
-                key={card.key}
-                elevation={0}
-                className="machine-card"
-                sx={{
-                  flex: 1,
-                  minWidth: 0,
+            {MACHINE_CARDS.map((card, i) => {
+              const machineCfg = MACHINES[card.key];
 
-                  borderRadius: '26px',
-                  overflow: 'hidden',
+              return (
+                <Card
+                  key={card.key}
+                  elevation={0}
+                  className="machine-card"
+                  sx={{
+                    flex: 1,
+                    minWidth: 0,
 
-                  bgcolor: 'rgba(255,255,255,0.05)',
-                  backdropFilter: 'blur(14px)',
-                  border: '1px solid rgba(255,255,255,0.10)',
+                    borderRadius: '26px',
+                    overflow: 'hidden',
 
-                  boxShadow: '0 20px 45px rgba(0,0,0,0.35)',
+                    bgcolor: 'rgba(255,255,255,0.05)',
+                    backdropFilter: 'blur(14px)',
+                    border: '1px solid rgba(255,255,255,0.10)',
 
-                  transition:
-                    'transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease',
+                    boxShadow: '0 20px 45px rgba(0,0,0,0.35)',
 
-                  animation: `fadeSlideUp 0.6s ${0.15 + i * 0.12}s ease both`,
+                    transition:
+                      'transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease',
 
-                  cursor: 'pointer',
+                    animation: `fadeSlideUp 0.6s ${0.15 + i * 0.12}s ease both`,
 
-                  '&:hover': {
-                    transform: 'translateY(-8px)',
-                    borderColor: `${card.color}88`,
-                    boxShadow: `0 28px 60px rgba(0,0,0,0.45), 0 0 42px ${card.color}33`,
-                  },
+                    cursor: 'pointer',
 
-                  '&:active': {
-                    transform: 'translateY(-4px) scale(0.985)',
-                  },
+                    '&:hover': {
+                      transform: 'translateY(-8px)',
+                      borderColor: `${card.color}88`,
+                      boxShadow: `0 28px 60px rgba(0,0,0,0.45), 0 0 42px ${card.color}33`,
+                    },
 
-                  '&:hover .machine-img': {
-                    transform: 'scale(1.07)',
-                  },
-
-                  '&:hover .machine-arrow': {
-                    transform: 'translateX(7px)',
-                  },
-                }}
-              >
-                <CardActionArea
-                  onClick={() => handleSelect(card.key)}
-                  sx={{ height: '100%' }}
+                    '&:active': {
+                      transform: 'translateY(-4px) scale(0.985)',
+                    },
+                  }}
+                  onMouseEnter={() => handleHover(card.key, true)}
+                  onMouseLeave={() => handleHover(card.key, false)}
                 >
-                  {/* Image */}
-                  <Box
-                    sx={{
-                      position: 'relative',
-                      width: '100%',
-                      height: { xs: 235, sm: 275, md: 320 },
-                      overflow: 'hidden',
-                      bgcolor: '#111827',
-                    }}
+                  <CardActionArea
+                    onClick={() => handleSelect(card.key)}
+                    sx={{ height: '100%' }}
                   >
+                    {/* 3D rig stage */}
                     <Box
-                      component="img"
-                      className="machine-img"
-                      src={card.image}
-                      alt={card.title}
                       sx={{
+                        position: 'relative',
                         width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                        display: 'block',
-                        transition: 'transform 0.55s cubic-bezier(0.22, 1, 0.36, 1)',
-                      }}
-                    />
-
-                    <Box
-                      sx={{
-                        position: 'absolute',
-                        inset: 0,
-                        background:
-                          'linear-gradient(to top, rgba(7,12,22,0.85) 0%, rgba(7,12,22,0.10) 45%, rgba(7,12,22,0) 70%)',
-                        pointerEvents: 'none',
-                      }}
-                    />
-
-                    {/* Index number */}
-                    <Typography
-                      sx={{
-                        position: 'absolute',
-                        top: 14,
-                        right: 18,
-
-                        color: 'rgba(255,255,255,0.28)',
-                        fontWeight: 800,
-                        fontSize: { xs: '1.6rem', sm: '2rem' },
-                        letterSpacing: '0.05em',
-                      }}
-                    >
-                      {card.index}
-                    </Typography>
-
-                    {/* Label pill */}
-                    <Box
-                      sx={{
-                        position: 'absolute',
-                        left: { xs: 16, sm: 20 },
-                        bottom: { xs: 16, sm: 18 },
-
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1,
-
-                        px: { xs: 1.6, sm: 1.9 },
-                        py: { xs: 0.75, sm: 0.95 },
-                        borderRadius: '11px',
-
-                        bgcolor: card.color,
-                        color: '#fff',
-                        fontWeight: 800,
-                        fontSize: { xs: '0.74rem', sm: '0.84rem' },
-                        letterSpacing: '0.05em',
-
-                        boxShadow: `0 6px 18px ${card.color}66`,
+                        height: { xs: 235, sm: 275, md: 320 },
+                        overflow: 'hidden',
+                        bgcolor: '#0a1120',
                       }}
                     >
                       <Box
+                        component="canvas"
+                        ref={(el) => (canvasRefs.current[card.key] = el)}
                         sx={{
-                          width: 7,
-                          height: 7,
-                          borderRadius: '50%',
-                          bgcolor: '#fff',
-                          flexShrink: 0,
-                          boxShadow: `0 0 0 3px ${card.color}55`,
+                          width: '100%',
+                          height: '100%',
+                          display: 'block',
+                          touchAction: 'none',
+                          cursor: 'grab',
+                          '&:active': { cursor: 'grabbing' },
                         }}
                       />
-                      {card.title}
-                    </Box>
-                  </Box>
-
-                  {/* Body */}
-                  <Box sx={{ p: { xs: 2.2, sm: 2.6 } }}>
-                    <Stack
-                      direction="row"
-                      alignItems="center"
-                      justifyContent="space-between"
-                      sx={{ mb: 0.5 }}
-                    >
-                      <Typography
-                        sx={{
-                          color: card.color,
-                          fontWeight: 700,
-                          fontSize: { xs: '0.66rem', sm: '0.7rem' },
-                          letterSpacing: '0.18em',
-                          textTransform: 'uppercase',
-                        }}
-                      >
-                        {card.tagline}
-                      </Typography>
 
                       <Box
                         sx={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: '50%',
+                          position: 'absolute',
+                          inset: 0,
+                          background:
+                            'linear-gradient(to top, rgba(7,12,22,0.55) 0%, rgba(7,12,22,0) 42%)',
+                          pointerEvents: 'none',
+                        }}
+                      />
+
+                      {/* Index number */}
+                      <Typography
+                        sx={{
+                          position: 'absolute',
+                          top: 14,
+                          right: 18,
+
+                          color: 'rgba(255,255,255,0.28)',
+                          fontWeight: 800,
+                          fontSize: { xs: '1.6rem', sm: '2rem' },
+                          letterSpacing: '0.05em',
+                          pointerEvents: 'none',
+                        }}
+                      >
+                        {card.index}
+                      </Typography>
+
+                      {/* Drag hint */}
+                      <Stack
+                        direction="row"
+                        alignItems="center"
+                        spacing={0.7}
+                        sx={{
+                          position: 'absolute',
+                          top: 14,
+                          left: 16,
+
+                          opacity: hintVisible[card.key] ? 1 : 0,
+                          transition: 'opacity 0.7s ease',
+                          pointerEvents: 'none',
+
+                          color: 'rgba(255,255,255,0.42)',
+                          fontWeight: 600,
+                          fontSize: '0.55rem',
+                          letterSpacing: '0.24em',
+                        }}
+                      >
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
+                          <path
+                            d="M21 12a9 9 0 1 1-3.2-6.9M21 3v5.5h-5.5"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                        <span>DRAG · ROTATE</span>
+                      </Stack>
+
+                      {/* Last used badge */}
+                      {lastUsed === card.key && (
+                        <Box
+                          sx={{
+                            position: 'absolute',
+                            bottom: 18,
+                            right: 16,
+
+                            color: machineCfg.lt,
+                            border: `1px solid ${machineCfg.cb}`,
+                            bgcolor: 'rgba(0,0,0,0.4)',
+
+                            fontWeight: 600,
+                            fontSize: '0.5rem',
+                            letterSpacing: '0.2em',
+                            px: 1.1,
+                            py: 0.5,
+                            borderRadius: '7px',
+                            pointerEvents: 'none',
+                          }}
+                        >
+                          LAST USED
+                        </Box>
+                      )}
+
+                      {/* Label pill */}
+                      <Box
+                        sx={{
+                          position: 'absolute',
+                          left: { xs: 16, sm: 20 },
+                          bottom: { xs: 16, sm: 18 },
+
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 1,
+
+                          px: { xs: 1.6, sm: 1.9 },
+                          py: { xs: 0.75, sm: 0.95 },
+                          borderRadius: '11px',
+
                           bgcolor: card.color,
-                          boxShadow: `0 0 0 4px ${card.color}26`,
+                          color: '#fff',
+                          fontWeight: 800,
+                          fontSize: { xs: '0.74rem', sm: '0.84rem' },
+                          letterSpacing: '0.05em',
+
+                          boxShadow: `0 6px 18px ${card.color}66`,
+                          pointerEvents: 'none',
                         }}
-                      />
-                    </Stack>
+                      >
+                        <Box
+                          sx={{
+                            width: 7,
+                            height: 7,
+                            borderRadius: '50%',
+                            bgcolor: '#fff',
+                            flexShrink: 0,
+                            boxShadow: `0 0 0 3px ${card.color}55`,
+                          }}
+                        />
+                        {card.title}
+                      </Box>
+                    </Box>
 
-                    <Typography
-                      sx={{
-                        color: 'rgba(255,255,255,0.62)',
-                        fontSize: { xs: '0.84rem', sm: '0.9rem' },
-                        fontWeight: 500,
-                        lineHeight: 1.55,
-                      }}
-                    >
-                      {card.desc}
-                    </Typography>
+                    {/* Body */}
+                    <Box sx={{ p: { xs: 2.2, sm: 2.6 } }}>
+                      <Stack
+                        direction="row"
+                        alignItems="center"
+                        justifyContent="space-between"
+                        sx={{ mb: 0.5 }}
+                      >
+                        <Typography
+                          sx={{
+                            color: card.color,
+                            fontWeight: 700,
+                            fontSize: { xs: '0.66rem', sm: '0.7rem' },
+                            letterSpacing: '0.18em',
+                            textTransform: 'uppercase',
+                          }}
+                        >
+                          {card.tagline}
+                        </Typography>
 
-                    <Stack
-                      direction="row"
-                      alignItems="center"
-                      justifyContent="space-between"
-                      sx={{
-                        mt: 2.2,
-                        pt: 2,
-                        borderTop: '1px dashed rgba(255,255,255,0.14)',
-                      }}
-                    >
+                        <Box
+                          sx={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: '50%',
+                            bgcolor: card.color,
+                            boxShadow: `0 0 0 4px ${card.color}26`,
+                          }}
+                        />
+                      </Stack>
+
                       <Typography
                         sx={{
-                          color: 'rgba(255,255,255,0.45)',
-                          fontWeight: 700,
-                          fontSize: '0.68rem',
-                          letterSpacing: '0.2em',
+                          color: 'rgba(255,255,255,0.62)',
+                          fontSize: { xs: '0.84rem', sm: '0.9rem' },
+                          fontWeight: 500,
+                          lineHeight: 1.55,
                         }}
                       >
-                        TAP TO CONTINUE
+                        {card.desc}
                       </Typography>
 
-                      <svg
-                        className="machine-arrow"
-                        width="20"
-                        height="20"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        style={{
-                          transition: 'transform 0.3s ease',
-                          flexShrink: 0,
+                      <Stack
+                        direction="row"
+                        alignItems="center"
+                        justifyContent="space-between"
+                        sx={{
+                          mt: 2.2,
+                          pt: 2,
+                          borderTop: '1px dashed rgba(255,255,255,0.14)',
                         }}
                       >
-                        <path
-                          d="M5 12h13M13 6l6 6-6 6"
-                          stroke={card.color}
-                          strokeWidth="2.2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    </Stack>
-                  </Box>
-                </CardActionArea>
-              </Card>
-            ))}
+                        <Typography
+                          sx={{
+                            color: 'rgba(255,255,255,0.45)',
+                            fontWeight: 700,
+                            fontSize: '0.68rem',
+                            letterSpacing: '0.2em',
+                          }}
+                        >
+                          TAP TO CONTINUE
+                        </Typography>
+
+                        <svg
+                          className="machine-arrow"
+                          width="20"
+                          height="20"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          style={{
+                            transition: 'transform 0.3s ease',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <path
+                            d="M5 12h13M13 6l6 6-6 6"
+                            stroke={card.color}
+                            strokeWidth="2.2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </Stack>
+                    </Box>
+                  </CardActionArea>
+                </Card>
+              );
+            })}
           </Stack>
 
           {/* Footer */}
