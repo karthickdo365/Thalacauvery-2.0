@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MACHINES, RigViewer, clamp } from './rig3d';
+import { MACHINES, RigViewer, clamp } from '../utils/rig3d';
 
 const TEAL = '#20bea5';
 const REDUCED = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
