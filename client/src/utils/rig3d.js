@@ -213,6 +213,13 @@ function palette(accent) {
       emissiveIntensity: 2.4,
       roughness: 0.3,
     }),
+
+    led: std({
+      color: accent,
+      emissive: accent,
+      emissiveIntensity: 0.7,
+      roughness: 0.35,
+    }),
   };
 }
 
@@ -848,6 +855,22 @@ function buildBigRig(accent) {
     )
   );
 
+  const statusLed = box(
+    0.12,
+    0.04,
+    0.04,
+    p.led
+  );
+
+  statusLed.position.set(
+    0.30,
+    0.08,
+    0.47
+  );
+
+  u.ledMat = p.led;
+  u.head.add(statusLed);
+
   for (const s of [-1, 1]) {
     const mo = cyl(
       0.15,
@@ -1293,6 +1316,22 @@ function buildSmallRig(accent) {
   hpl.position.y = -0.26;
 
   u.head.add(hpl);
+
+  const statusLed = box(
+    0.08,
+    0.035,
+    0.035,
+    p.led
+  );
+
+  statusLed.position.set(
+    0.10,
+    0.08,
+    0.23
+  );
+
+  u.ledMat = p.led;
+  u.head.add(statusLed);
 
   g.add(u.head);
 
@@ -2396,8 +2435,11 @@ export class RigViewer {
     /*
      * AUTOMATIC DRILLING
      *
-     * Starts immediately.
+     * Starts automatically as soon as this viewer is created.
      * Down -> bottom pause -> up -> repeat.
+     *
+     * The movement is continuous and does not require the user
+     * to press a button.
      */
     this.drill = {
       on: true,
@@ -2856,16 +2898,25 @@ export class RigViewer {
      *
      * Sharp repeating blink while drilling.
      */
-    const blink =
-      Math.sin(
-        t * 15
-      ) > 0;
+    /*
+     * INDUSTRIAL BEACON BLINK
+     *
+     * Automatic double-pulse while the drill is running.
+     * This is intentionally slower and more readable than a
+     * high-frequency sine wave, so it looks like a real warning beacon.
+     */
+    const beaconPhase = t % 1.35;
+
+    const beaconOn =
+      beaconPhase < 0.42 ||
+      (beaconPhase > 1.02 &&
+        beaconPhase < 1.12);
 
     u.beaconMat.emissiveIntensity =
       d.on
-        ? blink
-          ? 3.4
-          : 0.12
+        ? beaconOn
+          ? 4.2
+          : 0.08
         : 1 +
           Math.sin(
             t * 2.2
@@ -3000,6 +3051,22 @@ export class RigViewer {
 
     u.head.rotation.y =
       this._spin;
+
+    /*
+     * FEED-HEAD STATUS LED
+     */
+    if (u.ledMat) {
+      u.ledMat.emissiveIntensity =
+        d.on
+          ? 0.75 +
+            0.55 *
+              (0.5 +
+                0.5 *
+                  Math.sin(
+                    t * 7.5
+                  ))
+          : 0.7;
+    }
 
     /*
      * MOVE DRILL PIPE
