@@ -20,6 +20,7 @@ const MachineSelection = () => {
 
   const [hovered, setHovered] = useState(null);
   const [lastUsed, setLastUsed] = useState(null);
+  const [sceneError, setSceneError] = useState(false);
 
   /* ---- EXACT existing selection behavior (preserved) ---- */
   const handleSelect = useCallback(
@@ -43,18 +44,28 @@ const MachineSelection = () => {
   );
   selectRef.current = handleSelect;
 
-  /* ---- 3D forest scene lifecycle (created once, fully disposed) ---- */
+  /* ---- 3D forest scene lifecycle (created once, fully disposed) ----
+     If WebGL fails, the page and the clickable labels still work. */
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return undefined;
-    const viewer = new RigViewer({
-      canvas,
-      onHover: (key) => setHovered(key),
-      onSelect: (key) => selectRef.current(key),
-    });
-    viewerRef.current = viewer;
+    try {
+      const viewer = new RigViewer({
+        canvas,
+        onHover: (key) => setHovered(key),
+        onSelect: (key) => selectRef.current(key),
+      });
+      viewerRef.current = viewer;
+    } catch (e) {
+      viewerRef.current = null;
+      setSceneError(true);
+    }
     return () => {
-      viewer.dispose();
+      try {
+        if (viewerRef.current) viewerRef.current.dispose();
+      } catch (e) {
+        /* ignore disposal errors */
+      }
       viewerRef.current = null;
     };
   }, []);
@@ -67,7 +78,8 @@ const MachineSelection = () => {
     }
   }, []);
 
-  /* minimal floating site tag (not a card) — also tappable to select */
+  /* minimal floating site tag (no card/box) — always clickable,
+     guarantees navigation even if the 3D scene failed */
   const renderTag = (key) => {
     const m = MACHINES[key];
     const active = hovered === key;
@@ -78,8 +90,12 @@ const MachineSelection = () => {
         alignItems="center"
         spacing={0.9}
         role="button"
+        tabIndex={0}
         aria-label={`Select ${m.title}`}
         onClick={() => handleSelect(key)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSelect(key); }}
+        onMouseEnter={() => { try { viewerRef.current?.setHover(key); } catch (e) { /* ignore */ } }}
+        onMouseLeave={() => { try { viewerRef.current?.setHover(null); } catch (e) { /* ignore */ } }}
         sx={{
           position: 'absolute',
           top: { xs: 12, md: 18 },
@@ -103,7 +119,7 @@ const MachineSelection = () => {
             fontFamily: MONO, fontWeight: 600,
             fontSize: { xs: '.52rem', md: '.58rem' },
             letterSpacing: '.22em',
-            color: active ? m.lt : 'rgba(255,255,255,.6)',
+            color: active ? m.lt : 'rgba(255,255,255,.62)',
           }}
         >
           {`${m.idx} · ${m.title}${lastUsed === key ? ' · LAST USED' : ''}`}
@@ -174,9 +190,23 @@ const MachineSelection = () => {
           }}
         />
 
-        {/* corner site tags (clickable) */}
+        {/* corner site tags (always clickable — navigation fallback) */}
         {renderTag('big')}
         {renderTag('small')}
+
+        {sceneError && (
+          <Typography
+            sx={{
+              position: 'absolute', top: 64, left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 5, pointerEvents: 'none',
+              fontFamily: MONO, fontSize: '.58rem', letterSpacing: '.18em',
+              color: 'rgba(255,255,255,.6)', whiteSpace: 'nowrap',
+            }}
+          >
+            3D VIEW UNAVAILABLE — USE THE LABELS ABOVE TO SELECT A MACHINE
+          </Typography>
+        )}
 
         {/* usage hint */}
         <Typography

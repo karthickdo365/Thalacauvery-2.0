@@ -1,8 +1,9 @@
 /* ============================================================
-   THALACUVERY BOREWELL — 3D forest drilling site
+   THALACUVERY BOREWELL — full-screen 3D forest drilling site
    One scene: terrain, trees, bushes, grass, rocks,
-   BIG rig (left) + SMALL rig (right), hover drill story,
-   water discovery, camera, disposal. No React, no routing.
+   BIG rig (LEFT) + SMALL rig (RIGHT), hover drill story with
+   water strike, camera framing, error-safe loop, disposal.
+   Pure Three.js — no React, no routing.
    ============================================================ */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -35,7 +36,7 @@ export const MACHINES = {
     ringR: 4.2,
     waterDepth: 120,                              // ft (configurable)
     waterScale: 1.05,
-    raiseLambda: 2.6,
+    flowSec: 6,
     drill: { strokeFt: 28, rpm: 128, downSec: 3.6, upSec: 1.4 },
     specs: [
       ['MAX DEPTH', '1,500 FT'], ['BORE Ø', '6½″ – 12½″'],
@@ -53,7 +54,7 @@ export const MACHINES = {
     ringR: 2.9,
     waterDepth: 80,                               // ft (configurable)
     waterScale: 0.72,
-    raiseLambda: 2.6,
+    flowSec: 5,
     drill: { strokeFt: 9, rpm: 210, downSec: 2.8, upSec: 1.1 },
     specs: [
       ['MAX DEPTH', '350 FT'], ['BORE Ø', '4″ – 8″'],
@@ -379,7 +380,7 @@ function buildBigRig(accent) {
   const hz = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.5, 2.2), std({ map: stripeTex(), roughness: 0.7 }));
   hz.position.set(3.73, 1.16, 0); g.add(hz);
 
-  /* mast (folds / raises about the tower pivot) */
+  /* mast — vertical box truss */
   const mast = new THREE.Group(); mast.position.set(A, P, 0); g.add(mast);
   u.mast = mast;
   const RX = [-0.36, 0.36], RZ = [-0.42, 0.42];
@@ -440,7 +441,6 @@ function buildBigRig(accent) {
   /* tricone bit + guide collar + conductor hole */
   const tc = makeTricone(p, 1);
   tc.bit.position.set(0, u.bitTopLocal, 0); mast.add(tc.bit);
-  tc.bit.visible = false;
   u.bitGroup = tc.bit; u.cones = tc.cones;
 
   const collar = new THREE.Group(); collar.position.set(0, -3.32, 0); mast.add(collar);
@@ -450,7 +450,7 @@ function buildBigRig(accent) {
     collar.add(bar(V(-0.26, 0.25, zz), V(0.26, 0.25, zz), 0.05, p.dark));
     collar.add(bar(V(-0.26, -0.25, zz), V(0.26, -0.25, zz), 0.05, p.dark));
   }
-  u.collar = collar; collar.visible = false;
+  u.collar = collar;
 
   const hole = new THREE.Group(); hole.position.set(A, 0, 0); g.add(hole);
   const casing = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.55, 24, 1, true), p.hole);
@@ -459,7 +459,7 @@ function buildBigRig(accent) {
   floor.rotation.x = -Math.PI / 2; floor.position.y = 0.08; hole.add(floor);
   const hring = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.05, 10, 28), p.steel);
   hring.rotation.x = Math.PI / 2; hring.position.y = 0.55; hring.castShadow = true; hole.add(hring);
-  hole.visible = false; u.hole = hole;
+  u.hole = hole;
 
   /* dynamic rigging */
   u.cables = [];
@@ -603,12 +603,11 @@ function buildSmallRig(accent) {
 
   const tc = makeTricone(p, 0.62);
   tc.bit.position.set(PX, u.bitTopLocal, 0); mast.add(tc.bit);
-  tc.bit.visible = false;
   u.bitGroup = tc.bit; u.cones = tc.cones;
 
   const collar = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.045, 10, 18), p.dark);
   collar.rotation.x = Math.PI / 2; collar.position.set(PX, -1.8, 0); collar.castShadow = true;
-  mast.add(collar); u.collar = collar; collar.visible = false;
+  mast.add(collar); u.collar = collar;
 
   const hole = new THREE.Group(); hole.position.set(u.holeX, 0, 0); g.add(hole);
   const casing = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.34, 20, 1, true), p.hole);
@@ -617,7 +616,7 @@ function buildSmallRig(accent) {
   floor.rotation.x = -Math.PI / 2; floor.position.y = 0.05; hole.add(floor);
   const hring = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.04, 10, 24), p.steel);
   hring.rotation.x = Math.PI / 2; hring.position.y = 0.34; hring.castShadow = true; hole.add(hring);
-  hole.visible = false; u.hole = hole;
+  u.hole = hole;
 
   /* dynamic rigging */
   const cable = dynCyl(0.02, p.cable); mast.add(cable);
@@ -789,14 +788,13 @@ function buildTerrain() {
     group.add(rocks);
   }
 
-  /* forest — instanced trunks + foliage blobs, dense at the edges,
-     clear corridor toward the camera so the rigs stay visible */
+  /* forest — instanced trunks + foliage blobs, clear view corridor */
   {
     const tGeo = new THREE.CylinderGeometry(0.14, 0.24, 1, 7); tGeo.translate(0, 0.5, 0);
     const tMat = new THREE.MeshStandardMaterial({ color: 0x463322, roughness: 0.95, flatShading: true });
     const fGeo = new THREE.IcosahedronGeometry(1, 0);
     const fMat = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, flatShading: true });
-    const TREES = 26;
+    const TREES = 28;
     const treePts = scatter(TREES, 13, 56, (x, z) => !(z > 6 && Math.abs(x) < 27));
     const trunkMesh = new THREE.InstancedMesh(tGeo, tMat, TREES);
     const foliage = new THREE.InstancedMesh(fGeo, fMat, TREES * 3);
@@ -831,7 +829,7 @@ function buildTerrain() {
     group.add(trunkMesh, foliage);
   }
 
-  /* distant hills (silhouettes) */
+  /* distant hills (forest-edge silhouettes) */
   {
     const hGeo = new THREE.DodecahedronGeometry(1, 0);
     const hMat = new THREE.MeshStandardMaterial({ color: 0x1c2f23, roughness: 1, flatShading: true });
@@ -912,7 +910,7 @@ class Dust {
 
 class Smoke {
   constructor(parent, anchor) {
-    this.anchor = anchor; this.pool = []; this.acc = 0; this.rate = 0.35;
+    this.anchor = anchor; this.pool = []; this.acc = 0; this.rate = 0.45;
     const geo = new THREE.SphereGeometry(1, 8, 6);
     for (let i = 0; i < 14; i++) {
       const mm = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
@@ -1121,8 +1119,9 @@ class WaterJet {
 
 /* ============================================================
    MachineUnit — hover story:
-   idle → rig up → drill down → dust → trip up → water strike
-   Leaving the machine at ANY point resets everything.
+   idle (rigged, ready) → drill down + dust → water erupts at
+   the borehole → rod trips back up → water flows → subsides.
+   Leaving the machine at ANY point gracefully resets it.
    ============================================================ */
 class MachineUnit {
   constructor(viewer, key) {
@@ -1169,15 +1168,21 @@ class MachineUnit {
     this.ripple = new Ripple(this.root, u.holeX, 0.34, 0x8a7a5e);
     this.water = new WaterJet(this.root, u.holeX, cfg.waterScale);
 
-    /* state */
-    this.state = 'idle';       // idle | rigging | drilling | water
+    /* fully rigged + ready from the first frame (machine always visible) */
+    this.state = 'idle';          // idle | drilling | tripping | flowing | recover
     this.autoDrill = false;
-    this.mastAngle = u.stow; this.mastTarget = u.stow;
-    this.locked = false; this.ready = false; this.pipeRun = 0;
-    this.bitLocal = u.headTopLocal - u.headOff - 0.55;
+    this.mastAngle = 0; this.mastTarget = 0;
+    this.locked = true; this.ready = true; this.pipeRun = 1;
+    this.bitLocal = u.bitTopLocal;
     this.drill = { phase: 'idle', head: u.headTopLocal, wait: 0 };
-    this.depthFt = 0; this.waterFound = false;
-    this._spin = 0; this._lastHead = u.headTopLocal; this._lastAngle = u.stow;
+    this.depthFt = 0; this.waterFound = false; this.flowT = 0;
+    u.bitGroup.visible = true;
+    u.collar.visible = true;
+    u.hole.visible = true;
+    this.smoke.burst(2);
+    this.flash = 0.5;             // gentle startup pulse
+    this._spin = Math.random() * 6;
+    this._lastHead = u.headTopLocal; this._lastAngle = 0;
     this._dustAcc = 0; this._rippleAcc = 0;
   }
 
@@ -1186,49 +1191,46 @@ class MachineUnit {
     this.hoverT = on ? 1 : 0;
     if (on) {
       this.autoDrill = true;
-      if (this.state === 'idle') { this.state = 'rigging'; this.mastTarget = 0; }
+      if (this.state === 'idle') { this.state = 'drilling'; this.drill.phase = 'down'; }
     } else {
       this.autoDrill = false;
-      if (this.state !== 'idle') {
-        this.state = 'idle';
-        this.mastTarget = this.u.stow;
-        this.drill.phase = 'idle';
-        this.drill.head = this.u.headTopLocal;
-        this.depthFt = 0;
-        if (this.waterFound) { this.waterFound = false; this.water.subside(); }
+      if (this.state === 'drilling' || this.state === 'tripping' || this.state === 'flowing') {
+        if (this.waterFound) this.water.subside();
+        this.state = 'recover';                 // rod glides back up, then idle
       }
     }
   }
   powerFlash() {
-    this.flash = 1; this.mastTarget = 0;
+    this.flash = 1;
     this.dust.burst(14); this.smoke.burst(4);
   }
   startDrill() {
     this.autoDrill = true;
-    if (this.state === 'idle') { this.state = 'rigging'; this.mastTarget = 0; }
+    if (this.state === 'idle') { this.state = 'drilling'; this.drill.phase = 'down'; }
   }
   stopDrill() {
     this.autoDrill = false;
-    if (this.state === 'drilling' && this.drill.phase !== 'up') this.drill.phase = 'up';
+    if (this.state === 'drilling' || this.state === 'tripping') {
+      if (this.waterFound) this.water.subside();
+      this.state = 'recover';
+    }
   }
   drillDepth() { return this.depthFt; }
   showWaterDiscovery() {
-    this.mastTarget = 0;
-    if (this.state !== 'water') {
-      this.state = 'water'; this.waterFound = true; this.autoDrill = false;
-      this.locked = true; this.ready = true; this.pipeRun = 1;
-      this.drill.phase = 'idle'; this.drill.head = this.u.headTopLocal;
+    if (this.state !== 'flowing') {
+      this.drill.phase = 'idle';
+      this.drill.head = this.u.headTopLocal;
       this.bitLocal = this.u.bitTopLocal;
-      this.u.bitGroup.visible = true;
-      this.u.collar.visible = true;
-      this.u.hole.visible = true;
+      this.depthFt = this.cfg.waterDepth;
+      this.waterFound = true;
       this.water.erupt();
+      this.state = 'flowing'; this.flowT = 0;
     }
   }
   startWaterEffect() { this.showWaterDiscovery(); }
   stopWaterEffect() {
     if (this.waterFound) { this.waterFound = false; this.water.subside(); }
-    if (this.state === 'water') this.state = 'idle';
+    if (this.state === 'flowing') { this.state = 'idle'; this.depthFt = 0; }
   }
 
   _updateHose(u) {
@@ -1258,78 +1260,68 @@ class MachineUnit {
     this.hover += (this.hoverT - this.hover) * Math.min(1, dt * 6);
     this.flash *= Math.exp(-dt * 2.6);
 
-    /* mast rig-up / fold */
-    const lam = REDUCED ? 18 : cfg.raiseLambda;
-    this.mastAngle = THREE.MathUtils.damp(this.mastAngle, this.mastTarget, lam, dt);
+    /* mast stays vertical (machines are always fully visible) */
     u.mast.rotation.z = this.mastAngle;
-    this.rigging = Math.abs(this.mastAngle - this.mastTarget) > 0.03;
 
-    if (this.mastTarget === 0) {
-      if (!this.locked && this.mastAngle < 0.06) {
-        this.locked = true; this.pipeRun = 0; this.smoke.burst(3);
-      }
-      if (this.locked && !this.ready) {
-        this.pipeRun = Math.min(1, this.pipeRun + dt / 0.7);
-        const e = 1 - Math.pow(1 - this.pipeRun, 3);
-        this.bitLocal = lerp(u.headTopLocal - u.headOff - 0.55, u.bitTopLocal, e);
-        u.bitGroup.visible = this.pipeRun > 0.4;
-        u.collar.visible = this.pipeRun > 0.3;
-        u.hole.visible = this.pipeRun > 0.25;
-        if (this.pipeRun >= 1) {
-          this.ready = true;
-          if (this.autoDrill && this.state === 'rigging') { this.state = 'drilling'; d.phase = 'down'; }
-        }
-      }
-    } else {
-      if (this.mastAngle > u.stow * 0.6) {
-        this.locked = false; this.ready = false; this.pipeRun = 0;
-        if (this.state !== 'idle') this.state = 'idle';
-      }
-      this.bitLocal = u.headTopLocal - u.headOff - 0.55;
-      u.bitGroup.visible = false; u.collar.visible = false; u.hole.visible = false;
-    }
-
-    /* scripted drill stroke: down → hold → trip back up → water */
+    /* ---- scripted hover story ---- */
     const span = u.headTopLocal - u.headLowLocal;
-    if (this.state === 'drilling') {
-      if (d.phase === 'down') {
-        d.head -= span * dt / cfg.drill.downSec;
-        const pr = clamp((u.headTopLocal - d.head) / span, 0, 1);
-        this.depthFt = cfg.waterDepth * pr;
-        this.bitLocal = lerp(u.bitTopLocal, u.bitDeepLocal, pr);
-        this._dustAcc += dt * 22;
-        while (this._dustAcc > 1) { this._dustAcc -= 1; this.dust.burst(1); }
-        this._rippleAcc += dt;
-        if (this._rippleAcc > 0.5) { this._rippleAcc = 0; this.ripple.emit(); }
-        if (d.head <= u.headLowLocal) {
-          d.head = u.headLowLocal;
-          this.bitLocal = u.bitDeepLocal;
-          this.depthFt = cfg.waterDepth;
-          d.phase = 'bottom'; d.wait = 0.55;
-          this.dust.burst(16);
-        }
-      } else if (d.phase === 'bottom') {
-        d.wait -= dt;
-        if (d.wait <= 0) d.phase = 'up';
-      } else if (d.phase === 'up') {
-        d.head += span * dt / cfg.drill.upSec;
-        const pr = clamp((d.head - u.headLowLocal) / span, 0, 1);
-        this.bitLocal = lerp(u.bitDeepLocal, u.bitTopLocal, pr);
-        this._dustAcc += dt * 6;
-        while (this._dustAcc > 1) { this._dustAcc -= 1; this.dust.burst(1); }
-        if (d.head >= u.headTopLocal) {
-          d.head = u.headTopLocal;
-          this.bitLocal = u.bitTopLocal;
-          d.phase = 'idle';
-          this.state = 'water';
-          this.waterFound = true;
-          this.water.erupt();
-        }
+
+    if (this.state === 'drilling') {                 // rod descends, dust, vibration
+      d.head -= span * dt / cfg.drill.downSec;
+      const pr = clamp((u.headTopLocal - d.head) / span, 0, 1);
+      this.depthFt = cfg.waterDepth * pr;
+      this.bitLocal = lerp(u.bitTopLocal, u.bitDeepLocal, pr);
+      this._dustAcc += dt * 22;
+      while (this._dustAcc > 1) { this._dustAcc -= 1; this.dust.burst(1); }
+      this._rippleAcc += dt;
+      if (this._rippleAcc > 0.5) { this._rippleAcc = 0; this.ripple.emit(); }
+      if (d.head <= u.headLowLocal) {
+        d.head = u.headLowLocal;
+        this.bitLocal = u.bitDeepLocal;
+        this.depthFt = cfg.waterDepth;
+        this.waterFound = true;
+        this.water.erupt();                          // water strikes the borehole
+        this.dust.burst(18);
+        d.phase = 'up';
+        this.state = 'tripping';
+      }
+    } else if (this.state === 'tripping') {          // rod returns up while water flows
+      d.head += span * dt / cfg.drill.upSec;
+      const pr = clamp((d.head - u.headLowLocal) / span, 0, 1);
+      this.bitLocal = lerp(u.bitDeepLocal, u.bitTopLocal, pr);
+      this._dustAcc += dt * 6;
+      while (this._dustAcc > 1) { this._dustAcc -= 1; this.dust.burst(1); }
+      if (d.head >= u.headTopLocal) {
+        d.head = u.headTopLocal;
+        this.bitLocal = u.bitTopLocal;
+        d.phase = 'idle';
+        this.state = 'flowing'; this.flowT = 0;
+      }
+    } else if (this.state === 'flowing') {           // water flows, then gently stops
+      this.flowT += dt;
+      if (this.flowT > cfg.flowSec) {
+        this.water.subside();
+        this.waterFound = false;
+        this.depthFt = 0;
+        this.state = 'idle';
+      }
+    } else if (this.state === 'recover') {           // mouse left → reset gracefully
+      d.head += span * dt / Math.max(0.8, cfg.drill.upSec * 0.8);
+      const pr = clamp((d.head - u.headLowLocal) / span, 0, 1);
+      this.bitLocal = lerp(u.bitDeepLocal, u.bitTopLocal, pr);
+      if (d.head >= u.headTopLocal) {
+        d.head = u.headTopLocal;
+        this.bitLocal = u.bitTopLocal;
+        d.phase = 'idle';
+        this.depthFt = 0;
+        this.waterFound = false;
+        this.state = this.autoDrill ? 'drilling' : 'idle';
+        if (this.state === 'drilling') d.phase = 'down';
       }
     }
 
     /* head / kelly / bit */
-    const vib = (this.state === 'drilling' && d.phase !== 'up');
+    const vib = this.state === 'drilling';
     const wob = vib ? Math.sin(t * 31) * 0.02 : 0;
     u.head.position.y = d.head + wob;
     const pipeTop = d.head - u.headOff;
@@ -1337,22 +1329,22 @@ class MachineUnit {
     u.pipe.scale.y = Math.max(0.02, pipeTop - this.bitLocal);
     u.bitGroup.position.y = this.bitLocal;
 
-    const spinMul = this.state === 'drilling'
-      ? (d.phase === 'up' ? 0.3 : 1)
-      : (this.state === 'water' ? 0.15 : 0.1);
+    const spinMul = this.state === 'drilling' ? 1
+      : this.state === 'tripping' ? 0.3
+      : this.state === 'flowing' ? 0.15 : 0.08;
     const spinRate = spinMul * cfg.drill.rpm * 0.105 + this.flash * 22;
     this._spin += spinRate * dt;
     u.pipe.rotation.y = this._spin;
     u.bitGroup.rotation.y = this._spin * 1.7;
-    for (const cn of u.cones) cn.rotation.y += dt * (this.state === 'drilling' ? 9 : 1.2);
+    for (const cn of u.cones) cn.rotation.y += dt * (vib ? 9 : 1.2);
 
     /* dynamic rigging */
     for (const cb of u.cables) updateBar(cb.mesh, cb.from, _b.copy(u.head.position).add(cb.off));
     for (const f of u.feed) updateBar(f.mesh, f.from, _b.copy(u.head.position).add(f.off));
-    const dHead = d.head - this._lastHead, dAng = this.mastAngle - this._lastAngle;
-    this._lastHead = d.head; this._lastAngle = this.mastAngle;
-    if (u.drum) u.drum.rotation.y += dHead * 6 + dAng * 3;
-    for (const s of u.sheaves) s.rotation.y += dHead * 5 + dAng * 2.5;
+    const dHead = d.head - this._lastHead;
+    this._lastHead = d.head;
+    if (u.drum) u.drum.rotation.y += dHead * 6;
+    for (const s of u.sheaves) s.rotation.y += dHead * 5;
 
     /* vibration */
     this.rig.position.set(Math.sin(t * 53) * 0.013 * (vib ? 1 : 0), Math.sin(t * 47) * 0.011 * (vib ? 1 : 0), 0);
@@ -1372,7 +1364,6 @@ class MachineUnit {
     const bm = u.beaconMat;
     if (this.waterFound) bm.emissiveIntensity = Math.sin(t * 16) > 0 ? 3.6 : 0.15;
     else if (this.state === 'drilling') bm.emissiveIntensity = Math.sin(t * 15) > 0 ? 3.4 : 0.15;
-    else if (this.rigging) bm.emissiveIntensity = Math.sin(t * 12) > 0 ? 3 : 0.15;
     else bm.emissiveIntensity = 1 + Math.sin(t * 2.2) * 0.7 + this.flash * 3;
     if (u.ledMat) u.ledMat.emissiveIntensity = this.state === 'drilling' ? 1.6 + Math.sin(t * 9) * 0.8 : 0.7;
     if (u.cabLight) u.cabLight.intensity = 1.6 + (this.state === 'drilling' ? 2.2 : 0) + this.flash * 4;
@@ -1384,7 +1375,9 @@ class MachineUnit {
     this.light.intensity = 26 * this.hover + 80 * this.flash;
 
     /* effects */
-    this.smoke.rate = this.state === 'drilling' ? 4 : this.rigging ? 2.8 : this.hoverT > 0 ? 1.6 : 0.3;
+    this.smoke.rate = this.state === 'drilling' ? 4
+      : this.state === 'flowing' ? 2
+      : this.hoverT > 0 ? 1.4 : 0.45;
     if (this.flash > 0.2) this.smoke.rate += 6;
     this.smoke.update(dt, t);
     this.dust.update(dt);
@@ -1394,8 +1387,8 @@ class MachineUnit {
 }
 
 /* ============================================================
-   RigViewer — ONE forest scene, both machines, camera, hover,
-   click, floating machine label, disposal
+   RigViewer — ONE forest scene, both machines, camera,
+   hover/click, floating label, error-safe loop, disposal
    ============================================================ */
 export class RigViewer {
   constructor({ canvas, onHover, onSelect }) {
@@ -1410,6 +1403,7 @@ export class RigViewer {
     this._bound = [];
     this._labelEl = null; this._labelSub = null;
 
+    /* renderer — attached to the provided canvas (renderer.domElement === canvas) */
     const r = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     const smallScreen = Math.min(window.screen.width, window.screen.height) < 720;
     r.setPixelRatio(Math.min(window.devicePixelRatio || 1, smallScreen ? 1.75 : 2));
@@ -1420,7 +1414,7 @@ export class RigViewer {
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0d1f22);
-    this.scene.fog = new THREE.Fog(0x152b28, 85, 230);   // forest-at-dusk haze
+    this.scene.fog = new THREE.Fog(0x152b28, 85, 230);
 
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.5, 1200);
     this.camera.position.set(26, 21, 44);
@@ -1433,7 +1427,7 @@ export class RigViewer {
     c.enableDamping = true; c.dampingFactor = 0.07;
     c.enablePan = false;
     c.minDistance = 20; c.maxDistance = 150;
-    c.minPolarAngle = 0.18; c.maxPolarAngle = 1.36;      // never under the terrain
+    c.minPolarAngle = 0.18; c.maxPolarAngle = 1.36;   // never under the terrain
     c.autoRotate = !REDUCED; c.autoRotateSpeed = 0.4;
     c.addEventListener('start', () => {
       this._userMoved = true;
@@ -1455,7 +1449,11 @@ export class RigViewer {
     this._ro = new ResizeObserver(() => this._resize());
     this._ro.observe(canvas.parentElement);
     this._resize();
+    this._retryTimer = setTimeout(() => { if (!this.disposed) this._resize(); }, 80);
     this._frame();
+
+    /* immediate first frame — scene is visible the moment the page loads */
+    if (this.w) this.renderer.render(this.scene, this.camera);
 
     this._loop = this._loop.bind(this);
     this._raf = requestAnimationFrame(this._loop);
@@ -1515,15 +1513,21 @@ export class RigViewer {
         if (Math.hypot(e.clientX - this._down.x, e.clientY - this._down.y) > 7) this._down.moved = true;
         return;
       }
-      this._setHover(this._pick(e.clientX, e.clientY));
+      try { this._setHover(this._pick(e.clientX, e.clientY)); }
+      catch (err) { /* hover must never break the page */ }
     });
     add('pointerleave', () => this._setHover(null));
     add('click', (e) => {
       if (this._down.moved) return;                 // that was a camera drag
-      const key = this._pick(e.clientX, e.clientY);
-      if (key) {
-        this.units[key].powerFlash();
-        if (this.onSelect) this.onSelect(key);      // React handles navigation
+      try {
+        const key = this._pick(e.clientX, e.clientY);
+        if (key) {
+          const u = this.units[key];
+          if (u) u.powerFlash();
+          if (this.onSelect) this.onSelect(key);    // React handles navigation
+        }
+      } catch (err) {
+        /* even if picking fails, navigation still works via the UI labels */
       }
     });
   }
@@ -1602,12 +1606,12 @@ export class RigViewer {
     if (!this._userMoved) this._frame();
   }
 
-  /* frame BOTH machines regardless of viewport shape */
+  /* auto-frame BOTH machines regardless of viewport shape */
   _frame() {
     if (!this.w || !this.h) return;
     const aspect = this.w / this.h;
     const tanV = Math.tan(THREE.MathUtils.degToRad(this.camera.fov * 0.5));
-    const dist = Math.max(21 / (tanV * aspect), 13.5 / tanV) * 1.05;
+    const dist = Math.max(19.5 / (tanV * aspect), 13.5 / tanV) * 1.02;
     const d = clamp(dist, this.controls.minDistance, this.controls.maxDistance);
     const dir = this.camera.position.clone().sub(this.controls.target);
     if (dir.lengthSq() < 0.25) dir.set(0.5, 0.42, 0.85);
@@ -1622,10 +1626,17 @@ export class RigViewer {
     const dt = Math.min(0.05, (now - this._last) / 1000);
     this._last = now;
     const t = now / 1000;
-    this.controls.update();
-    for (const k in this.units) this.units[k].update(dt, t);
-    if (this.w) this.renderer.render(this.scene, this.camera);
-    this._updateLabel();
+    try {
+      this.controls.update();
+      for (const k in this.units) {
+        try { this.units[k].update(dt, t); }
+        catch (err) { /* one machine failing must not kill the scene */ }
+      }
+      if (this.w) this.renderer.render(this.scene, this.camera);
+      this._updateLabel();
+    } catch (err) {
+      /* render error — the canvas click listeners (navigation) still work */
+    }
   }
 
   /* ---------- full disposal — no leaks on unmount ---------- */
@@ -1634,6 +1645,7 @@ export class RigViewer {
     this.disposed = true;
     cancelAnimationFrame(this._raf);
     if (this._autoTimer) { clearTimeout(this._autoTimer); this._autoTimer = null; }
+    if (this._retryTimer) { clearTimeout(this._retryTimer); this._retryTimer = null; }
     this._ro.disconnect();
     for (const [type, fn] of this._bound) this.canvas.removeEventListener(type, fn);
     this._bound.length = 0;
