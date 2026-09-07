@@ -15,6 +15,7 @@ const REDUCED =
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = THREE.MathUtils.lerp;
+const damp = THREE.MathUtils.damp;
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -329,112 +330,27 @@ function palette(accent) {
   const c = new THREE.Color(accent);
 
   return {
-    body: std({
-      color: c,
-      metalness: 0.22,
-      roughness: 0.55,
-    }),
-
-    bodyDark: std({
-      color: c.clone().multiplyScalar(0.45),
-      metalness: 0.3,
-      roughness: 0.6,
-    }),
-
-    steel: std({
-      color: 0x8d97a4,
-      metalness: 0.45,
-      roughness: 0.45,
-    }),
-
-    dark: std({
-      color: 0x2a313c,
-      metalness: 0.35,
-      roughness: 0.65,
-    }),
-
-    tire: std({
-      color: 0x16181d,
-      metalness: 0.02,
-      roughness: 0.95,
-    }),
-
-    glass: std({
-      color: 0x11202e,
-      metalness: 0.4,
-      roughness: 0.2,
-      transparent: true,
-      opacity: 0.68,
-    }),
-
-    pipe: std({
-      color: 0xb9c2cc,
-      metalness: 0.5,
-      roughness: 0.35,
-    }),
-
-    cable: std({
-      color: 0x232a35,
-      metalness: 0.4,
-      roughness: 0.6,
-    }),
-
-    beacon: std({
-      color: 0x552f06,
-      emissive: 0xffb020,
-      emissiveIntensity: 1.2,
-      roughness: 0.45,
-    }),
-
-    lamp: std({
-      color: 0x0e1c28,
-      emissive: 0xd9edff,
-      emissiveIntensity: 2,
-      roughness: 0.3,
-    }),
-
-    led: std({
-      color: 0x0a2018,
-      emissive: accent,
-      emissiveIntensity: 0.7,
-      roughness: 0.35,
-    }),
-
-    amber: std({
-      color: 0x3a2405,
-      emissive: 0xffa733,
-      emissiveIntensity: 1.3,
-      roughness: 0.4,
-    }),
-
-    red: std({
-      color: 0x2a0805,
-      emissive: 0xff3b30,
-      emissiveIntensity: 1.4,
-      roughness: 0.4,
-    }),
-
-    hole: std({
-      color: 0x05070a,
-      roughness: 1,
-      metalness: 0,
-      side: THREE.DoubleSide,
-    }),
+    body: std({ color: c, metalness: 0.22, roughness: 0.55 }),
+    bodyDark: std({ color: c.clone().multiplyScalar(0.45), metalness: 0.3, roughness: 0.6 }),
+    steel: std({ color: 0x8d97a4, metalness: 0.45, roughness: 0.45 }),
+    dark: std({ color: 0x2a313c, metalness: 0.35, roughness: 0.65 }),
+    tire: std({ color: 0x16181d, metalness: 0.02, roughness: 0.95 }),
+    glass: std({ color: 0x11202e, metalness: 0.4, roughness: 0.2, transparent: true, opacity: 0.68 }),
+    pipe: std({ color: 0xb9c2cc, metalness: 0.5, roughness: 0.35 }),
+    cable: std({ color: 0x232a35, metalness: 0.4, roughness: 0.6 }),
+    beacon: std({ color: 0x552f06, emissive: 0xffb020, emissiveIntensity: 1.2, roughness: 0.45 }),
+    lamp: std({ color: 0x0e1c28, emissive: 0xd9edff, emissiveIntensity: 2, roughness: 0.3 }),
+    led: std({ color: 0x0a2018, emissive: accent, emissiveIntensity: 0.7, roughness: 0.35 }),
+    amber: std({ color: 0x3a2405, emissive: 0xffa733, emissiveIntensity: 1.3, roughness: 0.4 }),
+    red: std({ color: 0x2a0805, emissive: 0xff3b30, emissiveIntensity: 1.4, roughness: 0.4 }),
+    hole: std({ color: 0x05070a, roughness: 1, metalness: 0, side: THREE.DoubleSide }),
   };
 }
 
 function makeTricone(p, s) {
   const bit = new THREE.Group();
 
-  bit.add(
-    cyl(
-      0.17 * s,
-      0.17 * s,
-      0.24 * s,
-      p.steel,
-      12
-    )
-  );
+  bit.add(cyl(0.17 * s, 0.17 * s, 0.24 * s, p.steel, 12));
 
   const cones = [];
 
@@ -442,20 +358,13 @@ function makeTricone(p, s) {
     const az = (i / 3) * Math.PI * 2;
     const cg = new THREE.Group();
 
-    cg.position.set(
-      Math.cos(az) * 0.11 * s,
-      -0.1 * s,
-      Math.sin(az) * 0.11 * s
-    );
+    cg.position.set(Math.cos(az) * 0.11 * s, -0.1 * s, Math.sin(az) * 0.11 * s);
 
     cg.rotation.order = 'YZX';
     cg.rotation.y = -az;
     cg.rotation.z = -0.5;
 
-    const cone = new THREE.Mesh(
-      new THREE.ConeGeometry(0.13 * s, 0.3 * s, 10),
-      p.steel
-    );
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.13 * s, 0.3 * s, 10), p.steel);
 
     cone.castShadow = true;
     cone.rotation.x = Math.PI;
@@ -463,18 +372,9 @@ function makeTricone(p, s) {
     for (let t = 0; t < 3; t++) {
       const ta = (t / 3) * Math.PI * 2;
 
-      const tooth = box(
-        0.05 * s,
-        0.06 * s,
-        0.05 * s,
-        p.dark
-      );
+      const tooth = box(0.05 * s, 0.06 * s, 0.05 * s, p.dark);
 
-      tooth.position.set(
-        Math.cos(ta) * 0.085 * s,
-        -0.04 * s,
-        Math.sin(ta) * 0.085 * s
-      );
+      tooth.position.set(Math.cos(ta) * 0.085 * s, -0.04 * s, Math.sin(ta) * 0.085 * s);
 
       cone.add(tooth);
     }
@@ -505,7 +405,6 @@ function buildBigRig(accent) {
   u.bitDeepLocal = -4.15;
   u.holeX = A;
 
-  /* carrier */
   const chassis = box(7.4, 0.5, 2.5, p.dark);
   chassis.position.set(0, 1.16, 0);
   g.add(chassis);
@@ -514,7 +413,6 @@ function buildBigRig(accent) {
   deck.position.set(1.1, 1.5, 0);
   g.add(deck);
 
-  /* operator cab */
   const cab = box(2.0, 1.7, 2.3, p.body);
   cab.position.set(-2.55, 2.27, 0);
   g.add(cab);
@@ -536,14 +434,7 @@ function buildBigRig(accent) {
   g.add(bumper);
 
   for (const z of [-0.5, 0, 0.5]) {
-    g.add(
-      bar(
-        V(-3.68, 1.72, z),
-        V(-3.68, 2.26, z),
-        0.05,
-        p.dark
-      )
-    );
+    g.add(bar(V(-3.68, 1.72, z), V(-3.68, 2.26, z), 0.05, p.dark));
   }
 
   for (const s of [-1, 1]) {
@@ -564,14 +455,7 @@ function buildBigRig(accent) {
     ml.position.set(-2.9, 3.16, s * 0.85);
     g.add(ml);
 
-    g.add(
-      bar(
-        V(-3.45, 2.85, s * 1.2),
-        V(-3.62, 3.16, s * 1.32),
-        0.03,
-        p.dark
-      )
-    );
+    g.add(bar(V(-3.45, 2.85, s * 1.2), V(-3.62, 3.16, s * 1.32), 0.03, p.dark));
 
     const mi = box(0.3, 0.22, 0.05, p.glass);
     mi.position.set(-3.64, 3.18, s * 1.33);
@@ -581,26 +465,13 @@ function buildBigRig(accent) {
     dh.position.set(-1.62, 2.1, s * 1.18);
     g.add(dh);
 
-    const lv = livery(
-      1.7,
-      0.465,
-      nameTex(accent, 'HEAVY-DUTY DRILLING')
-    );
-
+    const lv = livery(1.7, 0.465, nameTex(accent, 'HEAVY-DUTY DRILLING'));
     lv.position.set(-2.55, 2.02, s * 1.16);
-
     if (s < 0) lv.rotation.y = Math.PI;
-
     g.add(lv);
   }
 
-  const dashMat = std({
-    color: 0x0a0d12,
-    emissive: 0xffb545,
-    emissiveIntensity: 0.5,
-    roughness: 0.8,
-  });
-
+  const dashMat = std({ color: 0x0a0d12, emissive: 0xffb545, emissiveIntensity: 0.5, roughness: 0.8 });
   const dash = box(1.3, 0.5, 1.6, dashMat);
   dash.position.set(-2.85, 2.42, 0);
   g.add(dash);
@@ -613,18 +484,11 @@ function buildBigRig(accent) {
 
   u.dashMat = dashMat;
 
-  const cabLight = new THREE.PointLight(
-    0xffc073,
-    1.6,
-    6,
-    2
-  );
-
+  const cabLight = new THREE.PointLight(0xffc073, 1.6, 6, 2);
   cabLight.position.set(-2.6, 2.55, 0);
   g.add(cabLight);
   u.cabLight = cabLight;
 
-  /* axles & fenders */
   for (const x of [-1.9, 1.4, 2.4]) {
     for (const s of [-1, 1]) {
       const t = cyl(0.62, 0.62, 0.5, p.tire, 26);
@@ -649,7 +513,6 @@ function buildBigRig(accent) {
     g.add(f2);
   }
 
-  /* outriggers */
   for (const x of [0.6, 3.35]) {
     const beam = box(0.34, 0.26, 4.4, p.dark);
     beam.position.set(x, 1.16, 0);
@@ -666,7 +529,6 @@ function buildBigRig(accent) {
     }
   }
 
-  /* control cabin + ladder + handrail */
   const cc = box(1.05, 1.45, 1.9, p.bodyDark);
   cc.position.set(-1.35, 2.22, 0);
   g.add(cc);
@@ -680,14 +542,7 @@ function buildBigRig(accent) {
   g.add(ccr);
 
   for (const s of [-1, 1]) {
-    g.add(
-      bar(
-        V(-0.86, 1.56, s * 0.16),
-        V(-0.86, 2.86, s * 0.16),
-        0.04,
-        p.steel
-      )
-    );
+    g.add(bar(V(-0.86, 1.56, s * 0.16), V(-0.86, 2.86, s * 0.16), 0.04, p.steel));
   }
 
   for (let i = 0; i < 4; i++) {
@@ -702,25 +557,9 @@ function buildBigRig(accent) {
     g.add(post);
   }
 
-  g.add(
-    bar(
-      V(-1.15, 2.32, 1.14),
-      V(2.0, 2.32, 1.14),
-      0.035,
-      p.steel
-    )
-  );
+  g.add(bar(V(-1.15, 2.32, 1.14), V(2.0, 2.32, 1.14), 0.035, p.steel));
+  g.add(bar(V(-1.15, 1.98, 1.14), V(2.0, 1.98, 1.14), 0.03, p.steel));
 
-  g.add(
-    bar(
-      V(-1.15, 1.98, 1.14),
-      V(2.0, 1.98, 1.14),
-      0.03,
-      p.steel
-    )
-  );
-
-  /* engine deck */
   const eng = box(1.35, 1.05, 1.8, p.body);
   eng.position.set(0.55, 2.0, 0);
   g.add(eng);
@@ -746,7 +585,6 @@ function buildBigRig(accent) {
   air.position.set(0.55, 2.6, 0.6);
   g.add(air);
 
-  /* drawworks */
   const dwb = box(1.2, 0.45, 1.95, p.dark);
   dwb.position.set(1.75, 1.75, 0);
   g.add(dwb);
@@ -755,20 +593,8 @@ function buildBigRig(accent) {
 
   for (let i = 0; i < 6; i++) {
     const a = (i / 6) * Math.PI * 2;
-
-    const lug = box(
-      0.07,
-      0.84,
-      0.07,
-      p.dark
-    );
-
-    lug.position.set(
-      Math.cos(a) * 0.35,
-      0,
-      Math.sin(a) * 0.35
-    );
-
+    const lug = box(0.07, 0.84, 0.07, p.dark);
+    lug.position.set(Math.cos(a) * 0.35, 0, Math.sin(a) * 0.35);
     drum.add(lug);
   }
 
@@ -783,7 +609,6 @@ function buildBigRig(accent) {
   g.add(dwg);
   u.drum = drum;
 
-  /* mud tank + racked drill pipes */
   const tank = box(1.3, 1.0, 2.0, p.bodyDark);
   tank.position.set(2.85, 1.98, 0);
   g.add(tank);
@@ -809,35 +634,22 @@ function buildBigRig(accent) {
     g.add(cpl);
   }
 
-  /* mast tower + hazard board */
   for (const s of [-1, 1]) {
     const plate = box(0.14, 2.3, 0.6, p.bodyDark);
     plate.position.set(3.55, 2.62, s * 0.75);
     g.add(plate);
 
-    g.add(
-      bar(
-        V(3.55, 3.5, s * 0.68),
-        V(2.35, 1.56, s * 1.0),
-        0.07,
-        p.steel
-      )
-    );
+    g.add(bar(V(3.55, 3.5, s * 0.68), V(2.35, 1.56, s * 1.0), 0.07, p.steel));
   }
 
   const tbeam = box(0.5, 0.2, 1.7, p.dark);
   tbeam.position.set(3.55, 3.66, 0);
   g.add(tbeam);
 
-  const hz = new THREE.Mesh(
-    new THREE.BoxGeometry(0.06, 0.5, 2.2),
-    std({ map: stripeTex(), roughness: 0.7 })
-  );
-
+  const hz = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.5, 2.2), std({ map: stripeTex(), roughness: 0.7 }));
   hz.position.set(3.73, 1.16, 0);
   g.add(hz);
 
-  /* mast — vertical box truss */
   const mast = new THREE.Group();
   mast.position.set(A, P, 0);
   g.add(mast);
@@ -863,83 +675,35 @@ function buildBigRig(accent) {
 
     for (const x of RX) {
       if (i > 0) {
-        mast.add(
-          bar(
-            V(x, y0, RZ[0]),
-            V(x, y0, RZ[1]),
-            0.055,
-            p.steel
-          )
-        );
+        mast.add(bar(V(x, y0, RZ[0]), V(x, y0, RZ[1]), 0.055, p.steel));
       }
 
       mast.add(
         i % 2 === 0
-          ? bar(
-              V(x, y0, RZ[0]),
-              V(x, y1, RZ[1]),
-              0.05,
-              p.steel
-            )
-          : bar(
-              V(x, y0, RZ[1]),
-              V(x, y1, RZ[0]),
-              0.05,
-              p.steel
-            )
+          ? bar(V(x, y0, RZ[0]), V(x, y1, RZ[1]), 0.05, p.steel)
+          : bar(V(x, y0, RZ[1]), V(x, y1, RZ[0]), 0.05, p.steel)
       );
     }
 
     for (const z of RZ) {
       if (i > 0) {
-        mast.add(
-          bar(
-            V(RX[0], y0, z),
-            V(RX[1], y0, z),
-            0.05,
-            p.steel
-          )
-        );
+        mast.add(bar(V(RX[0], y0, z), V(RX[1], y0, z), 0.05, p.steel));
       }
 
       mast.add(
         i % 2 === 0
-          ? bar(
-              V(RX[0], y0, z),
-              V(RX[1], y1, z),
-              0.05,
-              p.steel
-            )
-          : bar(
-              V(RX[1], y0, z),
-              V(RX[0], y1, z),
-              0.05,
-              p.steel
-            )
+          ? bar(V(RX[0], y0, z), V(RX[1], y1, z), 0.05, p.steel)
+          : bar(V(RX[1], y0, z), V(RX[0], y1, z), 0.05, p.steel)
       );
     }
   }
 
   for (const z of RZ) {
-    mast.add(
-      bar(
-        V(RX[0], L, z),
-        V(RX[1], L, z),
-        0.07,
-        p.steel
-      )
-    );
+    mast.add(bar(V(RX[0], L, z), V(RX[1], L, z), 0.07, p.steel));
   }
 
   for (const x of RX) {
-    mast.add(
-      bar(
-        V(x, L, RZ[0]),
-        V(x, L, RZ[1]),
-        0.07,
-        p.steel
-      )
-    );
+    mast.add(bar(V(x, L, RZ[0]), V(x, L, RZ[1]), 0.07, p.steel));
   }
 
   const crown = box(1.2, 0.4, 1.05, p.bodyDark);
@@ -949,24 +713,11 @@ function buildBigRig(accent) {
   u.sheaves = [];
 
   for (const s of [-1, 1]) {
-    mast.add(
-      bar(
-        V(0, L - 0.15, s * 0.42),
-        V(0, L + 0.05, s * 0.58),
-        0.06,
-        p.steel
-      )
-    );
+    mast.add(bar(V(0, L - 0.15, s * 0.42), V(0, L + 0.05, s * 0.58), 0.06, p.steel));
 
     const sh = cyl(0.17, 0.17, 0.09, p.steel, 16);
     const wrap = spinWrap(sh, 'z');
-
-    wrap.position.set(
-      0,
-      L + 0.05,
-      s * 0.58
-    );
-
+    wrap.position.set(0, L + 0.05, s * 0.58);
     mast.add(wrap);
     u.sheaves.push(sh);
   }
@@ -981,15 +732,12 @@ function buildBigRig(accent) {
 
   const np = new THREE.Mesh(
     new THREE.PlaneGeometry(1.5, 0.5),
-    new THREE.MeshBasicMaterial({
-      map: brandTex(accent, 'HEAVY-DUTY RIG · 1500 FT'),
-    })
+    new THREE.MeshBasicMaterial({ map: brandTex(accent, 'HEAVY-DUTY RIG · 1500 FT') })
   );
 
   np.position.set(0, 6.7, 0.465);
   mast.add(np);
 
-  /* top-drive head */
   const head = new THREE.Group();
   head.position.set(0, u.headTopLocal, 0);
   mast.add(head);
@@ -1018,33 +766,19 @@ function buildBigRig(accent) {
   u.ledMat = p.led;
   u.head = head;
 
-  /* hex kelly */
-  const pg = new THREE.CylinderGeometry(
-    0.11,
-    0.11,
-    1,
-    6
-  );
-
+  const pg = new THREE.CylinderGeometry(0.11, 0.11, 1, 6);
   pg.translate(0, -0.5, 0);
 
   const pipe = new THREE.Mesh(pg, p.pipe);
   pipe.castShadow = true;
 
-  const stripe = box(
-    0.03,
-    1,
-    0.05,
-    p.dark
-  );
-
+  const stripe = box(0.03, 1, 0.05, p.dark);
   stripe.position.set(0, -0.5, 0.1);
   pipe.add(stripe);
 
   u.pipe = pipe;
   mast.add(pipe);
 
-  /* tricone bit + guide collar + conductor hole */
   const tc = makeTricone(p, 1);
   tc.bit.position.set(0, u.bitTopLocal, 0);
   mast.add(tc.bit);
@@ -1062,34 +796,12 @@ function buildBigRig(accent) {
     [-0.26, 0.26],
     [0.26, 0.26],
   ]) {
-    collar.add(
-      bar(
-        V(x, -0.25, z),
-        V(x, 0.25, z),
-        0.06,
-        p.dark
-      )
-    );
+    collar.add(bar(V(x, -0.25, z), V(x, 0.25, z), 0.06, p.dark));
   }
 
   for (const zz of [-0.26, 0.26]) {
-    collar.add(
-      bar(
-        V(-0.26, 0.25, zz),
-        V(0.26, 0.25, zz),
-        0.05,
-        p.dark
-      )
-    );
-
-    collar.add(
-      bar(
-        V(-0.26, -0.25, zz),
-        V(0.26, -0.25, zz),
-        0.05,
-        p.dark
-      )
-    );
+    collar.add(bar(V(-0.26, 0.25, zz), V(0.26, 0.25, zz), 0.05, p.dark));
+    collar.add(bar(V(-0.26, -0.25, zz), V(0.26, -0.25, zz), 0.05, p.dark));
   }
 
   u.collar = collar;
@@ -1098,36 +810,17 @@ function buildBigRig(accent) {
   hole.position.set(A, 0, 0);
   g.add(hole);
 
-  const casing = new THREE.Mesh(
-    new THREE.CylinderGeometry(
-      0.3,
-      0.3,
-      0.55,
-      24,
-      1,
-      true
-    ),
-    p.hole
-  );
-
+  const casing = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.55, 24, 1, true), p.hole);
   casing.position.y = 0.275;
   casing.castShadow = true;
   hole.add(casing);
 
-  const floor = new THREE.Mesh(
-    new THREE.CircleGeometry(0.28, 24),
-    p.hole
-  );
-
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(0.28, 24), p.hole);
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = 0.08;
   hole.add(floor);
 
-  const hring = new THREE.Mesh(
-    new THREE.TorusGeometry(0.3, 0.05, 10, 28),
-    p.steel
-  );
-
+  const hring = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.05, 10, 28), p.steel);
   hring.rotation.x = Math.PI / 2;
   hring.position.y = 0.55;
   hring.castShadow = true;
@@ -1135,26 +828,16 @@ function buildBigRig(accent) {
 
   u.hole = hole;
 
-  /* dynamic rigging */
   u.cables = [];
 
-  for (const [
-    fx,
-    fz,
-    ox,
-    oz,
-  ] of [
+  for (const [fx, fz, ox, oz] of [
     [-0.2, -0.3, -0.16, -0.3],
     [0.2, 0.3, 0.16, 0.3],
   ]) {
     const mesh = dynCyl(0.03, p.cable);
     mast.add(mesh);
 
-    u.cables.push({
-      mesh,
-      from: V(fx, L - 0.12, fz),
-      off: V(ox, 0.42, oz),
-    });
+    u.cables.push({ mesh, from: V(fx, L - 0.12, fz), off: V(ox, 0.42, oz) });
   }
 
   const fl = dynCyl(0.03, p.cable);
@@ -1164,11 +847,7 @@ function buildBigRig(accent) {
   flA.position.set(0, L + 0.02, 0.55);
   mast.add(flA);
 
-  u.fastline = {
-    mesh: fl,
-    base: V(1.75, 2.55, 0.3),
-    anchor: flA,
-  };
+  u.fastline = { mesh: fl, base: V(1.75, 2.55, 0.3), anchor: flA };
 
   u.hyd = [];
 
@@ -1188,11 +867,7 @@ function buildBigRig(accent) {
     lugA.position.set(2.15, 1.62, s * 0.9);
     g.add(lugA);
 
-    u.hyd.push({
-      mesh,
-      base: V(2.15, 1.6, s * 0.9),
-      anchor: anch,
-    });
+    u.hyd.push({ mesh, base: V(2.15, 1.6, s * 0.9), anchor: anch });
   }
 
   u.feed = [];
@@ -1201,40 +876,14 @@ function buildBigRig(accent) {
     const mesh = dynCyl(0.055, p.steel);
     mast.add(mesh);
 
-    u.feed.push({
-      mesh,
-      from: V(s * 0.44, 0.15, 0),
-      off: V(s * 0.32, -0.08, 0),
-    });
+    u.feed.push({ mesh, from: V(s * 0.44, 0.15, 0), off: V(s * 0.32, -0.08, 0) });
   }
 
-  /* mud circuit */
-  g.add(
-    tube(
-      [
-        V(2.5, 2.45, 0.7),
-        V(2.9, 2.85, 0.78),
-        V(3.4, 3.35, 0.55),
-      ],
-      0.05,
-      p.dark
-    )
-  );
+  g.add(tube([V(2.5, 2.45, 0.7), V(2.9, 2.85, 0.78), V(3.4, 3.35, 0.55)], 0.05, p.dark));
 
-  mast.add(
-    bar(
-      V(0.15, 0.25, 0.42),
-      V(0.15, 4.85, 0.42),
-      0.08,
-      p.dark
-    )
-  );
+  mast.add(bar(V(0.15, 0.25, 0.42), V(0.15, 4.85, 0.42), 0.08, p.dark));
 
-  const hoseMesh = new THREE.Mesh(
-    new THREE.BufferGeometry(),
-    p.dark
-  );
-
+  const hoseMesh = new THREE.Mesh(new THREE.BufferGeometry(), p.dark);
   hoseMesh.castShadow = true;
   mast.add(hoseMesh);
 
@@ -1271,54 +920,28 @@ function buildSmallRig(accent) {
   u.bitDeepLocal = -2.3;
   u.holeX = A + PX;
 
-  /* frame + tongue + THALACUVERY frame livery */
   const frame = box(3.0, 0.32, 1.5, p.body);
   frame.position.set(0.15, 0.96, 0);
   g.add(frame);
 
   for (const s of [-1, 1]) {
-    g.add(
-      bar(
-        V(-1.32, 0.98, s * 0.3),
-        V(-2.42, 0.68, s * 0.08),
-        0.06,
-        p.steel
-      )
-    );
+    g.add(bar(V(-1.32, 0.98, s * 0.3), V(-2.42, 0.68, s * 0.08), 0.06, p.steel));
   }
 
-  const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(0.12, 0.035, 10, 24),
-    p.steel
-  );
-
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.035, 10, 24), p.steel);
   ring.rotation.y = Math.PI / 2;
   ring.position.set(-2.55, 0.68, 0);
   ring.castShadow = true;
   g.add(ring);
 
   for (const s of [-1, 1]) {
-    const lv = livery(
-      1.6,
-      0.25,
-      nameTexWide(accent)
-    );
-
+    const lv = livery(1.6, 0.25, nameTexWide(accent));
     lv.position.set(0.15, 0.97, s * 0.76);
-
     if (s < 0) lv.rotation.y = Math.PI;
-
     g.add(lv);
   }
 
-  const hz = new THREE.Mesh(
-    new THREE.BoxGeometry(0.06, 0.3, 1.2),
-    std({
-      map: stripeTex(),
-      roughness: 0.7,
-    })
-  );
-
+  const hz = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.3, 1.2), std({ map: stripeTex(), roughness: 0.7 }));
   hz.position.set(1.66, 1.0, 0);
   g.add(hz);
 
@@ -1347,7 +970,6 @@ function buildSmallRig(accent) {
     g.add(ml);
   }
 
-  /* power pack + fuel + controls */
   const eng = box(0.85, 0.6, 0.8, p.body);
   eng.position.set(-0.05, 1.42, 0);
   g.add(eng);
@@ -1358,23 +980,12 @@ function buildSmallRig(accent) {
 
   u.smokeAnchor = V(-0.35, 2.18, 0.22);
 
-  const recoil = new THREE.Mesh(
-    new THREE.TorusGeometry(0.09, 0.02, 8, 20),
-    p.steel
-  );
-
+  const recoil = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.02, 8, 20), p.steel);
   recoil.position.set(-0.05, 1.42, 0.42);
   g.add(recoil);
 
   for (const i of [-1, 1]) {
-    g.add(
-      bar(
-        V(-0.15, 1.72, i * 0.2),
-        V(-0.22, 1.98, i * 0.28),
-        0.03,
-        p.steel
-      )
-    );
+    g.add(bar(V(-0.15, 1.72, i * 0.2), V(-0.22, 1.98, i * 0.28), 0.03, p.steel));
   }
 
   const led1 = box(0.1, 0.05, 0.05, p.led);
@@ -1396,20 +1007,13 @@ function buildSmallRig(accent) {
   fcap.position.set(-0.62, 1.33, 0.55);
   g.add(fcap);
 
-  /* winch drum with crank */
   const wbr = box(0.4, 0.26, 0.7, p.bodyDark);
   wbr.position.set(-1.15, 1.2, 0);
   g.add(wbr);
 
   const wm = cyl(0.16, 0.16, 0.44, p.steel, 14);
 
-  const crank = box(
-    0.34,
-    0.05,
-    0.05,
-    p.dark
-  );
-
+  const crank = box(0.34, 0.05, 0.05, p.dark);
   crank.position.set(0.19, 0, 0);
   wm.add(crank);
 
@@ -1423,7 +1027,6 @@ function buildSmallRig(accent) {
   g.add(wg);
   u.drum = wm;
 
-  /* toolbox + spare rods */
   const tb = box(0.55, 0.34, 0.8, p.bodyDark);
   tb.position.set(0.65, 1.29, 0);
   g.add(tb);
@@ -1435,7 +1038,6 @@ function buildSmallRig(accent) {
     g.add(rod);
   }
 
-  /* jacks + handle */
   for (const s of [-1, 1]) {
     const leg = cyl(0.05, 0.05, 1.0, p.steel, 8);
     leg.position.set(-1.28, 0.6, s * 0.55);
@@ -1447,14 +1049,7 @@ function buildSmallRig(accent) {
   }
 
   for (const s of [-1, 1]) {
-    g.add(
-      bar(
-        V(1.6, 1.08, s * 0.36),
-        V(2.26, 1.5, s * 0.28),
-        0.045,
-        p.steel
-      )
-    );
+    g.add(bar(V(1.6, 1.08, s * 0.36), V(2.26, 1.5, s * 0.28), 0.045, p.steel));
   }
 
   const cross = cyl(0.04, 0.04, 0.62, p.dark, 8);
@@ -1462,7 +1057,6 @@ function buildSmallRig(accent) {
   cross.position.set(2.26, 1.52, 0);
   g.add(cross);
 
-  /* mast */
   const mast = new THREE.Group();
   mast.position.set(A, P, 0);
   g.add(mast);
@@ -1477,23 +1071,12 @@ function buildSmallRig(accent) {
     rail.position.set(0.12, L / 2, s * 0.17);
     mast.add(rail);
 
-    mast.add(
-      bar(
-        V(-0.26, 0.12, s * 0.28),
-        V(0.1, 0.9, s * 0.17),
-        0.04,
-        p.steel
-      )
-    );
+    mast.add(bar(V(-0.26, 0.12, s * 0.28), V(0.1, 0.9, s * 0.17), 0.04, p.steel));
   }
 
   for (let i = 0; i < 7; i++) {
     const rung = box(0.3, 0.04, 0.03, p.dark);
-    rung.position.set(
-      -0.05,
-      0.6 + i * 0.5,
-      0.19
-    );
+    rung.position.set(-0.05, 0.6 + i * 0.5, 0.19);
     mast.add(rung);
   }
 
@@ -1508,14 +1091,7 @@ function buildSmallRig(accent) {
 
   u.sheaves = [sh];
 
-  mast.add(
-    bar(
-      V(0.1, L - 0.06, 0),
-      V(0.3, L, 0),
-      0.05,
-      p.steel
-    )
-  );
+  mast.add(bar(V(0.1, L - 0.06, 0), V(0.3, L, 0), 0.05, p.steel));
 
   const bcn = cyl(0.055, 0.055, 0.15, p.beacon, 10);
   bcn.position.set(0, L + 0.16, 0);
@@ -1523,16 +1099,13 @@ function buildSmallRig(accent) {
 
   const np = new THREE.Mesh(
     new THREE.PlaneGeometry(1.1, 0.36),
-    new THREE.MeshBasicMaterial({
-      map: brandTex(accent, 'COMPACT RIG · 350 FT'),
-    })
+    new THREE.MeshBasicMaterial({ map: brandTex(accent, 'COMPACT RIG · 350 FT') })
   );
 
   np.position.set(-0.05, 2.6, 0.2);
   np.rotation.y = 0.35;
   mast.add(np);
 
-  /* head + rod + bit + collar + hole */
   const head = new THREE.Group();
   head.position.set(PX, u.headTopLocal, 0);
   mast.add(head);
@@ -1552,26 +1125,14 @@ function buildSmallRig(accent) {
   sled.position.set(0.1, 0.08, 0.24);
   head.add(sled);
 
-  const pg = new THREE.CylinderGeometry(
-    0.055,
-    0.055,
-    1,
-    6
-  );
-
+  const pg = new THREE.CylinderGeometry(0.055, 0.055, 1, 6);
   pg.translate(0, -0.5, 0);
 
   const pipe = new THREE.Mesh(pg, p.pipe);
   pipe.castShadow = true;
   pipe.position.x = PX;
 
-  const stripe = box(
-    0.016,
-    1,
-    0.026,
-    p.dark
-  );
-
+  const stripe = box(0.016, 1, 0.026, p.dark);
   stripe.position.set(0, -0.5, 0.05);
   pipe.add(stripe);
 
@@ -1585,11 +1146,7 @@ function buildSmallRig(accent) {
   u.bitGroup = tc.bit;
   u.cones = tc.cones;
 
-  const collar = new THREE.Mesh(
-    new THREE.TorusGeometry(0.11, 0.045, 10, 18),
-    p.dark
-  );
-
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.045, 10, 18), p.dark);
   collar.rotation.x = Math.PI / 2;
   collar.position.set(PX, -1.8, 0);
   collar.castShadow = true;
@@ -1601,35 +1158,16 @@ function buildSmallRig(accent) {
   hole.position.set(u.holeX, 0, 0);
   g.add(hole);
 
-  const casing = new THREE.Mesh(
-    new THREE.CylinderGeometry(
-      0.2,
-      0.2,
-      0.34,
-      20,
-      1,
-      true
-    ),
-    p.hole
-  );
-
+  const casing = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.34, 20, 1, true), p.hole);
   casing.position.y = 0.17;
   hole.add(casing);
 
-  const floor = new THREE.Mesh(
-    new THREE.CircleGeometry(0.18, 20),
-    p.hole
-  );
-
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(0.18, 20), p.hole);
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = 0.05;
   hole.add(floor);
 
-  const hring = new THREE.Mesh(
-    new THREE.TorusGeometry(0.2, 0.04, 10, 24),
-    p.steel
-  );
-
+  const hring = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.04, 10, 24), p.steel);
   hring.rotation.x = Math.PI / 2;
   hring.position.y = 0.34;
   hring.castShadow = true;
@@ -1637,17 +1175,10 @@ function buildSmallRig(accent) {
 
   u.hole = hole;
 
-  /* dynamic rigging */
   const cable = dynCyl(0.02, p.cable);
   mast.add(cable);
 
-  u.cables = [
-    {
-      mesh: cable,
-      from: V(0.3, L - 0.06, 0),
-      off: V(-0.15, 0.3, 0),
-    },
-  ];
+  u.cables = [{ mesh: cable, from: V(0.3, L - 0.06, 0), off: V(-0.15, 0.3, 0) }];
 
   const wr = dynCyl(0.02, p.cable);
   g.add(wr);
@@ -1656,11 +1187,7 @@ function buildSmallRig(accent) {
   wa.position.set(0.3, L - 0.04, 0);
   mast.add(wa);
 
-  u.fastline = {
-    mesh: wr,
-    base: V(-1.15, 1.6, 0),
-    anchor: wa,
-  };
+  u.fastline = { mesh: wr, base: V(-1.15, 1.6, 0), anchor: wa };
 
   u.hyd = [];
 
@@ -1676,20 +1203,12 @@ function buildSmallRig(accent) {
     lug.position.set(0.55, 1.14, s * 0.6);
     g.add(lug);
 
-    u.hyd.push({
-      mesh,
-      base: V(0.55, 1.12, s * 0.6),
-      anchor: anch,
-    });
+    u.hyd.push({ mesh, base: V(0.55, 1.12, s * 0.6), anchor: anch });
   }
 
   u.feed = [];
 
-  const hoseMesh = new THREE.Mesh(
-    new THREE.BufferGeometry(),
-    p.dark
-  );
-
+  const hoseMesh = new THREE.Mesh(new THREE.BufferGeometry(), p.dark);
   hoseMesh.castShadow = true;
   g.add(hoseMesh);
 
@@ -1723,48 +1242,20 @@ function buildTerrain() {
     { x: 14, z: 0, r: 6 },
   ];
 
-  const ROAD = {
-    x0: -9,
-    x1: 8.5,
-    halfW: 2.4,
-  };
+  const ROAD = { x0: -9, x1: 8.5, halfW: 2.4 };
 
   function padFactor(x, z) {
     let f = 1;
 
     for (const p of PADS) {
-      const d = Math.hypot(
-        x - p.x,
-        z - p.z
-      );
-
-      f = Math.min(
-        f,
-        clamp(
-          (d - p.r * 0.55) /
-            (p.r * 0.45),
-          0,
-          1
-        )
-      );
+      const d = Math.hypot(x - p.x, z - p.z);
+      f = Math.min(f, clamp((d - p.r * 0.55) / (p.r * 0.45), 0, 1));
     }
 
     const rx = clamp(x, ROAD.x0, ROAD.x1);
+    const rd = Math.hypot(x - rx, z);
 
-    const rd = Math.hypot(
-      x - rx,
-      z
-    );
-
-    f = Math.min(
-      f,
-      clamp(
-        (rd - ROAD.halfW * 0.5) /
-          (ROAD.halfW * 0.9),
-        0,
-        1
-      )
-    );
+    f = Math.min(f, clamp((rd - ROAD.halfW * 0.5) / (ROAD.halfW * 0.9), 0, 1));
 
     return f;
   }
@@ -1779,20 +1270,11 @@ function buildTerrain() {
     return h * f;
   }
 
-  /* ground with vertex colors */
-  const geo = new THREE.PlaneGeometry(
-    200,
-    200,
-    88,
-    88
-  );
-
+  const geo = new THREE.PlaneGeometry(200, 200, 88, 88);
   geo.rotateX(-Math.PI / 2);
 
   const pos = geo.attributes.position;
-  const colors = new Float32Array(
-    pos.count * 3
-  );
+  const colors = new Float32Array(pos.count * 3);
 
   const cGrass = new THREE.Color(0x2f4a2a);
   const cGrass2 = new THREE.Color(0x233d1c);
@@ -1811,48 +1293,26 @@ function buildTerrain() {
     const f = padFactor(x, z);
     const soil = 1 - f;
 
-    c.copy(cGrass).lerp(
-      cGrass2,
-      noise(x * 0.13, z * 0.13)
-    );
+    c.copy(cGrass).lerp(cGrass2, noise(x * 0.13, z * 0.13));
 
-    const n = noise2(
-      x * 0.09 + 40,
-      z * 0.09 - 17
-    );
+    const n = noise2(x * 0.09 + 40, z * 0.09 - 17);
 
     if (n > 0.62) {
-      c.lerp(
-        cRock,
-        (n - 0.62) * 1.4
-      );
+      c.lerp(cRock, (n - 0.62) * 1.4);
     }
 
     if (soil > 0) {
-      c.lerp(
-        cSoil2,
-        soil * 0.55
-      );
+      c.lerp(cSoil2, soil * 0.55);
 
       if (soil > 0.75) {
-        c.lerp(
-          cSoil,
-          (soil - 0.75) * 3
-        );
+        c.lerp(cSoil, (soil - 0.75) * 3);
       }
     }
 
     const dist = Math.hypot(x, z);
 
     if (dist > 55) {
-      c.lerp(
-        cRock,
-        clamp(
-          (dist - 55) / 60,
-          0,
-          0.5
-        )
-      );
+      c.lerp(cRock, clamp((dist - 55) / 60, 0, 0.5));
     }
 
     colors[i * 3] = c.r;
@@ -1860,64 +1320,33 @@ function buildTerrain() {
     colors[i * 3 + 2] = c.b;
   }
 
-  geo.setAttribute(
-    'color',
-    new THREE.BufferAttribute(colors, 3)
-  );
-
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   geo.computeVertexNormals();
 
   const ground = new THREE.Mesh(
     geo,
-    new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      roughness: 1,
-      metalness: 0,
-      flatShading: true,
-    })
+    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, flatShading: true })
   );
 
   ground.receiveShadow = true;
   group.add(ground);
 
-  /* scatter helper */
   const rnd = mulberry32(20240);
 
-  const clearOfWorkArea = (x, z) =>
-    padFactor(x, z) > 0.85 &&
-    Math.hypot(x, z) < 70;
+  const clearOfWorkArea = (x, z) => padFactor(x, z) > 0.85 && Math.hypot(x, z) < 70;
 
-  function scatter(
-    count,
-    minR,
-    maxR,
-    extra
-  ) {
+  function scatter(count, minR, maxR, extra) {
     const out = [];
     let guard = 0;
 
-    while (
-      out.length < count &&
-      guard++ < count * 80
-    ) {
-      const a =
-        rnd() * Math.PI * 2;
+    while (out.length < count && guard++ < count * 80) {
+      const a = rnd() * Math.PI * 2;
+      const rr = minR + rnd() * (maxR - minR);
+      const x = Math.cos(a) * rr;
+      const z = Math.sin(a) * rr;
 
-      const rr =
-        minR +
-        rnd() * (maxR - minR);
-
-      const x =
-        Math.cos(a) * rr;
-
-      const z =
-        Math.sin(a) * rr;
-
-      if (!clearOfWorkArea(x, z))
-        continue;
-
-      if (extra && !extra(x, z))
-        continue;
+      if (!clearOfWorkArea(x, z)) continue;
+      if (extra && !extra(x, z)) continue;
 
       out.push([x, z]);
     }
@@ -1931,371 +1360,112 @@ function buildTerrain() {
   const sc = new THREE.Vector3();
   const pv = new THREE.Vector3();
 
-  const fillRest = (
-    mesh,
-    n,
-    placed
-  ) => {
-    for (
-      let i = placed;
-      i < n;
-      i++
-    ) {
-      m.compose(
-        pv.set(0, -60, 0),
-        q.identity(),
-        sc.set(
-          0.001,
-          0.001,
-          0.001
-        )
-      );
-
+  const fillRest = (mesh, n, placed) => {
+    for (let i = placed; i < n; i++) {
+      m.compose(pv.set(0, -60, 0), q.identity(), sc.set(0.001, 0.001, 0.001));
       mesh.setMatrixAt(i, m);
     }
   };
 
-  /* grass tufts */
   {
-    const gGeo = new THREE.ConeGeometry(
-      0.1,
-      0.55,
-      4
-    );
+    const gGeo = new THREE.ConeGeometry(0.1, 0.55, 4);
+    gGeo.translate(0, 0.27, 0);
 
-    gGeo.translate(
-      0,
-      0.27,
-      0
-    );
-
-    const gMat =
-      new THREE.MeshStandardMaterial({
-        roughness: 1,
-        metalness: 0,
-        flatShading: true,
-      });
+    const gMat = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, flatShading: true });
 
     const G = 760;
-    const pts = scatter(
-      G,
-      5,
-      62
-    );
+    const pts = scatter(G, 5, 62);
+    const grass = new THREE.InstancedMesh(gGeo, gMat, G);
 
-    const grass =
-      new THREE.InstancedMesh(
-        gGeo,
-        gMat,
-        G
-      );
+    const gc = [new THREE.Color(0x3b5a2c), new THREE.Color(0x2e4a24), new THREE.Color(0x466334)];
 
-    const gc = [
-      new THREE.Color(0x3b5a2c),
-      new THREE.Color(0x2e4a24),
-      new THREE.Color(0x466334),
-    ];
+    pts.forEach(([x, z], i) => {
+      const s = 0.7 + rnd() * 0.9;
 
-    pts.forEach(
-      ([x, z], i) => {
-        const s =
-          0.7 +
-          rnd() * 0.9;
+      e.set((rnd() - 0.5) * 0.35, rnd() * Math.PI, (rnd() - 0.5) * 0.35);
+      q.setFromEuler(e);
 
-        e.set(
-          (rnd() - 0.5) * 0.35,
-          rnd() * Math.PI,
-          (rnd() - 0.5) * 0.35
-        );
+      m.compose(pv.set(x, heightAt(x, z), z), q, sc.set(s, s * (0.8 + rnd() * 0.7), s));
 
-        q.setFromEuler(e);
+      grass.setMatrixAt(i, m);
+      grass.setColorAt(i, gc[(rnd() * 3) | 0]);
+    });
 
-        m.compose(
-          pv.set(
-            x,
-            heightAt(x, z),
-            z
-          ),
-          q,
-          sc.set(
-            s,
-            s *
-              (0.8 +
-                rnd() * 0.7),
-            s
-          )
-        );
-
-        grass.setMatrixAt(i, m);
-        grass.setColorAt(
-          i,
-          gc[
-            (rnd() * 3) | 0
-          ]
-        );
-      }
-    );
-
-    fillRest(
-      grass,
-      G,
-      pts.length
-    );
-
+    fillRest(grass, G, pts.length);
     grass.receiveShadow = true;
     group.add(grass);
   }
 
-  /* bushes */
   {
-    const bGeo =
-      new THREE.IcosahedronGeometry(
-        0.62,
-        0
-      );
-
-    const bMat =
-      new THREE.MeshStandardMaterial({
-        roughness: 0.95,
-        metalness: 0,
-        flatShading: true,
-      });
+    const bGeo = new THREE.IcosahedronGeometry(0.62, 0);
+    const bMat = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0, flatShading: true });
 
     const B = 56;
-    const pts = scatter(
-      B,
-      8,
-      60
-    );
+    const pts = scatter(B, 8, 60);
+    const bush = new THREE.InstancedMesh(bGeo, bMat, B);
 
-    const bush =
-      new THREE.InstancedMesh(
-        bGeo,
-        bMat,
-        B
-      );
+    const bc = [new THREE.Color(0x2c4726), new THREE.Color(0x24401f), new THREE.Color(0x37522c)];
 
-    const bc = [
-      new THREE.Color(0x2c4726),
-      new THREE.Color(0x24401f),
-      new THREE.Color(0x37522c),
-    ];
+    pts.forEach(([x, z], i) => {
+      const s = 0.8 + rnd() * 1.2;
+      const sy = 0.55 + rnd() * 0.5;
 
-    pts.forEach(
-      ([x, z], i) => {
-        const s =
-          0.8 +
-          rnd() * 1.2;
+      e.set(0, rnd() * Math.PI, 0);
+      q.setFromEuler(e);
 
-        const sy =
-          0.55 +
-          rnd() * 0.5;
+      m.compose(pv.set(x, heightAt(x, z) + 0.25 * sy, z), q, sc.set(s, sy, s));
 
-        e.set(
-          0,
-          rnd() * Math.PI,
-          0
-        );
+      bush.setMatrixAt(i, m);
+      bush.setColorAt(i, bc[(rnd() * 3) | 0]);
+    });
 
-        q.setFromEuler(e);
-
-        m.compose(
-          pv.set(
-            x,
-            heightAt(x, z) +
-              0.25 * sy,
-            z
-          ),
-          q,
-          sc.set(
-            s,
-            sy,
-            s
-          )
-        );
-
-        bush.setMatrixAt(
-          i,
-          m
-        );
-
-        bush.setColorAt(
-          i,
-          bc[
-            (rnd() * 3) | 0
-          ]
-        );
-      }
-    );
-
-    fillRest(
-      bush,
-      B,
-      pts.length
-    );
-
-    bush.castShadow =
-      bush.receiveShadow =
-      true;
-
+    fillRest(bush, B, pts.length);
+    bush.castShadow = bush.receiveShadow = true;
     group.add(bush);
   }
 
-  /* rocks */
   {
-    const rGeo =
-      new THREE.DodecahedronGeometry(
-        0.42,
-        0
-      );
-
-    const rMat =
-      new THREE.MeshStandardMaterial({
-        roughness: 0.9,
-        metalness: 0.02,
-        flatShading: true,
-      });
+    const rGeo = new THREE.DodecahedronGeometry(0.42, 0);
+    const rMat = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0.02, flatShading: true });
 
     const R = 42;
-    const pts = scatter(
-      R,
-      6,
-      62
-    );
+    const pts = scatter(R, 6, 62);
+    const rocks = new THREE.InstancedMesh(rGeo, rMat, R);
 
-    const rocks =
-      new THREE.InstancedMesh(
-        rGeo,
-        rMat,
-        R
-      );
+    const rc = [new THREE.Color(0x5b564b), new THREE.Color(0x4c473d), new THREE.Color(0x6a6154)];
 
-    const rc = [
-      new THREE.Color(0x5b564b),
-      new THREE.Color(0x4c473d),
-      new THREE.Color(0x6a6154),
-    ];
+    pts.forEach(([x, z], i) => {
+      const s = 0.35 + rnd() * 1.1;
 
-    pts.forEach(
-      ([x, z], i) => {
-        const s =
-          0.35 +
-          rnd() * 1.1;
+      e.set(rnd() * 3, rnd() * 3, rnd() * 3);
+      q.setFromEuler(e);
 
-        e.set(
-          rnd() * 3,
-          rnd() * 3,
-          rnd() * 3
-        );
+      m.compose(pv.set(x, heightAt(x, z) + 0.1 * s, z), q, sc.set(s, s * (0.6 + rnd() * 0.5), s));
 
-        q.setFromEuler(e);
+      rocks.setMatrixAt(i, m);
+      rocks.setColorAt(i, rc[(rnd() * 3) | 0]);
+    });
 
-        m.compose(
-          pv.set(
-            x,
-            heightAt(x, z) +
-              0.1 * s,
-            z
-          ),
-          q,
-          sc.set(
-            s,
-            s *
-              (0.6 +
-                rnd() * 0.5),
-            s
-          )
-        );
-
-        rocks.setMatrixAt(
-          i,
-          m
-        );
-
-        rocks.setColorAt(
-          i,
-          rc[
-            (rnd() * 3) | 0
-          ]
-        );
-      }
-    );
-
-    fillRest(
-      rocks,
-      R,
-      pts.length
-    );
-
-    rocks.castShadow =
-      rocks.receiveShadow =
-      true;
-
+    fillRest(rocks, R, pts.length);
+    rocks.castShadow = rocks.receiveShadow = true;
     group.add(rocks);
   }
 
-  /* forest */
   {
-    const tGeo =
-      new THREE.CylinderGeometry(
-        0.14,
-        0.24,
-        1,
-        7
-      );
+    const tGeo = new THREE.CylinderGeometry(0.14, 0.24, 1, 7);
+    tGeo.translate(0, 0.5, 0);
 
-    tGeo.translate(
-      0,
-      0.5,
-      0
-    );
+    const tMat = new THREE.MeshStandardMaterial({ color: 0x463322, roughness: 0.95, flatShading: true });
 
-    const tMat =
-      new THREE.MeshStandardMaterial({
-        color: 0x463322,
-        roughness: 0.95,
-        flatShading: true,
-      });
-
-    const fGeo =
-      new THREE.IcosahedronGeometry(
-        1,
-        0
-      );
-
-    const fMat =
-      new THREE.MeshStandardMaterial({
-        roughness: 0.9,
-        metalness: 0,
-        flatShading: true,
-      });
+    const fGeo = new THREE.IcosahedronGeometry(1, 0);
+    const fMat = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, flatShading: true });
 
     const TREES = 28;
 
-    const treePts = scatter(
-      TREES,
-      13,
-      56,
-      (x, z) =>
-        !(
-          z > 6 &&
-          Math.abs(x) < 27
-        )
-    );
+    const treePts = scatter(TREES, 13, 56, (x, z) => !(z > 6 && Math.abs(x) < 27));
 
-    const trunkMesh =
-      new THREE.InstancedMesh(
-        tGeo,
-        tMat,
-        TREES
-      );
-
-    const foliage =
-      new THREE.InstancedMesh(
-        fGeo,
-        fMat,
-        TREES * 3
-      );
+    const trunkMesh = new THREE.InstancedMesh(tGeo, tMat, TREES);
+    const foliage = new THREE.InstancedMesh(fGeo, fMat, TREES * 3);
 
     const fc = [
       new THREE.Color(0x2c4a26),
@@ -2306,388 +1476,136 @@ function buildTerrain() {
 
     let bi = 0;
 
-    treePts.forEach(
-      ([x, z], i) => {
-        let th =
-          2.6 +
-          rnd() * 2.0;
+    treePts.forEach(([x, z], i) => {
+      let th = 2.6 + rnd() * 2.0;
+      if (rnd() < 0.28) th *= 1.35;
 
-        if (rnd() < 0.28)
-          th *= 1.35;
+      const ts = 0.85 + rnd() * 0.55;
 
-        const ts =
-          0.85 +
-          rnd() * 0.55;
+      e.set(0, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.12);
+      q.setFromEuler(e);
 
-        e.set(
-          0,
-          rnd() * Math.PI * 2,
-          (rnd() - 0.5) * 0.12
-        );
+      m.compose(pv.set(x, heightAt(x, z) - 0.1, z), q, sc.set(ts, th, ts));
 
+      trunkMesh.setMatrixAt(i, m);
+
+      for (let k = 0; k < 3; k++) {
+        const r = 1.05 + rnd() * 1.2;
+
+        e.set(rnd() * 3, rnd() * 3, rnd() * 3);
         q.setFromEuler(e);
 
         m.compose(
           pv.set(
-            x,
-            heightAt(x, z) - 0.1,
-            z
+            x + (rnd() - 0.5) * 1.2,
+            heightAt(x, z) + th * (0.6 + k * 0.3) + (rnd() - 0.5) * 0.4,
+            z + (rnd() - 0.5) * 1.2
           ),
           q,
-          sc.set(
-            ts,
-            th,
-            ts
-          )
+          sc.set(r, r * (0.75 + rnd() * 0.3), r)
         );
 
-        trunkMesh.setMatrixAt(
-          i,
-          m
-        );
-
-        for (
-          let k = 0;
-          k < 3;
-          k++
-        ) {
-          const r =
-            1.05 +
-            rnd() * 1.2;
-
-          e.set(
-            rnd() * 3,
-            rnd() * 3,
-            rnd() * 3
-          );
-
-          q.setFromEuler(e);
-
-          m.compose(
-            pv.set(
-              x +
-                (rnd() - 0.5) *
-                  1.2,
-              heightAt(x, z) +
-                th *
-                  (0.6 +
-                    k * 0.3) +
-                (rnd() - 0.5) *
-                  0.4,
-              z +
-                (rnd() - 0.5) *
-                  1.2
-            ),
-            q,
-            sc.set(
-              r,
-              r *
-                (0.75 +
-                  rnd() * 0.3),
-              r
-            )
-          );
-
-          foliage.setMatrixAt(
-            bi,
-            m
-          );
-
-          foliage.setColorAt(
-            bi,
-            fc[
-              (rnd() * 4) | 0
-            ]
-          );
-
-          bi++;
-        }
+        foliage.setMatrixAt(bi, m);
+        foliage.setColorAt(bi, fc[(rnd() * 4) | 0]);
+        bi++;
       }
-    );
+    });
 
-    fillRest(
-      trunkMesh,
-      TREES,
-      treePts.length
-    );
+    fillRest(trunkMesh, TREES, treePts.length);
 
-    for (
-      let i = bi;
-      i < TREES * 3;
-      i++
-    ) {
-      m.compose(
-        pv.set(
-          0,
-          -60,
-          0
-        ),
-        q.identity(),
-        sc.set(
-          0.001,
-          0.001,
-          0.001
-        )
-      );
-
-      foliage.setMatrixAt(
-        i,
-        m
-      );
+    for (let i = bi; i < TREES * 3; i++) {
+      m.compose(pv.set(0, -60, 0), q.identity(), sc.set(0.001, 0.001, 0.001));
+      foliage.setMatrixAt(i, m);
     }
 
-    trunkMesh.castShadow =
-      foliage.castShadow =
-      true;
+    trunkMesh.castShadow = foliage.castShadow = true;
+    trunkMesh.receiveShadow = foliage.receiveShadow = true;
 
-    trunkMesh.receiveShadow =
-      foliage.receiveShadow =
-      true;
-
-    group.add(
-      trunkMesh,
-      foliage
-    );
+    group.add(trunkMesh, foliage);
   }
 
-  /* distant hills */
   {
-    const hGeo =
-      new THREE.DodecahedronGeometry(
-        1,
-        0
-      );
-
-    const hMat =
-      new THREE.MeshStandardMaterial({
-        color: 0x1c2f23,
-        roughness: 1,
-        flatShading: true,
-      });
+    const hGeo = new THREE.DodecahedronGeometry(1, 0);
+    const hMat = new THREE.MeshStandardMaterial({ color: 0x1c2f23, roughness: 1, flatShading: true });
 
     const H = 9;
+    const hills = new THREE.InstancedMesh(hGeo, hMat, H);
+    const hr = mulberry32(777);
 
-    const hills =
-      new THREE.InstancedMesh(
-        hGeo,
-        hMat,
-        H
-      );
+    for (let i = 0; i < H; i++) {
+      const a = (i / H) * Math.PI * 2 + hr() * 0.6;
+      const rr = 70 + hr() * 16;
 
-    const hr =
-      mulberry32(777);
-
-    for (
-      let i = 0;
-      i < H;
-      i++
-    ) {
-      const a =
-        (i / H) *
-          Math.PI *
-          2 +
-        hr() * 0.6;
-
-      const rr =
-        70 +
-        hr() * 16;
-
-      e.set(
-        0,
-        hr() * Math.PI,
-        0
-      );
-
+      e.set(0, hr() * Math.PI, 0);
       q.setFromEuler(e);
 
-      m.compose(
-        pv.set(
-          Math.cos(a) * rr,
-          -1,
-          Math.sin(a) * rr
-        ),
-        q,
-        sc.set(
-          16 + hr() * 9,
-          4 + hr() * 5,
-          11 + hr() * 7
-        )
-      );
+      m.compose(pv.set(Math.cos(a) * rr, -1, Math.sin(a) * rr), q, sc.set(16 + hr() * 9, 4 + hr() * 5, 11 + hr() * 7));
 
-      hills.setMatrixAt(
-        i,
-        m
-      );
+      hills.setMatrixAt(i, m);
     }
 
     group.add(hills);
   }
 
-  return {
-    group,
-    heightAt,
-    padFactor,
-  };
+  return { group, heightAt, padFactor };
 }
 
 /* ============================================================
    EFFECTS — dust, smoke, ripples, water
    ============================================================ */
 class Dust {
-  constructor(
-    parent,
-    origin,
-    accentHex,
-    size
-  ) {
+  constructor(parent, origin, accentHex, size) {
     this.N = 90;
     this.origin = origin;
-
-    this.pos =
-      new Float32Array(
-        this.N * 3
-      );
-
-    this.col =
-      new Float32Array(
-        this.N * 3
-      );
-
+    this.pos = new Float32Array(this.N * 3);
+    this.col = new Float32Array(this.N * 3);
     this.parts = [];
 
-    for (
-      let i = 0;
-      i < this.N;
-      i++
-    ) {
-      this.parts.push({
-        life: -1,
-        ttl: 1,
-        x: 0,
-        y: -99,
-        z: 0,
-        vx: 0,
-        vy: 0,
-        vz: 0,
-      });
+    for (let i = 0; i < this.N; i++) {
+      this.parts.push({ life: -1, ttl: 1, x: 0, y: -99, z: 0, vx: 0, vy: 0, vz: 0 });
     }
 
-    const geo =
-      new THREE.BufferGeometry();
+    const geo = new THREE.BufferGeometry();
+    this.pa = new THREE.BufferAttribute(this.pos, 3);
+    this.ca = new THREE.BufferAttribute(this.col, 3);
+    this.pa.setUsage(THREE.DynamicDrawUsage);
+    this.ca.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('position', this.pa);
+    geo.setAttribute('color', this.ca);
 
-    this.pa =
-      new THREE.BufferAttribute(
-        this.pos,
-        3
-      );
-
-    this.ca =
-      new THREE.BufferAttribute(
-        this.col,
-        3
-      );
-
-    this.pa.setUsage(
-      THREE.DynamicDrawUsage
+    this.pts = new THREE.Points(
+      geo,
+      new THREE.PointsMaterial({
+        size,
+        map: softTex(),
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        vertexColors: true,
+      })
     );
-
-    this.ca.setUsage(
-      THREE.DynamicDrawUsage
-    );
-
-    geo.setAttribute(
-      'position',
-      this.pa
-    );
-
-    geo.setAttribute(
-      'color',
-      this.ca
-    );
-
-    this.pts =
-      new THREE.Points(
-        geo,
-        new THREE.PointsMaterial({
-          size,
-          map: softTex(),
-          transparent: true,
-          depthWrite: false,
-          blending:
-            THREE.AdditiveBlending,
-          vertexColors: true,
-        })
-      );
 
     this.pts.frustumCulled = false;
-
-    this.base =
-      new THREE.Color(0xc09a6e)
-        .lerp(
-          new THREE.Color(accentHex),
-          0.25
-        );
-
+    this.base = new THREE.Color(0xc09a6e).lerp(new THREE.Color(accentHex), 0.25);
     parent.add(this.pts);
   }
 
   burst(n) {
-    for (
-      let k = 0;
-      k < n;
-      k++
-    ) {
-      const i =
-        this.parts.findIndex(
-          (p) =>
-            p.life < 0 ||
-            p.life >= p.ttl
-        );
-
+    for (let k = 0; k < n; k++) {
+      const i = this.parts.findIndex((p) => p.life < 0 || p.life >= p.ttl);
       if (i < 0) return;
 
-      const p =
-        this.parts[i];
+      const p = this.parts[i];
+      const a = Math.random() * Math.PI * 2;
+      const sp = 0.5 + Math.random() * 1.3;
 
-      const a =
-        Math.random() *
-        Math.PI *
-        2;
-
-      const sp =
-        0.5 +
-        Math.random() *
-          1.3;
-
-      p.x =
-        this.origin.x +
-        (Math.random() - 0.5) *
-          0.25;
-
-      p.z =
-        this.origin.z +
-        (Math.random() - 0.5) *
-          0.25;
-
-      p.y =
-        this.origin.y +
-        Math.random() *
-          0.1;
-
-      p.vx =
-        Math.cos(a) * sp;
-
-      p.vz =
-        Math.sin(a) * sp;
-
-      p.vy =
-        0.9 +
-        Math.random() * 1.5;
-
-      p.ttl =
-        0.7 +
-        Math.random() * 0.7;
-
+      p.x = this.origin.x + (Math.random() - 0.5) * 0.25;
+      p.z = this.origin.z + (Math.random() - 0.5) * 0.25;
+      p.y = this.origin.y + Math.random() * 0.1;
+      p.vx = Math.cos(a) * sp;
+      p.vz = Math.sin(a) * sp;
+      p.vy = 0.9 + Math.random() * 1.5;
+      p.ttl = 0.7 + Math.random() * 0.7;
       p.life = 0;
     }
   }
@@ -2695,94 +1613,39 @@ class Dust {
   update(dt) {
     let any = false;
 
-    for (
-      let i = 0;
-      i < this.N;
-      i++
-    ) {
-      const p =
-        this.parts[i];
+    for (let i = 0; i < this.N; i++) {
+      const p = this.parts[i];
 
-      if (
-        p.life >= 0 &&
-        p.life < p.ttl
-      ) {
+      if (p.life >= 0 && p.life < p.ttl) {
         p.life += dt;
-
-        p.vy -=
-          dt * 1.6;
-
-        p.vx *=
-          Math.exp(-dt * 1.6);
-
-        p.vz *=
-          Math.exp(-dt * 1.6);
-
-        p.x +=
-          p.vx * dt;
-
-        p.y +=
-          p.vy * dt;
-
-        p.z +=
-          p.vz * dt;
+        p.vy -= dt * 1.6;
+        p.vx *= Math.exp(-dt * 1.6);
+        p.vz *= Math.exp(-dt * 1.6);
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.z += p.vz * dt;
 
         if (p.y < 0.05) {
           p.y = 0.05;
           p.vy *= -0.25;
         }
 
-        if (
-          p.life >= p.ttl
-        ) {
-          this.pos[
-            i * 3 + 1
-          ] = -99;
-
-          this.col[i * 3] =
-            this.col[
-              i * 3 + 1
-            ] =
-            this.col[
-              i * 3 + 2
-            ] = 0;
-
+        if (p.life >= p.ttl) {
+          this.pos[i * 3 + 1] = -99;
+          this.col[i * 3] = this.col[i * 3 + 1] = this.col[i * 3 + 2] = 0;
           any = true;
           continue;
         }
 
-        const k =
-          1 -
-          p.life /
-            p.ttl;
+        const k = 1 - p.life / p.ttl;
+        const f = k * k;
 
-        const f =
-          k * k;
-
-        this.pos[i * 3] =
-          p.x;
-
-        this.pos[
-          i * 3 + 1
-        ] = p.y;
-
-        this.pos[
-          i * 3 + 2
-        ] = p.z;
-
-        this.col[i * 3] =
-          this.base.r * f;
-
-        this.col[
-          i * 3 + 1
-        ] =
-          this.base.g * f;
-
-        this.col[
-          i * 3 + 2
-        ] =
-          this.base.b * f;
-
+        this.pos[i * 3] = p.x;
+        this.pos[i * 3 + 1] = p.y;
+        this.pos[i * 3 + 2] = p.z;
+        this.col[i * 3] = this.base.r * f;
+        this.col[i * 3 + 1] = this.base.g * f;
+        this.col[i * 3 + 2] = this.base.b * f;
         any = true;
       }
     }
@@ -2801,118 +1664,53 @@ class Smoke {
     this.acc = 0;
     this.rate = 0.45;
 
-    const geo =
-      new THREE.SphereGeometry(
-        1,
-        8,
-        6
+    const geo = new THREE.SphereGeometry(1, 8, 6);
+
+    for (let i = 0; i < 14; i++) {
+      const mm = new THREE.Mesh(
+        geo,
+        new THREE.MeshStandardMaterial({
+          color: 0x3d454f,
+          transparent: true,
+          opacity: 0,
+          roughness: 1,
+          metalness: 0,
+          depthWrite: false,
+        })
       );
 
-    for (
-      let i = 0;
-      i < 14;
-      i++
-    ) {
-      const mm =
-        new THREE.Mesh(
-          geo,
-          new THREE.MeshStandardMaterial({
-            color: 0x3d454f,
-            transparent: true,
-            opacity: 0,
-            roughness: 1,
-            metalness: 0,
-            depthWrite: false,
-          })
-        );
-
       mm.visible = false;
-
-      mm.userData = {
-        age: -1,
-      };
-
+      mm.userData = { age: -1 };
       parent.add(mm);
       this.pool.push(mm);
     }
   }
 
   spawn(boost = 1) {
-    const mm =
-      this.pool.find(
-        (p) =>
-          p.userData.age < 0
-      );
-
+    const mm = this.pool.find((p) => p.userData.age < 0);
     if (!mm) return;
 
-    const u =
-      mm.userData;
-
-    u.ttl =
-      1.3 +
-      Math.random() *
-        0.8;
-
+    const u = mm.userData;
+    u.ttl = 1.3 + Math.random() * 0.8;
     u.age = 0;
-
-    u.ph =
-      Math.random() * 9;
-
-    u.p =
-      this.anchor
-        .clone()
-        .add(
-          V(
-            (Math.random() - 0.5) *
-              0.1,
-            0,
-            (Math.random() - 0.5) *
-              0.1
-          )
-        );
-
-    u.vx =
-      (Math.random() - 0.5) *
-        0.3 +
-      0.15;
-
-    u.vz =
-      (Math.random() - 0.5) *
-      0.3;
-
-    u.vy =
-      0.7 +
-      Math.random() * 0.5;
-
-    u.s0 =
-      0.09 * boost;
-
-    u.s1 =
-      (0.42 +
-        Math.random() * 0.25) *
-      boost;
-
-    u.o =
-      0.6 +
-      0.4 * Math.random();
+    u.ph = Math.random() * 9;
+    u.p = this.anchor.clone().add(V((Math.random() - 0.5) * 0.1, 0, (Math.random() - 0.5) * 0.1));
+    u.vx = (Math.random() - 0.5) * 0.3 + 0.15;
+    u.vz = (Math.random() - 0.5) * 0.3;
+    u.vy = 0.7 + Math.random() * 0.5;
+    u.s0 = 0.09 * boost;
+    u.s1 = (0.42 + Math.random() * 0.25) * boost;
+    u.o = 0.6 + 0.4 * Math.random();
 
     mm.visible = true;
   }
 
   burst(n) {
-    for (
-      let i = 0;
-      i < n;
-      i++
-    ) {
-      this.spawn(1.6);
-    }
+    for (let i = 0; i < n; i++) this.spawn(1.6);
   }
 
   update(dt, t) {
-    this.acc +=
-      dt * this.rate;
+    this.acc += dt * this.rate;
 
     while (this.acc > 1) {
       this.acc -= 1;
@@ -2920,17 +1718,11 @@ class Smoke {
     }
 
     for (const mm of this.pool) {
-      const u =
-        mm.userData;
-
-      if (u.age < 0)
-        continue;
+      const u = mm.userData;
+      if (u.age < 0) continue;
 
       u.age += dt;
-
-      const k =
-        u.age /
-        u.ttl;
+      const k = u.age / u.ttl;
 
       if (k >= 1) {
         u.age = -1;
@@ -2938,85 +1730,31 @@ class Smoke {
         continue;
       }
 
-      u.p.y +=
-        u.vy * dt;
+      u.p.y += u.vy * dt;
+      u.p.x += u.vx * dt + Math.sin((t + u.ph) * 3) * dt * 0.25;
+      u.p.z += u.vz * dt;
+      u.vy *= Math.exp(-dt * 0.35);
 
-      u.p.x +=
-        u.vx * dt +
-        Math.sin(
-          (t + u.ph) * 3
-        ) *
-          dt *
-          0.25;
-
-      u.p.z +=
-        u.vz * dt;
-
-      u.vy *=
-        Math.exp(-dt * 0.35);
-
-      mm.position.copy(
-        u.p
-      );
-
-      mm.scale.setScalar(
-        u.s0 +
-          (u.s1 - u.s0) *
-            k
-      );
-
-      mm.material.opacity =
-        0.28 *
-        Math.sin(
-          Math.PI *
-            Math.min(k, 1)
-        ) *
-        u.o;
+      mm.position.copy(u.p);
+      mm.scale.setScalar(u.s0 + (u.s1 - u.s0) * k);
+      mm.material.opacity = 0.28 * Math.sin(Math.PI * Math.min(k, 1)) * u.o;
     }
   }
 }
 
 class Ripple {
-  constructor(
-    parent,
-    x,
-    rIn,
-    color
-  ) {
+  constructor(parent, x, rIn, color) {
     this.rings = [];
 
-    for (
-      let i = 0;
-      i < 3;
-      i++
-    ) {
-      const mm =
-        new THREE.Mesh(
-          new THREE.RingGeometry(
-            rIn,
-            rIn * 1.32,
-            28
-          ),
-          new THREE.MeshBasicMaterial({
-            color,
-            transparent: true,
-            opacity: 0,
-            depthWrite: false,
-            side: THREE.DoubleSide,
-          })
-        );
-
-      mm.rotation.x =
-        -Math.PI / 2;
-
-      mm.position.set(
-        x,
-        0.045,
-        0
+    for (let i = 0; i < 3; i++) {
+      const mm = new THREE.Mesh(
+        new THREE.RingGeometry(rIn, rIn * 1.32, 28),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide })
       );
 
+      mm.rotation.x = -Math.PI / 2;
+      mm.position.set(x, 0.045, 0);
       mm.userData.t = -1;
-
       parent.add(mm);
       this.rings.push(mm);
     }
@@ -3025,26 +1763,16 @@ class Ripple {
   }
 
   emit() {
-    const mm =
-      this.rings[
-        this.next++ % 3
-      ];
-
+    const mm = this.rings[this.next++ % 3];
     mm.userData.t = 0;
   }
 
   update(dt) {
     for (const mm of this.rings) {
-      if (
-        mm.userData.t < 0
-      )
-        continue;
+      if (mm.userData.t < 0) continue;
 
       mm.userData.t += dt;
-
-      const k =
-        mm.userData.t /
-        1.1;
+      const k = mm.userData.t / 1.1;
 
       if (k >= 1) {
         mm.userData.t = -1;
@@ -3052,22 +1780,9 @@ class Ripple {
         continue;
       }
 
-      const s =
-        0.7 +
-        k * 1.6;
-
-      mm.scale.set(
-        s,
-        s,
-        1
-      );
-
-      mm.material.opacity =
-        0.4 *
-        (1 - k) *
-        (k < 0.15
-          ? k / 0.15
-          : 1);
+      const s = 0.7 + k * 1.6;
+      mm.scale.set(s, s, 1);
+      mm.material.opacity = 0.4 * (1 - k) * (k < 0.15 ? k / 0.15 : 1);
     }
   }
 }
@@ -3076,153 +1791,55 @@ class Drops {
   /* water droplets */
   constructor(parent) {
     this.N = 110;
-
-    this.pos =
-      new Float32Array(
-        this.N * 3
-      );
-
-    this.col =
-      new Float32Array(
-        this.N * 3
-      );
-
+    this.pos = new Float32Array(this.N * 3);
+    this.col = new Float32Array(this.N * 3);
     this.parts = [];
 
-    for (
-      let i = 0;
-      i < this.N;
-      i++
-    ) {
-      this.parts.push({
-        life: -1,
-        ttl: 1,
-        x: 0,
-        y: -99,
-        z: 0,
-        vx: 0,
-        vy: 0,
-        vz: 0,
-      });
+    for (let i = 0; i < this.N; i++) {
+      this.parts.push({ life: -1, ttl: 1, x: 0, y: -99, z: 0, vx: 0, vy: 0, vz: 0 });
     }
 
-    const geo =
-      new THREE.BufferGeometry();
+    const geo = new THREE.BufferGeometry();
+    this.pa = new THREE.BufferAttribute(this.pos, 3);
+    this.ca = new THREE.BufferAttribute(this.col, 3);
+    this.pa.setUsage(THREE.DynamicDrawUsage);
+    this.ca.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('position', this.pa);
+    geo.setAttribute('color', this.ca);
 
-    this.pa =
-      new THREE.BufferAttribute(
-        this.pos,
-        3
-      );
-
-    this.ca =
-      new THREE.BufferAttribute(
-        this.col,
-        3
-      );
-
-    this.pa.setUsage(
-      THREE.DynamicDrawUsage
+    this.pts = new THREE.Points(
+      geo,
+      new THREE.PointsMaterial({
+        size: 0.17,
+        map: softTex(),
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        vertexColors: true,
+      })
     );
 
-    this.ca.setUsage(
-      THREE.DynamicDrawUsage
-    );
-
-    geo.setAttribute(
-      'position',
-      this.pa
-    );
-
-    geo.setAttribute(
-      'color',
-      this.ca
-    );
-
-    this.pts =
-      new THREE.Points(
-        geo,
-        new THREE.PointsMaterial({
-          size: 0.17,
-          map: softTex(),
-          transparent: true,
-          depthWrite: false,
-          blending:
-            THREE.AdditiveBlending,
-          vertexColors: true,
-        })
-      );
-
-    this.pts.frustumCulled =
-      false;
-
-    this.base =
-      new THREE.Color(
-        0x9fdcf2
-      );
-
-    parent.add(
-      this.pts
-    );
+    this.pts.frustumCulled = false;
+    this.base = new THREE.Color(0x9fdcf2);
+    parent.add(this.pts);
   }
 
   spawn(n, y) {
-    for (
-      let k = 0;
-      k < n;
-      k++
-    ) {
-      const i =
-        this.parts.findIndex(
-          (p) =>
-            p.life < 0 ||
-            p.life >= p.ttl
-        );
+    for (let k = 0; k < n; k++) {
+      const i = this.parts.findIndex((p) => p.life < 0 || p.life >= p.ttl);
+      if (i < 0) return;
 
-      if (i < 0)
-        return;
+      const p = this.parts[i];
+      const a = Math.random() * Math.PI * 2;
+      const sp = 0.25 + Math.random() * 1.2;
 
-      const p =
-        this.parts[i];
-
-      const a =
-        Math.random() *
-        Math.PI *
-        2;
-
-      const sp =
-        0.25 +
-        Math.random() *
-          1.2;
-
-      p.x =
-        (Math.random() - 0.5) *
-        0.22;
-
-      p.z =
-        (Math.random() - 0.5) *
-        0.22;
-
+      p.x = (Math.random() - 0.5) * 0.22;
+      p.z = (Math.random() - 0.5) * 0.22;
       p.y = y;
-
-      p.vx =
-        Math.cos(a) *
-        sp;
-
-      p.vz =
-        Math.sin(a) *
-        sp;
-
-      p.vy =
-        2.6 +
-        Math.random() *
-          2.6;
-
-      p.ttl =
-        0.65 +
-        Math.random() *
-          0.55;
-
+      p.vx = Math.cos(a) * sp;
+      p.vz = Math.sin(a) * sp;
+      p.vy = 2.6 + Math.random() * 2.6;
+      p.ttl = 0.65 + Math.random() * 0.55;
       p.life = 0;
     }
   }
@@ -3230,84 +1847,32 @@ class Drops {
   update(dt) {
     let any = false;
 
-    for (
-      let i = 0;
-      i < this.N;
-      i++
-    ) {
-      const p =
-        this.parts[i];
+    for (let i = 0; i < this.N; i++) {
+      const p = this.parts[i];
 
-      if (
-        p.life >= 0 &&
-        p.life < p.ttl
-      ) {
+      if (p.life >= 0 && p.life < p.ttl) {
         p.life += dt;
+        p.vy -= dt * 7.5;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.z += p.vz * dt;
 
-        p.vy -=
-          dt * 7.5;
-
-        p.x +=
-          p.vx * dt;
-
-        p.y +=
-          p.vy * dt;
-
-        p.z +=
-          p.vz * dt;
-
-        if (
-          p.life >= p.ttl ||
-          p.y < 0
-        ) {
-          this.pos[
-            i * 3 + 1
-          ] = -99;
-
-          this.col[i * 3] =
-            this.col[
-              i * 3 + 1
-            ] =
-            this.col[
-              i * 3 + 2
-            ] = 0;
-
+        if (p.life >= p.ttl || p.y < 0) {
+          this.pos[i * 3 + 1] = -99;
+          this.col[i * 3] = this.col[i * 3 + 1] = this.col[i * 3 + 2] = 0;
           any = true;
           continue;
         }
 
-        const k =
-          1 -
-          p.life /
-            p.ttl;
+        const k = 1 - p.life / p.ttl;
+        const f = k * k;
 
-        const f =
-          k * k;
-
-        this.pos[i * 3] =
-          p.x;
-
-        this.pos[
-          i * 3 + 1
-        ] = p.y;
-
-        this.pos[
-          i * 3 + 2
-        ] = p.z;
-
-        this.col[i * 3] =
-          this.base.r * f;
-
-        this.col[
-          i * 3 + 1
-        ] =
-          this.base.g * f;
-
-        this.col[
-          i * 3 + 2
-        ] =
-          this.base.b * f;
-
+        this.pos[i * 3] = p.x;
+        this.pos[i * 3 + 1] = p.y;
+        this.pos[i * 3 + 2] = p.z;
+        this.col[i * 3] = this.base.r * f;
+        this.col[i * 3 + 1] = this.base.g * f;
+        this.col[i * 3 + 2] = this.base.b * f;
         any = true;
       }
     }
@@ -3317,7 +1882,463 @@ class Drops {
       this.ca.needsUpdate = true;
     }
   }
-    dispose() {
+}
+
+/* ============================================================
+   SiteController — the missing piece: wires terrain + both rigs
+   into one scene, drives hover-to-rig-up + drilling + water
+   strike, and owns the render loop / disposal.
+
+   ASSUMPTIONS (undocumented in the source you provided):
+   - hover raycasts against each rig's own meshes (not the
+     `hitbox` box, which had no consumer anywhere in the file).
+   - reaching `cfg.waterDepth` triggers Drops+Ripple for
+     `cfg.flowSec` seconds, then the rig retracts; re-hovering
+     later resets depth and repeats.
+   - camera holds one fixed framing that shows both rigs;
+     there is no per-rig "zoom in" spec anywhere in your file.
+   ============================================================ */
+export class SiteController {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.disposed = false;
+    this._raf = 0;
+    this._autoTimer = null;
+    this._retryTimer = null;
+    this._bound = [];
+    this.units = {};
+    this._hovered = null;
+    this._labelEl = null;
+    this._labelSub = null;
+
+    this._ndc = new THREE.Vector2();
+    this.ray = new THREE.Raycaster();
+
+    this._initScene();
+    this._initTerrain();
+    this._initUnits();
+    this._initControls();
+    this._initLabel();
+    this._bindEvents();
+    this._resize();
+    this._start();
+  }
+
+  /* ---------------- setup ---------------- */
+  _initScene() {
+    const r = (this.renderer = new THREE.WebGLRenderer({
+      canvas: this.canvas,
+      antialias: true,
+      alpha: false,
+    }));
+    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    r.shadowMap.enabled = true;
+    r.shadowMap.type = THREE.PCFSoftShadowMap;
+    r.toneMapping = THREE.ACESFilmicToneMapping;
+    r.toneMappingExposure = 1.05;
+
+    this.scene = new THREE.Scene();
+    this.scene.background = makeSkyTexture();
+    this.scene.fog = new THREE.Fog(0x0a1420, 40, 150);
+
+    this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 400);
+    this.camera.position.set(2, 20, 36);
+
+    this.scene.add(new THREE.HemisphereLight(0x8fa6b0, 0x1a1408, 0.85));
+
+    const key = new THREE.DirectionalLight(0xfff2df, 1.7);
+    key.position.set(30, 42, 18);
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    const sc = key.shadow.camera;
+    sc.left = -46;
+    sc.right = 46;
+    sc.top = 46;
+    sc.bottom = -46;
+    sc.near = 1;
+    sc.far = 140;
+    key.shadow.bias = -0.0003;
+    this.scene.add(key);
+
+    const fill = new THREE.DirectionalLight(0x5fb5a8, 0.4);
+    fill.position.set(-24, 14, -20);
+    this.scene.add(fill);
+  }
+
+  _initTerrain() {
+    const { group, heightAt, padFactor } = buildTerrain();
+    this.scene.add(group);
+    this.heightAt = heightAt;
+    this.padFactor = padFactor;
+  }
+
+  _initUnits() {
+    for (const key of Object.keys(MACHINES)) {
+      const cfg = MACHINES[key];
+      const rig = cfg.builder(cfg.hex);
+      const y = this.heightAt(cfg.place.x, cfg.place.z);
+
+      rig.position.set(cfg.place.x, y, cfg.place.z);
+      rig.rotation.y = cfg.place.yaw;
+      this.scene.add(rig);
+
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(cfg.ringR * 0.88, cfg.ringR, 48),
+        new THREE.MeshBasicMaterial({
+          color: cfg.hex,
+          transparent: true,
+          opacity: 0.5,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        })
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(cfg.place.x, y + 0.03, cfg.place.z);
+      this.scene.add(ring);
+
+      const u = rig.userData;
+      const dust = new Dust(rig, V(u.holeX, 0.32, 0), cfg.hex, 0.16);
+      const smoke = new Smoke(rig, u.smokeAnchor);
+      const ripple = new Ripple(rig, u.holeX, cfg.ringR * 0.1, cfg.color);
+      const drops = new Drops(rig);
+
+      this.units[key] = {
+        key,
+        cfg,
+        rig,
+        ring,
+        dust,
+        smoke,
+        ripple,
+        drops,
+        mastAngle: u.stow,
+        mastTarget: u.stow,
+        locked: false,
+        ready: false,
+        pipeRun: 0,
+        bitLocal: u.headTopLocal - u.headOff - 0.55,
+        hover: 0,
+        hoverT: 0,
+        spin: 0,
+        lastHead: u.headTopLocal,
+        lastAngle: u.stow,
+        dustAcc: 0,
+        rippleAcc: 0,
+        drill: { on: false, phase: 'idle', head: u.headTopLocal, depth: 0, waterOn: false, waterT: 0 },
+      };
+    }
+  }
+
+  _initControls() {
+    const controls = (this.controls = new OrbitControls(this.camera, this.canvas));
+    controls.target.set(0, 4, 0);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.minDistance = 14;
+    controls.maxDistance = 70;
+    controls.maxPolarAngle = Math.PI * 0.49;
+    controls.update();
+  }
+
+  _initLabel() {
+    const el = document.createElement('div');
+    el.style.cssText = [
+      'position:absolute',
+      'pointer-events:none',
+      'padding:6px 10px',
+      'border-radius:7px',
+      'background:rgba(6,10,17,.92)',
+      'border:1px solid #20bea5',
+      'color:#e8f0ee',
+      "font:600 .68rem 'IBM Plex Mono', monospace",
+      'letter-spacing:.16em',
+      'white-space:nowrap',
+      'opacity:0',
+      'transform:translateY(5px)',
+      'transition:opacity .16s, transform .16s',
+      'z-index:5',
+    ].join(';');
+    this.canvas.parentElement.appendChild(el);
+    this._labelEl = el;
+  }
+
+  _bindEvents() {
+    const on = (type, fn, opts) => {
+      this.canvas.addEventListener(type, fn, opts);
+      this._bound.push([type, fn]);
+    };
+
+    on('pointermove', (e) => this._pick(e));
+    on('pointerleave', () => this._setHover(null));
+
+    this._ro = new ResizeObserver(() => this._resize());
+    this._ro.observe(this.canvas.parentElement);
+  }
+
+  /* ---------------- hover / picking ---------------- */
+  _pick(e) {
+    const r = this.canvas.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+
+    this._ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    this.ray.setFromCamera(this._ndc, this.camera);
+
+    const rigs = Object.values(this.units).map((u) => u.rig);
+    const hits = this.ray.intersectObjects(rigs, true);
+    const key = hits.length ? this._unitOf(hits[0].object) : null;
+
+    this._setHover(key, e);
+  }
+
+  _unitOf(obj) {
+    for (const u of Object.values(this.units)) {
+      let p = obj;
+      while (p) {
+        if (p === u.rig) return u.key;
+        p = p.parent;
+      }
+    }
+    return null;
+  }
+
+  _setHover(key, e) {
+    if (this._hovered && this._hovered !== key) {
+      this.units[this._hovered].hoverT = 0;
+    }
+
+    this._hovered = key;
+    this._labelSub = key;
+
+    if (key) {
+      const u = this.units[key];
+      u.hoverT = 1;
+      u.mastTarget = 0; // raise mast on hover
+
+      this._labelEl.textContent = `${u.cfg.title} · ${u.cfg.tag}`;
+      this._labelEl.style.borderColor = u.cfg.color;
+      this._labelEl.style.color = u.cfg.lt;
+      this._labelEl.style.opacity = '1';
+      this._labelEl.style.transform = 'none';
+
+      if (e) {
+        const r = this.canvas.parentElement.getBoundingClientRect();
+        let x = e.clientX - r.left + 16;
+        let y = e.clientY - r.top + 18;
+        x = Math.max(4, Math.min(x, r.width - 220));
+        y = Math.max(4, Math.min(y, r.height - 40));
+        this._labelEl.style.left = x + 'px';
+        this._labelEl.style.top = y + 'px';
+      }
+    } else {
+      for (const u of Object.values(this.units)) {
+        u.mastTarget = u.rig.userData.stow; // lower mast when nothing hovered
+      }
+      this._labelEl.style.opacity = '0';
+      this._labelEl.style.transform = 'translateY(5px)';
+    }
+  }
+
+  /* ---------------- resize ---------------- */
+  _resize() {
+    const p = this.canvas.parentElement;
+    const w = p.clientWidth;
+    const h = p.clientHeight;
+    if (!w || !h) return;
+
+    this.renderer.setSize(w, h, false);
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+  }
+
+  /* ---------------- per-unit update ---------------- */
+  _updateUnit(u, dt, t) {
+    const rigU = u.rig.userData;
+    const cfg = u.cfg;
+
+    u.hover += (u.hoverT - u.hover) * Math.min(1, dt * 6);
+
+    const lam = REDUCED ? 18 : 2.2;
+    u.mastAngle = damp(u.mastAngle, u.mastTarget, lam, dt);
+    rigU.mast.rotation.z = u.mastAngle;
+
+    const rigging = Math.abs(u.mastAngle - u.mastTarget) > 0.03;
+
+    if (u.mastTarget === 0) {
+      if (!u.locked && u.mastAngle < 0.06) {
+        u.locked = true;
+        u.pipeRun = 0;
+        u.smoke.burst(3);
+      }
+      if (u.locked && !u.ready) {
+        u.pipeRun = Math.min(1, u.pipeRun + dt / 0.8);
+        const e = 1 - Math.pow(1 - u.pipeRun, 3);
+        u.bitLocal = lerp(rigU.headTopLocal - rigU.headOff - 0.55, rigU.bitTopLocal, e);
+        rigU.bitGroup.visible = u.pipeRun > 0.4;
+        rigU.collar.visible = u.pipeRun > 0.3;
+        rigU.hole.visible = u.pipeRun > 0.25;
+
+        if (u.pipeRun >= 1) {
+          u.ready = true;
+          u.drill.on = true;
+          u.drill.phase = 'down';
+        }
+      }
+    } else {
+      if (u.mastAngle > rigU.stow * 0.6) {
+        u.locked = false;
+        u.ready = false;
+        u.pipeRun = 0;
+        u.drill.on = false;
+        u.drill.depth = 0;
+        u.drill.waterOn = false;
+        u.drill.waterT = 0;
+      }
+      u.bitLocal = rigU.headTopLocal - rigU.headOff - 0.55;
+      rigU.bitGroup.visible = false;
+      rigU.collar.visible = false;
+      rigU.hole.visible = false;
+    }
+
+    const d = u.drill;
+
+    if (u.ready && d.waterOn) {
+      d.waterT -= dt;
+      u.drops.spawn(3, rigU.headTopLocal * 0.15 + 0.3);
+      u.rippleAcc += dt;
+      if (u.rippleAcc > 0.3) {
+        u.rippleAcc = 0;
+        u.ripple.emit();
+      }
+      if (d.waterT <= 0) {
+        d.waterOn = false;
+        d.on = false;
+        d.phase = 'up';
+      }
+    } else if (u.ready && d.on) {
+      const span = rigU.headTopLocal - rigU.headLowLocal;
+
+      if (d.phase === 'down') {
+        d.head -= (span * dt) / cfg.drill.downSec;
+        const pr = clamp((rigU.headTopLocal - d.head) / span, 0, 1);
+        u.bitLocal = lerp(rigU.bitTopLocal, rigU.bitDeepLocal, pr);
+
+        u.dustAcc += dt * 18;
+        while (u.dustAcc > 1) {
+          u.dustAcc -= 1;
+          u.dust.burst(1);
+        }
+
+        u.rippleAcc += dt;
+        if (u.rippleAcc > 0.5) {
+          u.rippleAcc = 0;
+          u.ripple.emit();
+        }
+
+        if (d.head <= rigU.headLowLocal) {
+          d.head = rigU.headLowLocal;
+          u.bitLocal = rigU.bitDeepLocal;
+          d.phase = 'bottom';
+          d.wait = 0.5;
+          d.depth += cfg.drill.strokeFt;
+          u.dust.burst(20);
+
+          if (d.depth >= cfg.waterDepth) {
+            d.waterOn = true;
+            d.waterT = cfg.flowSec;
+            u.drops.spawn(30, rigU.headTopLocal * 0.15 + 0.3);
+            u.ripple.emit();
+          }
+        }
+      } else if (d.phase === 'bottom') {
+        d.wait -= dt;
+        if (d.wait <= 0) d.phase = 'up';
+      } else if (d.phase === 'up') {
+        d.head += (span * dt) / cfg.drill.upSec;
+        const pr = clamp((d.head - rigU.headLowLocal) / span, 0, 1);
+        u.bitLocal = lerp(rigU.bitDeepLocal, rigU.bitTopLocal, pr);
+
+        if (d.head >= rigU.headTopLocal) {
+          d.head = rigU.headTopLocal;
+          u.bitLocal = rigU.bitTopLocal;
+          d.phase = d.depth >= cfg.waterDepth ? 'idle' : 'down';
+          if (d.phase === 'idle') d.on = false;
+        }
+      }
+    }
+
+    rigU.head.position.y = d.head;
+    const pipeTop = d.head - rigU.headOff;
+    rigU.pipe.position.y = pipeTop;
+    rigU.pipe.scale.y = Math.max(0.02, pipeTop - u.bitLocal);
+    rigU.bitGroup.position.y = u.bitLocal;
+
+    const spinRate = (d.on && d.phase !== 'up' ? 1 : 0.12) * cfg.drill.rpm * 0.105;
+    u.spin += spinRate * dt;
+    rigU.pipe.rotation.y = u.spin;
+    rigU.bitGroup.rotation.y = u.spin * 1.7;
+    for (const cn of rigU.cones) cn.rotation.y += dt * (d.on ? 9 : 1.5);
+
+    for (const cb of rigU.cables) updateBar(cb.mesh, cb.from, _b.copy(rigU.head.position).add(cb.off));
+
+    const dHead = d.head - u.lastHead;
+    const dAng = u.mastAngle - u.lastAngle;
+    u.lastHead = d.head;
+    u.lastAngle = u.mastAngle;
+    if (rigU.drum) rigU.drum.rotation.y += dHead * 6 + dAng * 3;
+    for (const s of rigU.sheaves) s.rotation.y += dHead * 5 + dAng * 2.5;
+
+    for (const h of rigU.hyd) {
+      h.anchor.getWorldPosition(_a);
+      u.rig.worldToLocal(_a);
+      updateBar(h.mesh, h.base, _a);
+    }
+    if (rigU.fastline) {
+      rigU.fastline.anchor.getWorldPosition(_a);
+      u.rig.worldToLocal(_a);
+      updateBar(rigU.fastline.mesh, rigU.fastline.base, _a);
+    }
+
+    const bm = rigU.beaconMat;
+    if (d.waterOn) bm.emissiveIntensity = Math.sin(t * 22) > 0 ? 3.8 : 0.2;
+    else if (u.ready && d.on) bm.emissiveIntensity = Math.sin(t * 18) > 0 ? 3.6 : 0.15;
+    else if (rigging || (u.locked && !u.ready)) bm.emissiveIntensity = Math.sin(t * 12) > 0 ? 3.2 : 0.15;
+    else bm.emissiveIntensity = 1 + Math.sin(t * 2.2) * 0.7;
+
+    if (rigU.ledMat) rigU.ledMat.emissiveIntensity = u.ready && d.on ? 1.6 + Math.sin(t * 9) * 0.8 : 0.7;
+
+    u.smoke.rate = d.on ? 5 : rigging ? 3 : 0.6;
+    u.smoke.update(dt, t);
+    u.dust.update(dt);
+    u.ripple.update(dt);
+    u.drops.update(dt);
+
+    const ringMat = u.ring.material;
+    ringMat.opacity = 0.35 + 0.3 * u.hover + (d.waterOn ? 0.25 * Math.sin(t * 10) : 0);
+  }
+
+  /* ---------------- main loop ---------------- */
+  _start() {
+    let last = performance.now();
+
+    const tick = (now) => {
+      if (this.disposed) return;
+      this._raf = requestAnimationFrame(tick);
+
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      const t = now / 1000;
+
+      for (const u of Object.values(this.units)) this._updateUnit(u, dt, t);
+
+      this.controls.update();
+      this.renderer.render(this.scene, this.camera);
+    };
+
+    this._raf = requestAnimationFrame(tick);
+  }
+
+  /* ---------------- disposal ---------------- */
+  dispose() {
     if (this.disposed) return;
     this.disposed = true;
     cancelAnimationFrame(this._raf);
@@ -3349,4 +2370,9 @@ class Drops {
     this.scene = null; this.camera = null; this.controls = null;
     this.units = {};
   }
+}
+
+/* ---------------- public mount helper ---------------- */
+export function mountSite(canvas) {
+  return new SiteController(canvas);
 }
