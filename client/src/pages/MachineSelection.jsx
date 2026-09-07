@@ -241,27 +241,6 @@ button { font-family: inherit; }
 
 .mbody { padding: 20px 22px 24px; }
 
-.tagrow {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 7px;
-}
-
-.tag {
-  font: 700 .62rem 'Chakra Petch',sans-serif;
-  letter-spacing: .18em;
-  color: var(--cl);
-}
-
-.tdot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--c);
-  box-shadow: 0 0 0 4px var(--csh);
-}
-
 .mbody .desc {
   color: var(--dim);
   font-size: .86rem;
@@ -474,11 +453,6 @@ function SelectionCard({ machineKey, machine, onSelect }) {
       </div>
 
       <div className="mbody">
-        <div className="tagrow">
-          <span className="tag">{machine.tag}</span>
-          <i className="tdot" />
-        </div>
-
         <p className="desc">{machine.desc}</p>
 
         <div className="cta">
