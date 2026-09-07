@@ -1,12 +1,13 @@
 /* ============================================================
    THALACUVERY BOREWELL — full-screen 3D forest drilling site
-   One scene: terrain, trees, bushes, grass, rocks,
-   BIG rig (LEFT) + SMALL rig (RIGHT), hover drill story with
-   water strike, camera framing, error-safe loop, disposal.
+   One scene: terrain, procedural branching trees, bushes, grass,
+   rocks, BIG rig (LEFT) + SMALL rig (RIGHT), hover drill story
+   with water strike, camera framing, error-safe loop, disposal.
    Pure Three.js — no React, no routing.
    ============================================================ */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { createTreeBuilder } from './tree3d.js';
 
 /* ---------------- constants / utils ---------------- */
 const REDUCED =
@@ -646,7 +647,8 @@ function buildSmallRig(accent) {
 }
 
 /* ============================================================
-   FOREST ENVIRONMENT — terrain, grass, bushes, rocks, trees
+   FOREST ENVIRONMENT — terrain, grass, bushes, rocks,
+   procedural branching trees (utils/tree3d.js)
    ============================================================ */
 function buildTerrain() {
   const group = new THREE.Group();
@@ -788,45 +790,26 @@ function buildTerrain() {
     group.add(rocks);
   }
 
-  /* forest — instanced trunks + foliage blobs, clear view corridor */
+  /* forest — procedural branching trees (exact port from the tree viewer).
+     One template per variation; clones share geometry + materials, so the
+     whole forest costs 2 draw calls per tree with full branch detail. */
   {
-    const tGeo = new THREE.CylinderGeometry(0.14, 0.24, 1, 7); tGeo.translate(0, 0.5, 0);
-    const tMat = new THREE.MeshStandardMaterial({ color: 0x463322, roughness: 0.95, flatShading: true });
-    const fGeo = new THREE.IcosahedronGeometry(1, 0);
-    const fMat = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, flatShading: true });
-    const TREES = 28;
-    const treePts = scatter(TREES, 13, 56, (x, z) => !(z > 6 && Math.abs(x) < 27));
-    const trunkMesh = new THREE.InstancedMesh(tGeo, tMat, TREES);
-    const foliage = new THREE.InstancedMesh(fGeo, fMat, TREES * 3);
-    const fc = [new THREE.Color(0x2c4a26), new THREE.Color(0x223e1d), new THREE.Color(0x35522c), new THREE.Color(0x1d3619)];
-    let bi = 0;
+    const treeBuilder = createTreeBuilder();
+    const templates = [
+      treeBuilder.build('wide', rnd),        // seeded → deterministic forest
+      treeBuilder.build('tall', rnd),
+      treeBuilder.build('windswept', rnd),
+    ];
+    const TREES = 24;
+    const treePts = scatter(TREES, 14, 56, (x, z) => !(z > 6 && Math.abs(x) < 27));
     treePts.forEach(([x, z], i) => {
-      let th = 2.6 + rnd() * 2.0;
-      if (rnd() < 0.28) th *= 1.35;                       // occasional tall canopy tree
-      const ts = 0.85 + rnd() * 0.55;
-      e.set(0, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.12); q.setFromEuler(e);
-      m.compose(pv.set(x, heightAt(x, z) - 0.1, z), q, sc.set(ts, th, ts));
-      trunkMesh.setMatrixAt(i, m);
-      for (let k = 0; k < 3; k++) {
-        const r = 1.05 + rnd() * 1.2;
-        e.set(rnd() * 3, rnd() * 3, rnd() * 3); q.setFromEuler(e);
-        m.compose(
-          pv.set(x + (rnd() - 0.5) * 1.2, heightAt(x, z) + th * (0.6 + k * 0.3) + (rnd() - 0.5) * 0.4, z + (rnd() - 0.5) * 1.2),
-          q, sc.set(r, r * (0.75 + rnd() * 0.3), r)
-        );
-        foliage.setMatrixAt(bi, m);
-        foliage.setColorAt(bi, fc[(rnd() * 4) | 0]);
-        bi++;
-      }
+      const tree = templates[i % templates.length].clone();
+      const s = 0.72 + rnd() * 0.5;
+      tree.scale.setScalar(s);
+      tree.rotation.y = rnd() * Math.PI * 2;
+      tree.position.set(x, heightAt(x, z) - 0.3, z);
+      group.add(tree);
     });
-    fillRest(trunkMesh, TREES, treePts.length);
-    for (let i = bi; i < TREES * 3; i++) {
-      m.compose(pv.set(0, -60, 0), q.identity(), sc.set(0.001, 0.001, 0.001));
-      foliage.setMatrixAt(i, m);
-    }
-    trunkMesh.castShadow = foliage.castShadow = true;
-    trunkMesh.receiveShadow = foliage.receiveShadow = true;
-    group.add(trunkMesh, foliage);
   }
 
   /* distant hills (forest-edge silhouettes) */
