@@ -1885,6 +1885,7 @@ class Drops {
 }
 
 /* ============================================================
+<<<<<<< HEAD
    RigViewer — the scene controller matching MachineSelection.jsx:
    one canvas, both rigs, hover-to-rig-up + drilling + water
    strike, click-to-select, and render-loop / disposal.
@@ -1908,6 +1909,24 @@ export class RigViewer {
     this.onHover = onHover || null;
     this.onSelect = onSelect || null;
 
+=======
+   SiteController — the missing piece: wires terrain + both rigs
+   into one scene, drives hover-to-rig-up + drilling + water
+   strike, and owns the render loop / disposal.
+
+   ASSUMPTIONS (undocumented in the source you provided):
+   - hover raycasts against each rig's own meshes (not the
+     `hitbox` box, which had no consumer anywhere in the file).
+   - reaching `cfg.waterDepth` triggers Drops+Ripple for
+     `cfg.flowSec` seconds, then the rig retracts; re-hovering
+     later resets depth and repeats.
+   - camera holds one fixed framing that shows both rigs;
+     there is no per-rig "zoom in" spec anywhere in your file.
+   ============================================================ */
+export class SiteController {
+  constructor(canvas) {
+    this.canvas = canvas;
+>>>>>>> f3bb49f0a1a6d3f93b84c6363e91a27a248b91c1
     this.disposed = false;
     this._raf = 0;
     this._autoTimer = null;
@@ -1915,6 +1934,11 @@ export class RigViewer {
     this._bound = [];
     this.units = {};
     this._hovered = null;
+<<<<<<< HEAD
+=======
+    this._labelEl = null;
+    this._labelSub = null;
+>>>>>>> f3bb49f0a1a6d3f93b84c6363e91a27a248b91c1
 
     this._ndc = new THREE.Vector2();
     this.ray = new THREE.Raycaster();
@@ -1923,6 +1947,10 @@ export class RigViewer {
     this._initTerrain();
     this._initUnits();
     this._initControls();
+<<<<<<< HEAD
+=======
+    this._initLabel();
+>>>>>>> f3bb49f0a1a6d3f93b84c6363e91a27a248b91c1
     this._bindEvents();
     this._resize();
     this._start();
@@ -2044,12 +2072,38 @@ export class RigViewer {
     controls.update();
   }
 
+<<<<<<< HEAD
+=======
+  _initLabel() {
+    const el = document.createElement('div');
+    el.style.cssText = [
+      'position:absolute',
+      'pointer-events:none',
+      'padding:6px 10px',
+      'border-radius:7px',
+      'background:rgba(6,10,17,.92)',
+      'border:1px solid #20bea5',
+      'color:#e8f0ee',
+      "font:600 .68rem 'IBM Plex Mono', monospace",
+      'letter-spacing:.16em',
+      'white-space:nowrap',
+      'opacity:0',
+      'transform:translateY(5px)',
+      'transition:opacity .16s, transform .16s',
+      'z-index:5',
+    ].join(';');
+    this.canvas.parentElement.appendChild(el);
+    this._labelEl = el;
+  }
+
+>>>>>>> f3bb49f0a1a6d3f93b84c6363e91a27a248b91c1
   _bindEvents() {
     const on = (type, fn, opts) => {
       this.canvas.addEventListener(type, fn, opts);
       this._bound.push([type, fn]);
     };
 
+<<<<<<< HEAD
     let downX = 0, downY = 0, moved = false;
 
     on('pointerdown', (e) => {
@@ -2068,21 +2122,33 @@ export class RigViewer {
     });
 
     on('pointerleave', () => this._applyHover(null));
+=======
+    on('pointermove', (e) => this._pick(e));
+    on('pointerleave', () => this._setHover(null));
+>>>>>>> f3bb49f0a1a6d3f93b84c6363e91a27a248b91c1
 
     this._ro = new ResizeObserver(() => this._resize());
     this._ro.observe(this.canvas.parentElement);
   }
 
+<<<<<<< HEAD
   /* ---------------- hover / picking / selection ---------------- */
   _raycastKey(e) {
     const r = this.canvas.getBoundingClientRect();
     if (!r.width || !r.height) return null;
+=======
+  /* ---------------- hover / picking ---------------- */
+  _pick(e) {
+    const r = this.canvas.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+>>>>>>> f3bb49f0a1a6d3f93b84c6363e91a27a248b91c1
 
     this._ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     this.ray.setFromCamera(this._ndc, this.camera);
 
     const rigs = Object.values(this.units).map((u) => u.rig);
     const hits = this.ray.intersectObjects(rigs, true);
+<<<<<<< HEAD
     return hits.length ? this._unitOf(hits[0].object) : null;
   }
 
@@ -2093,6 +2159,11 @@ export class RigViewer {
   _click(e) {
     const key = this._raycastKey(e);
     if (key) this.onSelect && this.onSelect(key);
+=======
+    const key = hits.length ? this._unitOf(hits[0].object) : null;
+
+    this._setHover(key, e);
+>>>>>>> f3bb49f0a1a6d3f93b84c6363e91a27a248b91c1
   }
 
   _unitOf(obj) {
@@ -2106,6 +2177,7 @@ export class RigViewer {
     return null;
   }
 
+<<<<<<< HEAD
   /* Drives the rig-up animation. Used by both canvas hover and the
      public setHover() API so external UI (label chips) can trigger
      the same behavior as hovering the 3D model directly. */
@@ -2126,6 +2198,43 @@ export class RigViewer {
   /** Public API: let external UI (e.g. label chips) drive hover state. */
   setHover(key) {
     this._applyHover(key || null);
+=======
+  _setHover(key, e) {
+    if (this._hovered && this._hovered !== key) {
+      this.units[this._hovered].hoverT = 0;
+    }
+
+    this._hovered = key;
+    this._labelSub = key;
+
+    if (key) {
+      const u = this.units[key];
+      u.hoverT = 1;
+      u.mastTarget = 0; // raise mast on hover
+
+      this._labelEl.textContent = `${u.cfg.title} · ${u.cfg.tag}`;
+      this._labelEl.style.borderColor = u.cfg.color;
+      this._labelEl.style.color = u.cfg.lt;
+      this._labelEl.style.opacity = '1';
+      this._labelEl.style.transform = 'none';
+
+      if (e) {
+        const r = this.canvas.parentElement.getBoundingClientRect();
+        let x = e.clientX - r.left + 16;
+        let y = e.clientY - r.top + 18;
+        x = Math.max(4, Math.min(x, r.width - 220));
+        y = Math.max(4, Math.min(y, r.height - 40));
+        this._labelEl.style.left = x + 'px';
+        this._labelEl.style.top = y + 'px';
+      }
+    } else {
+      for (const u of Object.values(this.units)) {
+        u.mastTarget = u.rig.userData.stow; // lower mast when nothing hovered
+      }
+      this._labelEl.style.opacity = '0';
+      this._labelEl.style.transform = 'translateY(5px)';
+    }
+>>>>>>> f3bb49f0a1a6d3f93b84c6363e91a27a248b91c1
   }
 
   /* ---------------- resize ---------------- */
@@ -2338,6 +2447,10 @@ export class RigViewer {
     for (const [type, fn] of this._bound) this.canvas.removeEventListener(type, fn);
     this._bound.length = 0;
     this.controls.dispose();
+<<<<<<< HEAD
+=======
+    if (this._labelEl) { this._labelEl.remove(); this._labelEl = null; this._labelSub = null; }
+>>>>>>> f3bb49f0a1a6d3f93b84c6363e91a27a248b91c1
     const mats = new Set(), texs = new Set();
     this.scene.traverse((o) => {
       if (o.geometry) o.geometry.dispose();
@@ -2359,4 +2472,12 @@ export class RigViewer {
     this.scene = null; this.camera = null; this.controls = null;
     this.units = {};
   }
+<<<<<<< HEAD
+=======
+}
+
+/* ---------------- public mount helper ---------------- */
+export function mountSite(canvas) {
+  return new SiteController(canvas);
+>>>>>>> f3bb49f0a1a6d3f93b84c6363e91a27a248b91c1
 }
