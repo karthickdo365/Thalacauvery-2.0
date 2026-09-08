@@ -1,11 +1,11 @@
 /* ============================================================
-   THALACUVERY BOREWELL — full-screen 3D forest drilling site
-   Terrain, leafy trees (instanced real leaf geometry), shrubs,
-   grass, rocks, BIG rig (LEFT) + SMALL rig (RIGHT, extra
-   distance), a water-bowser LORRY behind the site feeding both
-   rigs through ground pipes, hover drill story with water
-   strike, camera framing, VISIBLE error reporting, safe
-   disposal. Pure Three.js — no React, no routing.
+   THALACUVERY BOREWELL — full-screen 3D daytime drilling site
+   Vivid forest, leafy instanced trees, shrubs, grass, rocks,
+   BIG rig (LEFT) + support convoy, SMALL rig (RIGHT) + support
+   convoy, two water bowsers, crew pickups, full pipeline
+   network (bowser→rig + station↔station), hover drill story
+   with water strike, camera framing, VISIBLE error reporting,
+   safe disposal. Pure Three.js — no React, no routing.
    ============================================================ */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -33,8 +33,11 @@ const _c1 = new THREE.Color();
 const _ZAX = new THREE.Vector3(0, 0, 1);
 const _YAX = new THREE.Vector3(0, 1, 0);
 
-/* water bowser lorry — parked behind the site, feeds both rigs */
-const LORRY = { x: 1.5, z: -8, sink: 0.12 };
+/* support convoy positions (each rig gets its own vehicles) */
+const BOWSER_BIG   = { x: -8.5, z: -7.5, sink: 0.12 };   // green water bowser
+const BOWSER_SMALL = { x: 12.5, z: -7.5, sink: 0.12 };   // amber water bowser
+const PICKUP_BIG   = { x: -19.5, z: -6.5, yaw: 0.4 };    // green crew pickup
+const PICKUP_SMALL = { x: 22.5,  z: -5.0, yaw: -0.4 };   // amber crew pickup
 
 /* ---------------- machine catalogue (public) ---------------- */
 export const MACHINES = {
@@ -120,15 +123,16 @@ function softTex() {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
-function makeSkyTexture() {
+function makeSkyTexture() {                       // bright daytime sky
   const c = document.createElement('canvas'); c.width = 2; c.height = 512;
   const x = c.getContext('2d');
   const g = x.createLinearGradient(0, 0, 0, 512);
-  g.addColorStop(0, '#0a1420');
-  g.addColorStop(0.42, '#122626');
-  g.addColorStop(0.6, '#1c3a30');
-  g.addColorStop(0.76, '#122624');
-  g.addColorStop(1, '#0a121a');
+  g.addColorStop(0, '#2e6ba3');
+  g.addColorStop(0.35, '#5d9bc8');
+  g.addColorStop(0.55, '#a3c8dd');
+  g.addColorStop(0.68, '#c4d9a4');
+  g.addColorStop(0.8, '#9dbb7e');
+  g.addColorStop(1, '#5c7a4a');
   x.fillStyle = g; x.fillRect(0, 0, 2, 512);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   return t;
@@ -248,7 +252,7 @@ function palette(accent) {
     steel:    std({ color: 0x8d97a4, metalness: 0.45, roughness: 0.45 }),
     dark:     std({ color: 0x2a313c, metalness: 0.35, roughness: 0.65 }),
     tire:     std({ color: 0x16181d, metalness: 0.02, roughness: 0.95 }),
-    glass:    std({ color: 0x11202e, metalness: 0.4, roughness: 0.2, transparent: true, opacity: 0.68 }),
+    glass:    std({ color: 0x1c3244, metalness: 0.4, roughness: 0.2, transparent: true, opacity: 0.68 }),
     pipe:     std({ color: 0xb9c2cc, metalness: 0.5, roughness: 0.35 }),
     cable:    std({ color: 0x232a35, metalness: 0.4, roughness: 0.6 }),
     beacon:   std({ color: 0x552f06, emissive: 0xffb020, emissiveIntensity: 1.2, roughness: 0.45 }),
@@ -658,13 +662,13 @@ function buildSmallRig(accent) {
 }
 
 /* ============================================================
-   WATER BOWSER LORRY — parked behind the site; feeds both rigs
+   WATER BOWSER LORRY — one per rig; parked behind its machine
    ============================================================ */
-function buildWaterLorry(accent, heightAt) {
+function buildWaterLorry(accent, heightAt, X, Z) {
   const p = palette(accent);
   const g = new THREE.Group();
 
-  g.position.set(LORRY.x, heightAt(LORRY.x, LORRY.z) - LORRY.sink, LORRY.z);
+  g.position.set(X, heightAt(X, Z) - 0.12, Z);
   g.rotation.y = 0;                                // parked along the track
 
   /* chassis */
@@ -723,7 +727,6 @@ function buildWaterLorry(accent, heightAt) {
     reel.rotation.x = Math.PI / 2; reel.position.set(3.3, 0.98, s * 0.72); g.add(reel);
     const hub = cyl(0.09, 0.09, 0.36, p.dark, 10);
     hub.rotation.x = Math.PI / 2; hub.position.set(3.3, 0.98, s * 0.72); g.add(hub);
-    /* outlet elbow pointing outward — the pipes start here */
     const out = cyl(0.07, 0.07, 0.4, p.steel, 10);
     out.rotation.x = Math.PI / 2; out.position.set(3.3, 1.1, s * 0.95); g.add(out);
   }
@@ -734,8 +737,54 @@ function buildWaterLorry(accent, heightAt) {
 }
 
 /* ============================================================
-   SITE PIPES — lorry → BIG rig + lorry → SMALL rig,
-   laid over the terrain (heightAt keeps them on the ground)
+   CREW PICKUP — small service truck beside each rig
+   ============================================================ */
+function buildPickup(accent, heightAt, x, z, yaw) {
+  const p = palette(accent);
+  const g = new THREE.Group();
+  g.position.set(x, heightAt(x, z) - 0.1, z);
+  g.rotation.y = yaw;
+
+  /* chassis */
+  const chassis = box(4.3, 0.35, 1.9, p.dark); chassis.position.set(0, 0.95, 0); g.add(chassis);
+
+  /* cab */
+  const cab = box(1.6, 1.05, 1.8, p.body); cab.position.set(-1.15, 1.85, 0); g.add(cab);
+  const skirt = box(1.5, 0.4, 1.84, p.dark); skirt.position.set(-1.15, 1.35, 0); g.add(skirt);
+  const wind = box(0.06, 0.55, 1.55, p.glass); wind.position.set(-1.97, 2.0, 0); g.add(wind);
+  const bumper = box(0.28, 0.35, 1.9, p.dark); bumper.position.set(-2.15, 1.25, 0); g.add(bumper);
+  for (const s of [-1, 1]) {
+    const sw = box(1.0, 0.4, 0.05, p.glass); sw.position.set(-1.15, 2.0, s * 0.91); g.add(sw);
+    const hl = cyl(0.09, 0.09, 0.08, p.lamp, 12); hl.rotation.y = Math.PI / 2; hl.position.set(-2.02, 1.4, s * 0.68); g.add(hl);
+    const bc = cyl(0.06, 0.06, 0.13, p.beacon, 8); bc.position.set(-1.4, 2.45, s * 0.5); g.add(bc);
+    const lv = livery(1.15, 0.3, nameTex(accent, 'CREW / SERVICE'));
+    lv.position.set(-1.15, 1.6, s * 0.92);
+    if (s < 0) lv.rotation.y = Math.PI;
+    g.add(lv);
+    const tl = box(0.05, 0.1, 0.14, p.red); tl.position.set(2.18, 1.25, s * 0.72); g.add(tl);
+  }
+
+  /* open bed with gear */
+  const bed = box(2.35, 0.14, 1.8, p.dark); bed.position.set(1.05, 1.52, 0); g.add(bed);
+  for (const s of [-1, 1]) {
+    g.add(bar(V(-0.05, 1.55, s * 0.88), V(2.15, 1.55, s * 0.88), 0.05, p.steel));
+    const tb = box(0.6, 0.34, 0.6, p.bodyDark); tb.position.set(0.5, 1.78, s * 0.45); g.add(tb);
+  }
+  const rod = cyl(0.05, 0.05, 1.6, p.pipe, 10);
+  rod.rotation.z = Math.PI / 2; rod.position.set(1.7, 1.85, 0); g.add(rod);
+
+  /* wheels */
+  for (const wx of [-1.45, 1.5]) for (const s of [-1, 1]) {
+    const t = cyl(0.45, 0.45, 0.38, p.tire, 20); t.rotation.x = Math.PI / 2; t.position.set(wx, 0.45, s * 1.0); g.add(t);
+    const h = cyl(0.15, 0.15, 0.4, p.steel, 10); h.rotation.x = Math.PI / 2; h.position.set(wx, 0.45, s * 1.0); g.add(h);
+  }
+
+  return g;
+}
+
+/* ============================================================
+   SITE PIPE NETWORK — bowser→BIG rig, bowser→SMALL rig,
+   plus the station-to-station connecting main along the rear
    ============================================================ */
 function buildLorryPipes(heightAt) {
   const group = new THREE.Group();
@@ -744,31 +793,32 @@ function buildLorryPipes(heightAt) {
   const ZAX = new THREE.Vector3(0, 0, 1);
 
   const ground = (x, z) => heightAt(x, z);
-  const lorryY = ground(LORRY.x, LORRY.z) - LORRY.sink;
+  const yB = ground(BOWSER_BIG.x, BOWSER_BIG.z) - BOWSER_BIG.sink;
+  const yS = ground(BOWSER_SMALL.x, BOWSER_SMALL.z) - BOWSER_SMALL.sink;
 
-  /* start points at the lorry's rear outlets */
-  const startA = V(LORRY.x + 3.3, lorryY + 1.1, LORRY.z + 0.95);
-  const startB = V(LORRY.x + 3.3, lorryY + 1.1, LORRY.z - 0.95);
-
-  /* end points at the rigs (world coordinates) */
-  const endA = V(-12.1, 1.6, -0.35);               // BIG rig mud-tank manifold
-  const endB = V(18.35, 1.25, 0.2);                // SMALL rig power-pack inlet
-
+  /* bowser → BIG rig mud-tank manifold */
   const curveA = new THREE.CatmullRomCurve3([
-    startA,
-    V(2.0, ground(2.0, -6.3) + 0.3, -6.3),
-    V(-2.5, ground(-2.5, -4.1) + 0.28, -4.1),
-    V(-7.5, ground(-7.5, -2.3) + 0.26, -2.3),
-    V(-10.9, ground(-10.9, -1.2) + 0.6, -1.2),
-    endA,
+    V(BOWSER_BIG.x + 3.3, yB + 1.1, BOWSER_BIG.z + 0.95),
+    V(BOWSER_BIG.x + 0.6, ground(BOWSER_BIG.x + 0.6, -5.2) + 0.32, -5.2),
+    V(-10.4, ground(-10.4, -2.8) + 0.45, -2.8),
+    V(-12.1, 1.6, -0.35),
   ]);
+
+  /* bowser → SMALL rig power-pack inlet */
   const curveB = new THREE.CatmullRomCurve3([
-    startB,
-    V(6.8, ground(6.8, -8.6) + 0.3, -8.6),
-    V(10.5, ground(10.5, -5.4) + 0.28, -5.4),
-    V(15.0, ground(15.0, -2.0) + 0.26, -2.0),
-    V(17.7, ground(17.7, 0.1) + 0.5, 0.1),
-    endB,
+    V(BOWSER_SMALL.x + 3.3, yS + 1.1, BOWSER_SMALL.z + 0.95),
+    V(16.7, ground(16.7, -4.6) + 0.32, -4.6),
+    V(17.9, ground(17.9, -2.0) + 0.5, -2.0),
+    V(18.35, 1.25, 0.2),
+  ]);
+
+  /* station ↔ station connecting main (the two groups joined) */
+  const curveC = new THREE.CatmullRomCurve3([
+    V(BOWSER_BIG.x + 3.3, yB + 0.95, BOWSER_BIG.z - 0.95),
+    V(-1.5, ground(-1.5, -9.2) + 0.35, -9.2),
+    V(4.5, ground(4.5, -9.2) + 0.35, -9.2),
+    V(8.4, ground(8.4, -8.8) + 0.4, -8.8),
+    V(BOWSER_SMALL.x - 3.35, yS + 0.95, BOWSER_SMALL.z - 0.95),
   ]);
 
   function addPipe(curve, r) {
@@ -780,7 +830,7 @@ function buildLorryPipes(heightAt) {
     for (const t of [0.05, 0.25, 0.45, 0.65, 0.85, 0.97]) {
       const pos = curve.getPointAt(t);
       const tan = curve.getTangentAt(t).normalize();
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(r + 0.045, 0.035, 10, 22), ringMat);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(r + 0.05, 0.04, 10, 22), ringMat);
       ring.position.copy(pos);
       ring.quaternion.setFromUnitVectors(ZAX, tan);
       ring.castShadow = true;
@@ -799,13 +849,17 @@ function buildLorryPipes(heightAt) {
     group.add(wheel);
   }
 
-  addPipe(curveA, 0.085);
-  addPipe(curveB, 0.08);
+  addPipe(curveA, 0.1);
+  addPipe(curveB, 0.1);
+  addPipe(curveC, 0.12);                           // thicker connecting main
 
-  /* junction manifold on the lorry rear between the two outlets */
-  const junction = box(0.55, 0.5, 1.6, ringMat);
-  junction.position.set(LORRY.x + 3.3, lorryY + 0.9, LORRY.z);
-  group.add(junction);
+  /* junction manifolds at both bowsers */
+  const jB = box(0.55, 0.5, 1.6, ringMat);
+  jB.position.set(BOWSER_BIG.x + 3.3, yB + 0.9, BOWSER_BIG.z);
+  group.add(jB);
+  const jS = box(0.5, 0.5, 0.5, ringMat);
+  jS.position.set(BOWSER_SMALL.x - 3.35, yS + 0.85, BOWSER_SMALL.z - 0.95);
+  group.add(jS);
 
   return group;
 }
@@ -813,12 +867,7 @@ function buildLorryPipes(heightAt) {
 /* ============================================================
    LEAFY TREES — real leaf geometry + branch skeletons,
    all rendered through a handful of InstancedMeshes.
-   Crowns are hundreds of individual pointed, curved, folded
-   leaves in small clusters — not polygon blobs.
    ============================================================ */
-
-/* pointed, curved, V-folded leaf along +Y (base at origin).
-   width = widest leaf width; curve = tip droop; crease = fold. */
 function makeLeafGeometry(width, curve, crease) {
   const ST = 6;                                    // stations along the leaf
   const positions = [];
@@ -843,16 +892,15 @@ function makeLeafGeometry(width, curve, crease) {
   return geo;
 }
 
-const LEAF_PALETTE = [
-  new THREE.Color(0x1e3a15), new THREE.Color(0x27491d),
-  new THREE.Color(0x2f5724), new THREE.Color(0x3a6529),
-  new THREE.Color(0x4a7431),
+const LEAF_PALETTE = [                             // vivid daytime greens
+  new THREE.Color(0x2f5a1e), new THREE.Color(0x3a6b24),
+  new THREE.Color(0x46802c), new THREE.Color(0x549436),
+  new THREE.Color(0x619c3c),
 ];
-const LEAF_SUN = new THREE.Color(0x8fae52);        // sun-facing tint
+const LEAF_SUN = new THREE.Color(0xa8c862);        // sun-facing tint
 const WOOD_TRUNK = new THREE.Color(0x4a3a26);
 const WOOD_TWIG = new THREE.Color(0x6b5138);
 
-/* three tree variations — tall forest / medium broad-leaf / bush */
 const TREE_KINDS = {
   tall: {
     trunkLen: [3.6, 0.8], trunkR: [0.3, 0.07], maxDepth: 3,
@@ -871,8 +919,6 @@ const TREE_KINDS = {
   },
 };
 
-/* a collector shared by trees + shrubs; filled with plain number
-   records, then baked into InstancedMeshes once at the end */
 function makeForestCollector() {
   return { branches: [], leafA: [], leafB: [] };
 }
@@ -887,7 +933,7 @@ function pushBranch(out, p, d, r, l, t) {
 }
 
 function pushLeaf(out, broad, px, py, pz, dx, dy, dz, spin, sl, sw, r, g, b) {
-  _q1.setFromAxisAngle(UP, spin);                  // fold direction around the leaf axis
+  _q1.setFromAxisAngle(UP, spin);
   _q2.setFromUnitVectors(UP, _d1.set(dx, dy, dz).normalize());
   _q2.multiply(_q1);
   (broad ? out.leafA : out.leafB).push({
@@ -898,7 +944,6 @@ function pushLeaf(out, broad, px, py, pz, dx, dy, dz, spin, sl, sw, r, g, b) {
   });
 }
 
-/* a small cluster of naturally varied leaves around a point */
 function addLeafCluster(out, point, dir, count, rnd, treeH, leafScale) {
   const base = LEAF_PALETTE[(rnd() * LEAF_PALETTE.length) | 0];
   const jr = (rnd() - 0.5) * 0.2, jg = (rnd() - 0.5) * 0.2, jb = (rnd() - 0.5) * 0.1;
@@ -907,16 +952,14 @@ function addLeafCluster(out, point, dir, count, rnd, treeH, leafScale) {
     const py = point.y + (rnd() - 0.3) * 0.5;
     const pz = point.z + (rnd() - 0.5) * 0.6;
 
-    /* leaves spray outward from the branch with an up bias */
     const dx = dir.x * 0.35 + (rnd() - 0.5) * 1.6;
     const dy = dir.y * 0.35 + 0.4 + rnd() * 0.9;
     const dz = dir.z * 0.35 + (rnd() - 0.5) * 1.6;
 
     const spin = rnd() * Math.PI * 2;
-    const sl = leafScale * (0.6 + rnd() * 0.45);   // length
-    const sw = sl * (0.75 + rnd() * 0.6);          // width variation
+    const sl = leafScale * (0.6 + rnd() * 0.45);
+    const sw = sl * (0.75 + rnd() * 0.6);
 
-    /* colour: cluster hue + per-leaf jitter + height sun tint */
     const sun = clamp(point.y / Math.max(0.8, treeH), 0, 1) * (0.35 + rnd() * 0.35);
     _c1.setRGB(
       clamp(base.r + jr + (rnd() - 0.5) * 0.06, 0, 1),
@@ -928,18 +971,14 @@ function addLeafCluster(out, point, dir, count, rnd, treeH, leafScale) {
   }
 }
 
-/* recursive branch skeleton — same spread/azimuth math as the
-   original procedural tree viewer, baked as shared instances */
 function growBranch(out, origin, dir, length, radius, depth, cfg, rnd, treeH, leafK) {
   const end = origin.clone().addScaledVector(dir, length);
   pushBranch(out, origin, dir, radius, length, 1 - depth / cfg.maxDepth);
 
   if (depth === 0) {
-    /* leaf cluster at the twig tip */
     addLeafCluster(out, end, dir,
       Math.max(2, Math.round((3 + rnd() * 4) * cfg.leafDensity * leafK)),
       rnd, treeH, cfg.leafScale);
-    /* sometimes a smaller cluster mid-twig */
     if (rnd() < 0.45) {
       addLeafCluster(out, origin.clone().lerp(end, 0.5), dir,
         Math.max(1, Math.round((2 + rnd() * 2) * cfg.leafDensity * leafK)),
@@ -967,8 +1006,6 @@ function growBranch(out, origin, dir, length, radius, depth, cfg, rnd, treeH, le
     growBranch(out, end, child, length * lenK, radius * 0.62, depth - 1, cfg, rnd, treeH, leafK);
   }
 
-  /* foliage sprinkled along outer branches so the branch
-     structure stays visible through gaps in the leaves */
   if (depth === 1) {
     const n = 1 + ((rnd() * 2) | 0);
     for (let s = 0; s < n; s++) {
@@ -984,9 +1021,8 @@ function growLeafyTree(out, kind, x, groundY, z, rnd, leafK) {
   const cfg = TREE_KINDS[kind];
   const trunkLen = cfg.trunkLen[0] + rnd() * cfg.trunkLen[1];
   const trunkR = cfg.trunkR[0] + rnd() * cfg.trunkR[1];
-  const treeH = trunkLen * 1.9;                    // approx crown top for sun tint
+  const treeH = trunkLen * 1.9;
 
-  /* whole-tree lean — no two trees stand identically */
   const lean = 0.03 + rnd() * 0.13;
   const leanAz = rnd() * Math.PI * 2;
   const dir0 = V(
@@ -999,21 +1035,19 @@ function growLeafyTree(out, kind, x, groundY, z, rnd, leafK) {
   growBranch(out, base, dir0, trunkLen, trunkR, cfg.maxDepth, cfg, rnd, treeH, leafK);
 }
 
-/* bake collected branches/leaves into 3 InstancedMeshes */
 function bakeForest(group, forest) {
   if (!forest.branches.length && !forest.leafA.length && !forest.leafB.length) return;
 
   const woodMat = std({ vertexColors: true, roughness: 0.95, metalness: 0, flatShading: true });
   const leafMat = std({
     vertexColors: true, roughness: 0.85, metalness: 0,
-    side: THREE.DoubleSide, flatShading: true,   // opaque, solid foliage
+    side: THREE.DoubleSide, flatShading: true,
   });
 
-  /* tapered branch — base at origin, extends +Y */
   const branchGeo = new THREE.CylinderGeometry(0.62, 1, 1, 5, 1);
   branchGeo.translate(0, 0.5, 0);
-  const leafGeoA = makeLeafGeometry(0.5, 0.16, 0.07);   // broad curved leaf
-  const leafGeoB = makeLeafGeometry(0.3, 0.3, 0.045);   // narrow curlier leaf
+  const leafGeoA = makeLeafGeometry(0.5, 0.16, 0.07);
+  const leafGeoB = makeLeafGeometry(0.3, 0.3, 0.045);
 
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(),
         p = new THREE.Vector3(), s = new THREE.Vector3(), c = new THREE.Color();
@@ -1050,7 +1084,7 @@ function bakeForest(group, forest) {
 
 /* ============================================================
    FOREST ENVIRONMENT — terrain, grass, leafy shrubs, rocks,
-   leafy trees
+   leafy trees (vivid daytime palette)
    ============================================================ */
 function buildTerrain() {
   const group = new THREE.Group();
@@ -1059,7 +1093,7 @@ function buildTerrain() {
 
   const PADS = [
     { x: -15, z: 0, r: 8 },                        // BIG rig pad
-    { x: 19, z: 0, r: 6 },                         // SMALL rig pad (moved out)
+    { x: 19, z: 0, r: 6 },                         // SMALL rig pad
   ];
   const ROAD = { x0: -8, x1: 13, halfW: 2.4 };     // dirt track between pads
 
@@ -1080,14 +1114,14 @@ function buildTerrain() {
     return h * f;
   }
 
-  /* ground with vertex colors */
+  /* ground with vertex colors — vivid greens like the reference */
   const geo = new THREE.PlaneGeometry(200, 200, 88, 88);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position;
   const colors = new Float32Array(pos.count * 3);
-  const cGrass = new THREE.Color(0x2f4a2a), cGrass2 = new THREE.Color(0x233d1c),
-        cSoil = new THREE.Color(0x4a3a26), cSoil2 = new THREE.Color(0x3c2f1e),
-        cRock = new THREE.Color(0x454138);
+  const cGrass = new THREE.Color(0x4c8a30), cGrass2 = new THREE.Color(0x3e7226),
+        cSoil = new THREE.Color(0x5a4630), cSoil2 = new THREE.Color(0x4a3a28),
+        cFar = new THREE.Color(0x3f6030);
   const c = new THREE.Color();
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i);
@@ -1096,13 +1130,13 @@ function buildTerrain() {
     const soil = 1 - f;
     c.copy(cGrass).lerp(cGrass2, noise(x * 0.13, z * 0.13));
     const n = noise2(x * 0.09 + 40, z * 0.09 - 17);
-    if (n > 0.62) c.lerp(cRock, (n - 0.62) * 1.4);
+    if (n > 0.66) c.lerp(cFar, (n - 0.66) * 1.2);
     if (soil > 0) {
       c.lerp(cSoil2, soil * 0.55);
       if (soil > 0.75) c.lerp(cSoil, (soil - 0.75) * 3);
     }
     const dist = Math.hypot(x, z);
-    if (dist > 55) c.lerp(cRock, clamp((dist - 55) / 60, 0, 0.5));
+    if (dist > 55) c.lerp(cFar, clamp((dist - 55) / 60, 0, 0.5));
     colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
@@ -1113,9 +1147,16 @@ function buildTerrain() {
   ground.receiveShadow = true;
   group.add(ground);
 
-  /* scatter helper (rejection sampling, off the pads & road) */
+  /* scatter helper */
   const rnd = mulberry32(20240);
   const clearOfWorkArea = (x, z) => padFactor(x, z) > 0.85 && Math.hypot(x, z) < 70;
+  /* keep trees off the support vehicles */
+  const VEHICLES = [
+    [BOWSER_BIG.x, BOWSER_BIG.z], [BOWSER_SMALL.x, BOWSER_SMALL.z],
+    [PICKUP_BIG.x, PICKUP_BIG.z], [PICKUP_SMALL.x, PICKUP_SMALL.z],
+  ];
+  const clearOfVehicles = (x, z) =>
+    !VEHICLES.some(([vx, vz]) => Math.hypot(x - vx, z - vz) < 5);
   function scatter(count, minR, maxR, extra) {
     const out = [];
     let guard = 0;
@@ -1138,16 +1179,16 @@ function buildTerrain() {
     }
   };
 
-  /* shared collector for all woody plants (shrubs + trees) */
+  /* shared collector for all woody plants */
   const forest = makeForestCollector();
 
-  /* grass tufts (instanced) */
+  /* grass tufts (instanced) — denser, brighter */
   {
     const gGeo = new THREE.ConeGeometry(0.1, 0.55, 4); gGeo.translate(0, 0.27, 0);
     const gMat = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, flatShading: true });
-    const G = 760, pts = scatter(G, 5, 62);
+    const G = 820, pts = scatter(G, 5, 62);
     const grass = new THREE.InstancedMesh(gGeo, gMat, G);
-    const gc = [new THREE.Color(0x3b5a2c), new THREE.Color(0x2e4a24), new THREE.Color(0x466334)];
+    const gc = [new THREE.Color(0x4e8c34), new THREE.Color(0x41762a), new THREE.Color(0x5c9c40)];
     pts.forEach(([x, z], i) => {
       const s = 0.7 + rnd() * 0.9;
       e.set((rnd() - 0.5) * 0.35, rnd() * Math.PI, (rnd() - 0.5) * 0.35);
@@ -1161,12 +1202,9 @@ function buildTerrain() {
     group.add(grass);
   }
 
-  /* shrubs — leafy now (same positions/scales as the old blob
-     bushes). Exactly 4 shared-seed rnd() calls per shrub (same
-     as before) so the downstream scatter positions are
-     unchanged; the leaf detail uses a local seeded rng. */
+  /* shrubs — leafy (same positions logic, local seeded detail) */
   {
-    const B = 56;
+    const B = 72;
     const pts = scatter(B, 8, 60);
     pts.forEach(([x, z], i) => {
       const s = 0.8 + rnd() * 1.2;                 // shared-seed call 1
@@ -1213,18 +1251,17 @@ function buildTerrain() {
     group.add(rocks);
   }
 
-  /* forest — natural trunks, branches and hundreds of individual
-     leaves per tree (SAME placement positions as before) */
+  /* forest — 40 leafy trees, denser like the reference image */
   {
-    const TREES = 28;
-    const treePts = scatter(TREES, 14, 56, (x, z) => !(z > 4 && Math.abs(x) < 30));
+    const TREES = 40;
+    const treePts = scatter(TREES, 14, 56,
+      (x, z) => !(z > 4 && Math.abs(x) < 30) && clearOfVehicles(x, z));
 
     treePts.forEach(([x, z]) => {
       const roll = rnd();
       const kind = roll < 0.42 ? 'broad' : roll < 0.76 ? 'tall' : 'bush';
       const dist = Math.hypot(x, z);
-      /* distant trees carry fewer leaves (cheap distance LOD) */
-      const leafK = clamp(1.15 - (dist - 14) / 70, 0.45, 1.1);
+      const leafK = clamp(1.15 - (dist - 14) / 55, 0.4, 1.1);
       growLeafyTree(forest, kind, x, heightAt(x, z), z, rnd, leafK);
     });
 
@@ -1234,7 +1271,7 @@ function buildTerrain() {
   /* distant hills (forest-edge silhouettes) */
   {
     const hGeo = new THREE.DodecahedronGeometry(1, 0);
-    const hMat = new THREE.MeshStandardMaterial({ color: 0x1c2f23, roughness: 1, flatShading: true });
+    const hMat = new THREE.MeshStandardMaterial({ color: 0x2e5030, roughness: 1, flatShading: true });
     const H = 9;
     const hills = new THREE.InstancedMesh(hGeo, hMat, H);
     const hr = mulberry32(777);
@@ -1316,7 +1353,7 @@ class Smoke {
     const geo = new THREE.SphereGeometry(1, 8, 6);
     for (let i = 0; i < 14; i++) {
       const mm = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
-        color: 0x3d454f, transparent: true, opacity: 0, roughness: 1, metalness: 0, depthWrite: false,
+        color: 0x6a7076, transparent: true, opacity: 0, roughness: 1, metalness: 0, depthWrite: false,
       }));
       mm.visible = false; mm.userData = { age: -1 };
       parent.add(mm); this.pool.push(mm);
@@ -1385,7 +1422,7 @@ class Ripple {
   }
 }
 
-class Drops { /* water droplets */
+class Drops {
   constructor(parent) {
     this.N = 110;
     this.pos = new Float32Array(this.N * 3);
@@ -1438,7 +1475,6 @@ class Drops { /* water droplets */
 }
 
 class WaterJet {
-  /* borewell water strike: column + spray cone + droplets + ripples + wet patch */
   constructor(parent, x, k = 1) {
     this.k = k;
     const g = this.group = new THREE.Group();
@@ -1472,14 +1508,14 @@ class WaterJet {
     collar.rotation.x = Math.PI / 2; collar.position.y = 0.58; g.add(collar);
 
     this.wetMat = new THREE.MeshStandardMaterial({
-      color: 0x223238, transparent: true, opacity: 0,
+      color: 0x2a4a52, transparent: true, opacity: 0,
       roughness: 0.3, metalness: 0.05, depthWrite: false,
     });
     const wet = new THREE.Mesh(new THREE.CircleGeometry(2.4, 26), this.wetMat);
     wet.rotation.x = -Math.PI / 2; wet.position.y = 0.035; g.add(wet);
 
     this.drops = new Drops(g);
-    this.ripple = new Ripple(g, 0, 0.3, 0x54c8ec);
+    this.ripple = new Ripple(g, 0, 0.3, 0x2e8fb8);
     this.light = new THREE.PointLight(0x3ec6f0, 0, 10, 2);
     this.light.position.set(0, 1.3, 0); g.add(this.light);
 
@@ -1501,10 +1537,10 @@ class WaterJet {
     const wob = 1 + 0.09 * Math.sin(t * 11) + 0.05 * Math.sin(t * 17.3);
     this.col.visible = l > 0.02;
     this.col.scale.set(wob, Math.max(0.02, l * (1.5 * k + 0.3 * Math.sin(t * 6.2))), wob);
-    this.colMat.opacity = 0.5 * l;
+    this.colMat.opacity = 0.55 * l;
     this.mist.visible = l > 0.1;
     this.mist.scale.set(wob, Math.max(0.02, l * 1.05 * k), wob);
-    this.mistMat.opacity = 0.15 * l;
+    this.mistMat.opacity = 0.18 * l;
     this.collarMat.emissiveIntensity = 1.2 * l + (l > 0.2 ? 0.4 * Math.sin(t * 8) : 0);
     this.wetMat.opacity = 0.4 * this.wet;
     this.light.intensity = l * (22 * k + 7 * Math.sin(t * 9));
@@ -1520,10 +1556,7 @@ class WaterJet {
 }
 
 /* ============================================================
-   MachineUnit — hover story:
-   idle (rigged, ready) → drill down + dust → water erupts at
-   the borehole → rod trips back up → water flows → subsides.
-   Leaving the machine at ANY point gracefully resets it.
+   MachineUnit — hover story (unchanged behaviour)
    ============================================================ */
 class MachineUnit {
   constructor(viewer, key) {
@@ -1540,7 +1573,6 @@ class MachineUnit {
     this.root.add(this.rig);
     const u = this.u = this.rig.userData;
 
-    /* invisible hitbox for hover / click raycasting */
     const hb = new THREE.Mesh(
       new THREE.BoxGeometry(cfg.hitbox.w, cfg.hitbox.h, cfg.hitbox.d),
       new THREE.MeshBasicMaterial({ visible: false })
@@ -1550,7 +1582,6 @@ class MachineUnit {
     this.root.add(hb);
     this.hitbox = hb;
 
-    /* ground glow ring + colored accent light */
     this.ringMat = new THREE.MeshStandardMaterial({
       color: new THREE.Color(cfg.hex).multiplyScalar(0.25),
       emissive: cfg.hex, emissiveIntensity: 0,
@@ -1564,13 +1595,11 @@ class MachineUnit {
     this.light.position.set(0, 5, 4);
     this.root.add(this.light);
 
-    /* effects */
     this.dust = new Dust(this.root, V(u.holeX, 0.35, 0), cfg.hex, 0.22);
     this.smoke = new Smoke(this.root, u.smokeAnchor);
-    this.ripple = new Ripple(this.root, u.holeX, 0.34, 0x8a7a5e);
+    this.ripple = new Ripple(this.root, u.holeX, 0.34, 0x7a6a4e);
     this.water = new WaterJet(this.root, u.holeX, cfg.waterScale);
 
-    /* fully rigged + ready from the first frame (machine always visible) */
     this.state = 'idle';
     this.autoDrill = false;
     this.mastAngle = 0; this.mastTarget = 0;
@@ -1588,7 +1617,6 @@ class MachineUnit {
     this._dustAcc = 0; this._rippleAcc = 0;
   }
 
-  /* ---- public API ---- */
   setHover(on) {
     this.hoverT = on ? 1 : 0;
     if (on) {
@@ -1662,10 +1690,8 @@ class MachineUnit {
     this.hover += (this.hoverT - this.hover) * Math.min(1, dt * 6);
     this.flash *= Math.exp(-dt * 2.6);
 
-    /* mast stays vertical (machines are always fully visible) */
     u.mast.rotation.z = this.mastAngle;
 
-    /* ---- scripted hover story ---- */
     const span = u.headTopLocal - u.headLowLocal;
 
     if (this.state === 'drilling') {
@@ -1722,7 +1748,6 @@ class MachineUnit {
       }
     }
 
-    /* head / kelly / bit */
     const vib = this.state === 'drilling';
     const wob = vib ? Math.sin(t * 31) * 0.02 : 0;
     u.head.position.y = d.head + wob;
@@ -1740,7 +1765,6 @@ class MachineUnit {
     u.bitGroup.rotation.y = this._spin * 1.7;
     for (const cn of u.cones) cn.rotation.y += dt * (vib ? 9 : 1.2);
 
-    /* dynamic rigging */
     for (const cb of u.cables) updateBar(cb.mesh, cb.from, _b.copy(u.head.position).add(cb.off));
     for (const f of u.feed) updateBar(f.mesh, f.from, _b.copy(u.head.position).add(f.off));
     const dHead = d.head - this._lastHead;
@@ -1748,7 +1772,6 @@ class MachineUnit {
     if (u.drum) u.drum.rotation.y += dHead * 6;
     for (const s of u.sheaves) s.rotation.y += dHead * 5;
 
-    /* vibration */
     this.rig.position.set(Math.sin(t * 53) * 0.013 * (vib ? 1 : 0), Math.sin(t * 47) * 0.011 * (vib ? 1 : 0), 0);
 
     this.root.updateMatrixWorld(true);
@@ -1762,7 +1785,6 @@ class MachineUnit {
     }
     this._updateHose(u);
 
-    /* beacons / LEDs / cab glow */
     const bm = u.beaconMat;
     if (this.waterFound) bm.emissiveIntensity = Math.sin(t * 16) > 0 ? 3.6 : 0.15;
     else if (this.state === 'drilling') bm.emissiveIntensity = Math.sin(t * 15) > 0 ? 3.4 : 0.15;
@@ -1771,12 +1793,10 @@ class MachineUnit {
     if (u.cabLight) u.cabLight.intensity = 1.6 + (this.state === 'drilling' ? 2.2 : 0) + this.flash * 4;
     if (u.dashMat) u.dashMat.emissiveIntensity = 0.5 + (this.state === 'drilling' ? 0.8 : 0);
 
-    /* hover glow */
     this.ringMat.opacity = this.hover * 0.85;
     this.ringMat.emissiveIntensity = 0.4 + 2.6 * this.hover + this.flash * 3 + 0.15 * Math.sin(t * 1.6);
     this.light.intensity = 26 * this.hover + 80 * this.flash;
 
-    /* effects */
     this.smoke.rate = this.state === 'drilling' ? 4
       : this.state === 'flowing' ? 2
       : this.hoverT > 0 ? 1.4 : 0.45;
@@ -1789,9 +1809,9 @@ class MachineUnit {
 }
 
 /* ============================================================
-   RigViewer — ONE forest scene, both machines, lorry + pipes,
-   camera, hover/click, floating label, VISIBLE error reporting,
-   guaranteed first paint, safe disposal.
+   RigViewer — ONE scene, both machines + convoys + pipes,
+   camera, hover/click, floating label, VISIBLE error
+   reporting, guaranteed first paint, safe disposal.
    ============================================================ */
 export class RigViewer {
   constructor({ canvas, onHover, onSelect, onError }) {
@@ -1809,30 +1829,27 @@ export class RigViewer {
     this._retryTimers = [];
     this.units = {};
 
-    /* renderer — attached to the provided canvas (renderer.domElement === canvas) */
     const r = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     const smallScreen = Math.min(window.screen.width, window.screen.height) < 720;
     r.setPixelRatio(Math.min(window.devicePixelRatio || 1, smallScreen ? 1.75 : 2));
-    r.setClearColor(0x0d1f22, 1);                 // paint even an empty scene
+    r.setClearColor(0x8fb3cf, 1);
     r.shadowMap.enabled = true;
     r.shadowMap.type = THREE.PCFSoftShadowMap;
     r.toneMapping = THREE.ACESFilmicToneMapping;
-    r.toneMappingExposure = 1.06;
+    r.toneMappingExposure = 1.12;
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0d1f22);
-    this.scene.fog = new THREE.Fog(0x152b28, 85, 230);
+    this.scene.background = new THREE.Color(0x8fb3cf);
+    this.scene.fog = new THREE.Fog(0xa8c494, 60, 200);
 
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.5, 1200);
     this.camera.position.set(26, 21, 44);
 
-    /* each subsystem builds independently — one failure never
-       blanks the whole scene, and every failure is reported */
     this._buildEnvironment();
 
     this.controls = new OrbitControls(this.camera, canvas);
     const c = this.controls;
-    c.target.set(1, 3.2, 0);                      // scene centre (machines ± lorry)
+    c.target.set(1, 3.2, 0);
     c.enableDamping = true; c.dampingFactor = 0.07;
     c.enablePan = false;
     c.minDistance = 20; c.maxDistance = 160;
@@ -1856,7 +1873,6 @@ export class RigViewer {
 
     this._bindEvents();
 
-    /* sizing: ResizeObserver + window-resize fallback + retries */
     this._ro = new ResizeObserver(() => this._resize());
     this._ro.observe(canvas.parentElement);
     this._onWinResize = () => this._resize();
@@ -1865,16 +1881,15 @@ export class RigViewer {
       this._retryTimers.push(setTimeout(() => { if (!this.disposed) this._resize(); }, ms));
     }
 
-    this._resize();        // sizes + frames + PAINTS immediately
-    this._paint();         // guaranteed first-frame attempt
+    this._resize();
+    this._paint();
 
     this._loop = this._loop.bind(this);
     this._raf = requestAnimationFrame(this._loop);
   }
 
-  /* ---------- error reporting (never silent) ---------- */
   _fail(tag, err) {
-    if (this._reported[tag]) return;              // report each failure once
+    if (this._reported[tag]) return;
     this._reported[tag] = true;
     console.error('[rig3d] ' + tag + ' failed:', err);
     if (this.onError) { try { this.onError(err); } catch (_) { /* ignore */ } }
@@ -1912,19 +1927,20 @@ export class RigViewer {
     } catch (err) { this._fail('sky', err); }
 
     try {
-      s.add(new THREE.HemisphereLight(0x8fb0bf, 0x27301f, 0.8));
-      const sun = new THREE.DirectionalLight(0xffd9a8, 2.4);
-      sun.position.set(38, 44, 26);
+      /* bright daytime lighting like the reference */
+      s.add(new THREE.HemisphereLight(0xcfe5f0, 0x4a6a35, 1.0));
+      const sun = new THREE.DirectionalLight(0xfff2dd, 3.0);
+      sun.position.set(40, 55, 30);
       sun.castShadow = true;
       sun.shadow.mapSize.set(2048, 2048);
       const sc = sun.shadow.camera;
-      sc.left = -60; sc.right = 60; sc.top = 60; sc.bottom = -60;
-      sc.near = 5; sc.far = 180;
+      sc.left = -65; sc.right = 65; sc.top = 65; sc.bottom = -65;
+      sc.near = 5; sc.far = 200;
       sun.shadow.normalBias = 0.06; sun.shadow.bias = -0.0002;
       s.add(sun); s.add(sun.target);
-      const fill = new THREE.DirectionalLight(0x2bd4bd, 0.35);
+      const fill = new THREE.DirectionalLight(0x88c9e8, 0.3);
       fill.position.set(-30, 18, -24); s.add(fill);
-      s.add(new THREE.AmbientLight(0x223038, 0.35));
+      s.add(new THREE.AmbientLight(0x55604a, 0.3));
     } catch (err) { this._fail('lights', err); }
 
     let heightAt = null;
@@ -1935,9 +1951,15 @@ export class RigViewer {
     } catch (err) { this._fail('terrain', err); }
     const safeH = heightAt || ((x, z) => 0);
 
-    try { s.add(buildWaterLorry(0x16a34a, safeH)); }
-    catch (err) { this._fail('lorry', err); }
-
+    /* support convoys — one per rig, like the reference image */
+    try { s.add(buildWaterLorry(0x16a34a, safeH, BOWSER_BIG.x, BOWSER_BIG.z)); }
+    catch (err) { this._fail('lorry-big', err); }
+    try { s.add(buildWaterLorry(0xd97706, safeH, BOWSER_SMALL.x, BOWSER_SMALL.z)); }
+    catch (err) { this._fail('lorry-small', err); }
+    try { s.add(buildPickup(0x16a34a, safeH, PICKUP_BIG.x, PICKUP_BIG.z, PICKUP_BIG.yaw)); }
+    catch (err) { this._fail('pickup-big', err); }
+    try { s.add(buildPickup(0xd97706, safeH, PICKUP_SMALL.x, PICKUP_SMALL.z, PICKUP_SMALL.yaw)); }
+    catch (err) { this._fail('pickup-small', err); }
     try { s.add(buildLorryPipes(safeH)); }
     catch (err) { this._fail('pipes', err); }
   }
@@ -1961,13 +1983,13 @@ export class RigViewer {
     });
     add('pointerleave', () => this._setHover(null));
     add('click', (e) => {
-      if (this._down.moved) return;                 // that was a camera drag
+      if (this._down.moved) return;
       try {
         const key = this._pick(e.clientX, e.clientY);
         if (key) {
           const u = this.units[key];
           if (u) u.powerFlash();
-          if (this.onSelect) this.onSelect(key);    // React handles navigation
+          if (this.onSelect) this.onSelect(key);
         }
       } catch (err) { this._fail('click', err); }
     });
@@ -2004,7 +2026,6 @@ export class RigViewer {
     if (key && this.units[key]) this._fillLabel(key);
   }
 
-  /* floating label that follows the hovered machine in screen space */
   _ensureLabel() {
     if (this._labelEl) return;
     const el = document.createElement('div');
@@ -2057,15 +2078,15 @@ export class RigViewer {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     if (!this._userMoved) this._frame();
-    this._paint();                                 // paint the moment we know the size
+    this._paint();
   }
 
-  /* auto-frame BOTH machines + the lorry regardless of viewport shape */
+  /* auto-frame BOTH machines + convoys regardless of viewport shape */
   _frame() {
     if (!this.w || !this.h) return;
     const aspect = this.w / this.h;
     const tanV = Math.tan(THREE.MathUtils.degToRad(this.camera.fov * 0.5));
-    const dist = Math.max(22 / (tanV * aspect), 13.5 / tanV) * 1.02;
+    const dist = Math.max(23 / (tanV * aspect), 13.5 / tanV) * 1.02;
     const d = clamp(dist, this.controls.minDistance, this.controls.maxDistance);
     const dir = this.camera.position.clone().sub(this.controls.target);
     if (dir.lengthSq() < 0.25) dir.set(0.5, 0.42, 0.85);
@@ -2090,7 +2111,6 @@ export class RigViewer {
     this._updateLabel();
   }
 
-  /* ---------- full disposal — no leaks on unmount ---------- */
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
