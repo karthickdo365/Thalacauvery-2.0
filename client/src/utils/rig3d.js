@@ -1,11 +1,11 @@
 /* ============================================================
    THALACUVERY BOREWELL — full-screen 3D forest drilling site
-   Terrain, trees, bushes, grass, rocks,
-   BIG rig (LEFT) + SMALL rig (RIGHT, extra distance),
-   a water-bowser LORRY behind the site feeding both rigs
-   through ground pipes, hover drill story with water strike,
-   camera framing, VISIBLE error reporting, safe disposal.
-   Pure Three.js — no React, no routing.
+   Terrain, leafy trees (instanced real leaf geometry), shrubs,
+   grass, rocks, BIG rig (LEFT) + SMALL rig (RIGHT, extra
+   distance), a water-bowser LORRY behind the site feeding both
+   rigs through ground pipes, hover drill story with water
+   strike, camera framing, VISIBLE error reporting, safe
+   disposal. Pure Three.js — no React, no routing.
    ============================================================ */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -25,6 +25,13 @@ const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
 const _hv = new THREE.Vector3();
 const _lv = new THREE.Vector3();
+
+const _q1 = new THREE.Quaternion();
+const _q2 = new THREE.Quaternion();
+const _d1 = new THREE.Vector3();
+const _c1 = new THREE.Color();
+const _ZAX = new THREE.Vector3(0, 0, 1);
+const _YAX = new THREE.Vector3(0, 1, 0);
 
 /* water bowser lorry — parked behind the site, feeds both rigs */
 const LORRY = { x: 1.5, z: -8, sink: 0.12 };
@@ -804,7 +811,246 @@ function buildLorryPipes(heightAt) {
 }
 
 /* ============================================================
-   FOREST ENVIRONMENT — terrain, grass, bushes, rocks, trees
+   LEAFY TREES — real leaf geometry + branch skeletons,
+   all rendered through a handful of InstancedMeshes.
+   Crowns are hundreds of individual pointed, curved, folded
+   leaves in small clusters — not polygon blobs.
+   ============================================================ */
+
+/* pointed, curved, V-folded leaf along +Y (base at origin).
+   width = widest leaf width; curve = tip droop; crease = fold. */
+function makeLeafGeometry(width, curve, crease) {
+  const ST = 6;                                    // stations along the leaf
+  const positions = [];
+  const indices = [];
+  for (let i = 0; i <= ST; i++) {
+    const t = i / ST;
+    const w = (width * 0.5) * Math.sin(Math.PI * Math.pow(t, 0.85));
+    const bend = -curve * t * t;                   // tip curls back
+    positions.push(-w, t, bend);                          // left edge
+    positions.push(0, t, bend + crease * (1 - t * 0.55)); // lifted midrib
+    positions.push(w, t, bend);                           // right edge
+  }
+  for (let i = 0; i < ST; i++) {
+    const a = i * 3, b = (i + 1) * 3;
+    indices.push(a, b, a + 1, a + 1, b, b + 1);           // left half
+    indices.push(a + 1, b + 1, a + 2, a + 2, b + 1, b + 2); // right half
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+const LEAF_PALETTE = [
+  new THREE.Color(0x1e3a15), new THREE.Color(0x27491d),
+  new THREE.Color(0x2f5724), new THREE.Color(0x3a6529),
+  new THREE.Color(0x4a7431),
+];
+const LEAF_SUN = new THREE.Color(0x8fae52);        // sun-facing tint
+const WOOD_TRUNK = new THREE.Color(0x4a3a26);
+const WOOD_TWIG = new THREE.Color(0x6b5138);
+
+/* three tree variations — tall forest / medium broad-leaf / bush */
+const TREE_KINDS = {
+  tall: {
+    trunkLen: [3.6, 0.8], trunkR: [0.3, 0.07], maxDepth: 3,
+    trunkSplits: 3, branchSplits: 3, spread: 0.5, leader: true,
+    leaderLen: 0.8, leafDensity: 1.0, leafScale: 0.95,
+  },
+  broad: {
+    trunkLen: [2.7, 0.9], trunkR: [0.4, 0.08], maxDepth: 3,
+    trunkSplits: 5, branchSplits: 3, spread: 0.85, leader: false,
+    leaderLen: 0.8, leafDensity: 1.05, leafScale: 1.1,
+  },
+  bush: {
+    trunkLen: [1.1, 0.5], trunkR: [0.16, 0.04], maxDepth: 2,
+    trunkSplits: 5, branchSplits: 2, spread: 1.0, leader: false,
+    leaderLen: 0.8, leafDensity: 1.35, leafScale: 1.25,
+  },
+};
+
+/* a collector shared by trees + shrubs; filled with plain number
+   records, then baked into InstancedMeshes once at the end */
+function makeForestCollector() {
+  return { branches: [], leafA: [], leafB: [] };
+}
+
+function pushBranch(out, p, d, r, l, t) {
+  _q1.setFromUnitVectors(UP, d);
+  out.branches.push({
+    x: p.x, y: p.y, z: p.z,
+    qx: _q1.x, qy: _q1.y, qz: _q1.z, qw: _q1.w,
+    sx: r, sy: l, sz: r, t,
+  });
+}
+
+function pushLeaf(out, broad, px, py, pz, dx, dy, dz, spin, sl, sw, r, g, b) {
+  _q1.setFromAxisAngle(UP, spin);                  // fold direction around the leaf axis
+  _q2.setFromUnitVectors(UP, _d1.set(dx, dy, dz).normalize());
+  _q2.multiply(_q1);
+  (broad ? out.leafA : out.leafB).push({
+    x: px, y: py, z: pz,
+    qx: _q2.x, qy: _q2.y, qz: _q2.z, qw: _q2.w,
+    sx: sw, sy: sl, sz: sw,
+    r, g, b,
+  });
+}
+
+/* a small cluster of naturally varied leaves around a point */
+function addLeafCluster(out, point, dir, count, rnd, treeH, leafScale) {
+  const base = LEAF_PALETTE[(rnd() * LEAF_PALETTE.length) | 0];
+  const jr = (rnd() - 0.5) * 0.2, jg = (rnd() - 0.5) * 0.2, jb = (rnd() - 0.5) * 0.1;
+  for (let i = 0; i < count; i++) {
+    const px = point.x + (rnd() - 0.5) * 0.6;
+    const py = point.y + (rnd() - 0.3) * 0.5;
+    const pz = point.z + (rnd() - 0.5) * 0.6;
+
+    /* leaves spray outward from the branch with an up bias */
+    const dx = dir.x * 0.35 + (rnd() - 0.5) * 1.6;
+    const dy = dir.y * 0.35 + 0.4 + rnd() * 0.9;
+    const dz = dir.z * 0.35 + (rnd() - 0.5) * 1.6;
+
+    const spin = rnd() * Math.PI * 2;
+    const sl = leafScale * (0.6 + rnd() * 0.45);   // length
+    const sw = sl * (0.75 + rnd() * 0.6);          // width variation
+
+    /* colour: cluster hue + per-leaf jitter + height sun tint */
+    const sun = clamp(point.y / Math.max(0.8, treeH), 0, 1) * (0.35 + rnd() * 0.35);
+    _c1.setRGB(
+      clamp(base.r + jr + (rnd() - 0.5) * 0.06, 0, 1),
+      clamp(base.g + jg + (rnd() - 0.5) * 0.07, 0, 1),
+      clamp(base.b + jb + (rnd() - 0.5) * 0.04, 0, 1)
+    ).lerp(LEAF_SUN, sun * 0.5);
+
+    pushLeaf(out, rnd() < 0.55, px, py, pz, dx, dy, dz, spin, sl, sw, _c1.r, _c1.g, _c1.b);
+  }
+}
+
+/* recursive branch skeleton — same spread/azimuth math as the
+   original procedural tree viewer, baked as shared instances */
+function growBranch(out, origin, dir, length, radius, depth, cfg, rnd, treeH, leafK) {
+  const end = origin.clone().addScaledVector(dir, length);
+  pushBranch(out, origin, dir, radius, length, 1 - depth / cfg.maxDepth);
+
+  if (depth === 0) {
+    /* leaf cluster at the twig tip */
+    addLeafCluster(out, end, dir,
+      Math.max(2, Math.round((3 + rnd() * 4) * cfg.leafDensity * leafK)),
+      rnd, treeH, cfg.leafScale);
+    /* sometimes a smaller cluster mid-twig */
+    if (rnd() < 0.45) {
+      addLeafCluster(out, origin.clone().lerp(end, 0.5), dir,
+        Math.max(1, Math.round((2 + rnd() * 2) * cfg.leafDensity * leafK)),
+        rnd, treeH, cfg.leafScale);
+    }
+    return;
+  }
+
+  const isTrunk = depth === cfg.maxDepth;
+  const nSplits = isTrunk ? cfg.trunkSplits : cfg.branchSplits + (rnd() < 0.3 ? 1 : 0);
+
+  for (let c = 0; c < nSplits; c++) {
+    if (!isTrunk && rnd() < 0.12) continue;        // natural gaps in the crown
+    const leader = isTrunk && c === 0 && cfg.leader;
+    const tilt = leader
+      ? 0.05 + rnd() * 0.09
+      : cfg.spread * (0.75 + rnd() * 0.6);
+    const az = (c / nSplits) * Math.PI * 2 + rnd() * 1.4;
+
+    const child = dir.clone()
+      .applyAxisAngle(_ZAX, tilt * (rnd() > 0.5 ? 1 : -1))
+      .applyAxisAngle(_YAX, az);
+
+    const lenK = leader ? cfg.leaderLen : 0.6 + rnd() * 0.16;
+    growBranch(out, end, child, length * lenK, radius * 0.62, depth - 1, cfg, rnd, treeH, leafK);
+  }
+
+  /* foliage sprinkled along outer branches so the branch
+     structure stays visible through gaps in the leaves */
+  if (depth === 1) {
+    const n = 1 + ((rnd() * 2) | 0);
+    for (let s = 0; s < n; s++) {
+      const t = 0.45 + rnd() * 0.5;
+      addLeafCluster(out, origin.clone().lerp(end, t), dir,
+        Math.max(1, Math.round((2 + rnd() * 3) * cfg.leafDensity * leafK)),
+        rnd, treeH, cfg.leafScale);
+    }
+  }
+}
+
+function growLeafyTree(out, kind, x, groundY, z, rnd, leafK) {
+  const cfg = TREE_KINDS[kind];
+  const trunkLen = cfg.trunkLen[0] + rnd() * cfg.trunkLen[1];
+  const trunkR = cfg.trunkR[0] + rnd() * cfg.trunkR[1];
+  const treeH = trunkLen * 1.9;                    // approx crown top for sun tint
+
+  /* whole-tree lean — no two trees stand identically */
+  const lean = 0.03 + rnd() * 0.13;
+  const leanAz = rnd() * Math.PI * 2;
+  const dir0 = V(
+    Math.sin(lean) * Math.cos(leanAz),
+    Math.cos(lean),
+    Math.sin(lean) * Math.sin(leanAz)
+  );
+
+  const base = V(x, groundY - 0.15, z);
+  growBranch(out, base, dir0, trunkLen, trunkR, cfg.maxDepth, cfg, rnd, treeH, leafK);
+}
+
+/* bake collected branches/leaves into 3 InstancedMeshes */
+function bakeForest(group, forest) {
+  if (!forest.branches.length && !forest.leafA.length && !forest.leafB.length) return;
+
+  const woodMat = std({ vertexColors: true, roughness: 0.95, metalness: 0, flatShading: true });
+  const leafMat = std({
+    vertexColors: true, roughness: 0.85, metalness: 0,
+    side: THREE.DoubleSide, flatShading: true,   // opaque, solid foliage
+  });
+
+  /* tapered branch — base at origin, extends +Y */
+  const branchGeo = new THREE.CylinderGeometry(0.62, 1, 1, 5, 1);
+  branchGeo.translate(0, 0.5, 0);
+  const leafGeoA = makeLeafGeometry(0.5, 0.16, 0.07);   // broad curved leaf
+  const leafGeoB = makeLeafGeometry(0.3, 0.3, 0.045);   // narrow curlier leaf
+
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(),
+        p = new THREE.Vector3(), s = new THREE.Vector3(), c = new THREE.Color();
+
+  function bakeLeaves(list, geo) {
+    const mesh = new THREE.InstancedMesh(geo, leafMat, list.length);
+    list.forEach((rec, i) => {
+      q.set(rec.qx, rec.qy, rec.qz, rec.qw);
+      m.compose(p.set(rec.x, rec.y, rec.z), q, s.set(rec.sx, rec.sy, rec.sz));
+      mesh.setMatrixAt(i, m);
+      mesh.setColorAt(i, c.setRGB(rec.r, rec.g, rec.b));
+    });
+    mesh.castShadow = mesh.receiveShadow = true;
+    mesh.frustumCulled = false;
+    group.add(mesh);
+  }
+
+  if (forest.branches.length) {
+    const wood = new THREE.InstancedMesh(branchGeo, woodMat, forest.branches.length);
+    forest.branches.forEach((b, i) => {
+      q.set(b.qx, b.qy, b.qz, b.qw);
+      m.compose(p.set(b.x, b.y, b.z), q, s.set(b.sx, b.sy, b.sz));
+      wood.setMatrixAt(i, m);
+      c.copy(WOOD_TRUNK).lerp(WOOD_TWIG, b.t);
+      wood.setColorAt(i, c);
+    });
+    wood.castShadow = wood.receiveShadow = true;
+    wood.frustumCulled = false;
+    group.add(wood);
+  }
+  if (forest.leafA.length) bakeLeaves(forest.leafA, leafGeoA);
+  if (forest.leafB.length) bakeLeaves(forest.leafB, leafGeoB);
+}
+
+/* ============================================================
+   FOREST ENVIRONMENT — terrain, grass, leafy shrubs, rocks,
+   leafy trees
    ============================================================ */
 function buildTerrain() {
   const group = new THREE.Group();
@@ -892,6 +1138,9 @@ function buildTerrain() {
     }
   };
 
+  /* shared collector for all woody plants (shrubs + trees) */
+  const forest = makeForestCollector();
+
   /* grass tufts (instanced) */
   {
     const gGeo = new THREE.ConeGeometry(0.1, 0.55, 4); gGeo.translate(0, 0.27, 0);
@@ -912,23 +1161,37 @@ function buildTerrain() {
     group.add(grass);
   }
 
-  /* bushes (instanced) */
+  /* shrubs — leafy now (same positions/scales as the old blob
+     bushes). Exactly 4 shared-seed rnd() calls per shrub (same
+     as before) so the downstream scatter positions are
+     unchanged; the leaf detail uses a local seeded rng. */
   {
-    const bGeo = new THREE.IcosahedronGeometry(0.62, 0);
-    const bMat = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0, flatShading: true });
-    const B = 56, pts = scatter(B, 8, 60);
-    const bush = new THREE.InstancedMesh(bGeo, bMat, B);
-    const bc = [new THREE.Color(0x2c4726), new THREE.Color(0x24401f), new THREE.Color(0x37522c)];
+    const B = 56;
+    const pts = scatter(B, 8, 60);
     pts.forEach(([x, z], i) => {
-      const s = 0.8 + rnd() * 1.2, sy = 0.55 + rnd() * 0.5;
-      e.set(0, rnd() * Math.PI, 0); q.setFromEuler(e);
-      m.compose(pv.set(x, heightAt(x, z) + 0.25 * sy, z), q, sc.set(s, sy, s));
-      bush.setMatrixAt(i, m);
-      bush.setColorAt(i, bc[(rnd() * 3) | 0]);
+      const s = 0.8 + rnd() * 1.2;                 // shared-seed call 1
+      const sy = 0.55 + rnd() * 0.5;               // shared-seed call 2
+      const yaw = rnd() * Math.PI;                 // shared-seed call 3
+      const cseed = (rnd() * 3) | 0;               // shared-seed call 4
+      const br = mulberry32(9000 + i * 131 + cseed * 17);
+
+      const base = V(x, heightAt(x, z) + 0.25 * sy, z);
+      const nStems = 3 + ((br() * 3) | 0);
+      for (let st = 0; st < nStems; st++) {
+        const sa = yaw + br() * Math.PI * 2;
+        const tilt = 0.35 + br() * 0.5;
+        const dir = V(
+          Math.sin(tilt) * Math.cos(sa),
+          Math.cos(tilt),
+          Math.sin(tilt) * Math.sin(sa)
+        );
+        const len = (0.5 + br() * 0.5) * s;
+        const end = base.clone().addScaledVector(dir, len);
+        pushBranch(forest, base, dir, 0.045 * s, len, 1);
+        addLeafCluster(forest, end, dir,
+          3 + ((br() * 4) | 0), br, 1.6 * s * (0.6 + sy), 0.45 * s + 0.2);
+      }
     });
-    fillRest(bush, B, pts.length);
-    bush.castShadow = bush.receiveShadow = true;
-    group.add(bush);
   }
 
   /* rocks (instanced) */
@@ -950,45 +1213,22 @@ function buildTerrain() {
     group.add(rocks);
   }
 
-  /* forest — instanced trunks + foliage, clear view corridor */
+  /* forest — natural trunks, branches and hundreds of individual
+     leaves per tree (SAME placement positions as before) */
   {
-    const tGeo = new THREE.CylinderGeometry(0.14, 0.24, 1, 7); tGeo.translate(0, 0.5, 0);
-    const tMat = new THREE.MeshStandardMaterial({ color: 0x463322, roughness: 0.95, flatShading: true });
-    const fGeo = new THREE.IcosahedronGeometry(1, 0);
-    const fMat = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, flatShading: true });
     const TREES = 28;
     const treePts = scatter(TREES, 14, 56, (x, z) => !(z > 4 && Math.abs(x) < 30));
-    const trunkMesh = new THREE.InstancedMesh(tGeo, tMat, TREES);
-    const foliage = new THREE.InstancedMesh(fGeo, fMat, TREES * 3);
-    const fc = [new THREE.Color(0x2c4a26), new THREE.Color(0x223e1d), new THREE.Color(0x35522c), new THREE.Color(0x1d3619)];
-    let bi = 0;
-    treePts.forEach(([x, z], i) => {
-      let th = 2.6 + rnd() * 2.0;
-      if (rnd() < 0.28) th *= 1.35;
-      const ts = 0.85 + rnd() * 0.55;
-      e.set(0, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.12); q.setFromEuler(e);
-      m.compose(pv.set(x, heightAt(x, z) - 0.1, z), q, sc.set(ts, th, ts));
-      trunkMesh.setMatrixAt(i, m);
-      for (let k = 0; k < 3; k++) {
-        const r = 1.05 + rnd() * 1.2;
-        e.set(rnd() * 3, rnd() * 3, rnd() * 3); q.setFromEuler(e);
-        m.compose(
-          pv.set(x + (rnd() - 0.5) * 1.2, heightAt(x, z) + th * (0.6 + k * 0.3) + (rnd() - 0.5) * 0.4, z + (rnd() - 0.5) * 1.2),
-          q, sc.set(r, r * (0.75 + rnd() * 0.3), r)
-        );
-        foliage.setMatrixAt(bi, m);
-        foliage.setColorAt(bi, fc[(rnd() * 4) | 0]);
-        bi++;
-      }
+
+    treePts.forEach(([x, z]) => {
+      const roll = rnd();
+      const kind = roll < 0.42 ? 'broad' : roll < 0.76 ? 'tall' : 'bush';
+      const dist = Math.hypot(x, z);
+      /* distant trees carry fewer leaves (cheap distance LOD) */
+      const leafK = clamp(1.15 - (dist - 14) / 70, 0.45, 1.1);
+      growLeafyTree(forest, kind, x, heightAt(x, z), z, rnd, leafK);
     });
-    fillRest(trunkMesh, TREES, treePts.length);
-    for (let i = bi; i < TREES * 3; i++) {
-      m.compose(pv.set(0, -60, 0), q.identity(), sc.set(0.001, 0.001, 0.001));
-      foliage.setMatrixAt(i, m);
-    }
-    trunkMesh.castShadow = foliage.castShadow = true;
-    trunkMesh.receiveShadow = foliage.receiveShadow = true;
-    group.add(trunkMesh, foliage);
+
+    bakeForest(group, forest);
   }
 
   /* distant hills (forest-edge silhouettes) */
