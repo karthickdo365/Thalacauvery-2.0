@@ -1,11 +1,13 @@
 /* ============================================================
    THALACUVERY BOREWELL — full-screen 3D daytime drilling site
    Vivid forest, leafy instanced trees, shrubs, grass, rocks,
-   BIG rig (LEFT) + support convoy, SMALL rig (RIGHT) + support
-   convoy, two water bowsers, crew pickups, full pipeline
-   network (bowser→rig + station↔station), hover drill story
-   with water strike, camera framing, VISIBLE error reporting,
-   safe disposal. Pure Three.js — no React, no routing.
+   BIG rig (LEFT, green) fed by its own GREEN square-tank
+   bowser, SMALL rig (RIGHT, orange) fed by its own ORANGE
+   square-tank bowser — green-to-green and orange-to-orange
+   pipe connections. Persistent floating machine labels,
+   hover drill story with water strike, camera framing,
+   VISIBLE fatal error reporting, safe disposal.
+   Pure Three.js — no React, no routing.
    ============================================================ */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -33,11 +35,9 @@ const _c1 = new THREE.Color();
 const _ZAX = new THREE.Vector3(0, 0, 1);
 const _YAX = new THREE.Vector3(0, 1, 0);
 
-/* support convoy positions (each rig gets its own vehicles) */
-const BOWSER_BIG   = { x: -8.5, z: -7.5, sink: 0.12 };   // green water bowser
-const BOWSER_SMALL = { x: 12.5, z: -7.5, sink: 0.12 };   // amber water bowser
-const PICKUP_BIG   = { x: -19.5, z: -6.5, yaw: 0.4 };    // green crew pickup
-const PICKUP_SMALL = { x: 22.5,  z: -5.0, yaw: -0.4 };   // amber crew pickup
+/* support bowsers — one per rig, matching colors */
+const BOWSER_BIG   = { x: -8.5, z: -7.5, sink: 0.12 };   // green → BIG rig
+const BOWSER_SMALL = { x: 12.5, z: -7.5, sink: 0.12 };   // orange → SMALL rig
 
 /* ---------------- machine catalogue (public) ---------------- */
 export const MACHINES = {
@@ -45,7 +45,7 @@ export const MACHINES = {
     key: 'big', idx: '01', title: 'BIG MACHINE', tag: 'HEAVY-DUTY RIG',
     desc: 'Built for deep bores, high-volume output and large-diameter drilling.',
     color: '#16a34a', lt: '#4ade80', hex: 0x16a34a,
-    cb: 'rgba(22,163,74,.55)', csh: 'rgba(22,163,74,.22)',
+    cb: 'rgba(22,163,74,.55)', csh: 'rgba(22,163,74,.45)',
     place: { x: -15, z: 0, yaw: 0.3 },            // LEFT side
     hitbox: { w: 10.6, h: 12.8, d: 7.4, cy: 6.2 },
     ringR: 4.2,
@@ -63,7 +63,7 @@ export const MACHINES = {
     key: 'small', idx: '02', title: 'SMALL MACHINE', tag: 'COMPACT RIG',
     desc: 'Perfect for narrow sites, quick jobs and tight-access drilling.',
     color: '#d97706', lt: '#fbbf24', hex: 0xd97706,
-    cb: 'rgba(217,119,6,.55)', csh: 'rgba(217,119,6,.22)',
+    cb: 'rgba(217,119,6,.55)', csh: 'rgba(251,191,36,.45)',
     place: { x: 19, z: 0, yaw: -0.38 },           // RIGHT side — extra distance
     hitbox: { w: 6.4, h: 7.2, d: 5.4, cy: 3.4 },
     ringR: 2.9,
@@ -155,7 +155,7 @@ function nameTex(accent, sub) {                 // painted livery — cab doors
   t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
   return t;
 }
-function nameTexWide(accent) {                  // painted livery — tank / frame
+function nameTexWide(accent) {                  // painted livery — tank sides
   const c = document.createElement('canvas'); c.width = 512; c.height = 80;
   const x = c.getContext('2d');
   x.clearRect(0, 0, 512, 80);
@@ -662,7 +662,7 @@ function buildSmallRig(accent) {
 }
 
 /* ============================================================
-   WATER BOWSER LORRY — one per rig; parked behind its machine
+   WATER BOWSER — one per rig, SQUARE box tank, matching colors
    ============================================================ */
 function buildWaterLorry(accent, heightAt, X, Z) {
   const p = palette(accent);
@@ -702,25 +702,32 @@ function buildWaterLorry(accent, heightAt, X, Z) {
     const f = box(2.25, 0.14, 0.56, p.body); f.position.set(2.2, 1.19, s * 1.21); g.add(f);
   }
 
-  /* water tank on cradles + THALACUVERY livery */
+  /* SQUARE water tank on cradles */
   const cr1 = box(0.6, 0.3, 2.0, p.dark); cr1.position.set(-1.1, 1.32, 0); g.add(cr1);
   const cr2 = box(0.6, 0.3, 2.0, p.dark); cr2.position.set(1.9, 1.32, 0); g.add(cr2);
-  const tank = cyl(1.02, 1.02, 4.3, p.bodyDark, 24); tank.rotation.z = Math.PI / 2; tank.position.set(0.55, 2.35, 0); g.add(tank);
-  for (const x of [-1.2, 0.55, 2.3]) {
-    const band = new THREE.Mesh(new THREE.TorusGeometry(1.04, 0.045, 10, 40), p.dark);
-    band.rotation.y = Math.PI / 2; band.position.set(x, 2.35, 0); band.castShadow = true; g.add(band);
+  const tank = box(4.3, 2.0, 2.0, p.bodyDark); tank.position.set(0.55, 2.42, 0); g.add(tank);
+  /* steel straps around the square tank */
+  for (const y of [1.72, 2.42, 3.12]) {
+    const strap = box(4.42, 0.1, 2.12, p.steel); strap.position.set(0.55, y, 0); g.add(strap);
   }
-  for (const x of [-0.15, 1.25]) {
-    const cap = cyl(0.16, 0.16, 0.14, p.dark, 12); cap.position.set(x, 3.42, 0); g.add(cap);
+  /* top manhole / fill caps */
+  for (const x of [-0.35, 1.45]) {
+    const cap = cyl(0.16, 0.16, 0.16, p.dark, 12); cap.position.set(x, 3.5, 0); g.add(cap);
   }
+  /* rear ladder on the tank */
+  for (const s of [-1, 1]) g.add(bar(V(2.78, 1.55, s * 0.8), V(2.78, 3.3, s * 0.7), 0.04, p.steel));
+  for (let i = 0; i < 5; i++) {
+    const rung = box(0.05, 0.05, 1.5, p.steel); rung.position.set(2.78, 1.8 + i * 0.4, 0); g.add(rung);
+  }
+  /* THALACUVERY livery on the flat tank sides */
   for (const s of [-1, 1]) {
-    const lv = livery(3.1, 0.5, nameTexWide(accent));
-    lv.position.set(0.55, 2.35, s * 1.03);
+    const lv = livery(3.4, 0.6, nameTexWide(accent));
+    lv.position.set(0.55, 2.42, s * 1.02);
     if (s < 0) lv.rotation.y = Math.PI;
     g.add(lv);
   }
 
-  /* rear pump skid + hose reels (where the site pipes connect) */
+  /* rear pump skid + hose reels (where the machine pipe connects) */
   const pump = box(0.9, 0.7, 1.7, p.dark); pump.position.set(3.15, 1.45, 0); g.add(pump);
   for (const s of [-1, 1]) {
     const reel = cyl(0.38, 0.38, 0.3, p.steel, 18);
@@ -737,66 +744,22 @@ function buildWaterLorry(accent, heightAt, X, Z) {
 }
 
 /* ============================================================
-   CREW PICKUP — small service truck beside each rig
-   ============================================================ */
-function buildPickup(accent, heightAt, x, z, yaw) {
-  const p = palette(accent);
-  const g = new THREE.Group();
-  g.position.set(x, heightAt(x, z) - 0.1, z);
-  g.rotation.y = yaw;
-
-  /* chassis */
-  const chassis = box(4.3, 0.35, 1.9, p.dark); chassis.position.set(0, 0.95, 0); g.add(chassis);
-
-  /* cab */
-  const cab = box(1.6, 1.05, 1.8, p.body); cab.position.set(-1.15, 1.85, 0); g.add(cab);
-  const skirt = box(1.5, 0.4, 1.84, p.dark); skirt.position.set(-1.15, 1.35, 0); g.add(skirt);
-  const wind = box(0.06, 0.55, 1.55, p.glass); wind.position.set(-1.97, 2.0, 0); g.add(wind);
-  const bumper = box(0.28, 0.35, 1.9, p.dark); bumper.position.set(-2.15, 1.25, 0); g.add(bumper);
-  for (const s of [-1, 1]) {
-    const sw = box(1.0, 0.4, 0.05, p.glass); sw.position.set(-1.15, 2.0, s * 0.91); g.add(sw);
-    const hl = cyl(0.09, 0.09, 0.08, p.lamp, 12); hl.rotation.y = Math.PI / 2; hl.position.set(-2.02, 1.4, s * 0.68); g.add(hl);
-    const bc = cyl(0.06, 0.06, 0.13, p.beacon, 8); bc.position.set(-1.4, 2.45, s * 0.5); g.add(bc);
-    const lv = livery(1.15, 0.3, nameTex(accent, 'CREW / SERVICE'));
-    lv.position.set(-1.15, 1.6, s * 0.92);
-    if (s < 0) lv.rotation.y = Math.PI;
-    g.add(lv);
-    const tl = box(0.05, 0.1, 0.14, p.red); tl.position.set(2.18, 1.25, s * 0.72); g.add(tl);
-  }
-
-  /* open bed with gear */
-  const bed = box(2.35, 0.14, 1.8, p.dark); bed.position.set(1.05, 1.52, 0); g.add(bed);
-  for (const s of [-1, 1]) {
-    g.add(bar(V(-0.05, 1.55, s * 0.88), V(2.15, 1.55, s * 0.88), 0.05, p.steel));
-    const tb = box(0.6, 0.34, 0.6, p.bodyDark); tb.position.set(0.5, 1.78, s * 0.45); g.add(tb);
-  }
-  const rod = cyl(0.05, 0.05, 1.6, p.pipe, 10);
-  rod.rotation.z = Math.PI / 2; rod.position.set(1.7, 1.85, 0); g.add(rod);
-
-  /* wheels */
-  for (const wx of [-1.45, 1.5]) for (const s of [-1, 1]) {
-    const t = cyl(0.45, 0.45, 0.38, p.tire, 20); t.rotation.x = Math.PI / 2; t.position.set(wx, 0.45, s * 1.0); g.add(t);
-    const h = cyl(0.15, 0.15, 0.4, p.steel, 10); h.rotation.x = Math.PI / 2; h.position.set(wx, 0.45, s * 1.0); g.add(h);
-  }
-
-  return g;
-}
-
-/* ============================================================
-   SITE PIPE NETWORK — bowser→BIG rig, bowser→SMALL rig,
-   plus the station-to-station connecting main along the rear
+   SITE PIPES — GREEN bowser → BIG rig (green-to-green),
+   ORANGE bowser → SMALL rig (orange-to-orange).
    ============================================================ */
 function buildLorryPipes(heightAt) {
   const group = new THREE.Group();
-  const pipeMat = std({ color: 0x39424e, metalness: 0.45, roughness: 0.5 });
-  const ringMat = std({ color: 0x232a35, metalness: 0.5, roughness: 0.5 });
   const ZAX = new THREE.Vector3(0, 0, 1);
 
   const ground = (x, z) => heightAt(x, z);
   const yB = ground(BOWSER_BIG.x, BOWSER_BIG.z) - BOWSER_BIG.sink;
   const yS = ground(BOWSER_SMALL.x, BOWSER_SMALL.z) - BOWSER_SMALL.sink;
 
-  /* bowser → BIG rig mud-tank manifold */
+  const greenPipeMat  = std({ color: 0x2e7d4f, metalness: 0.3, roughness: 0.5 });
+  const orangePipeMat = std({ color: 0xb96a1e, metalness: 0.3, roughness: 0.5 });
+  const couplingMat   = std({ color: 0x232a35, metalness: 0.5, roughness: 0.5 });
+
+  /* GREEN pipe: green bowser → BIG rig mud-tank manifold */
   const curveA = new THREE.CatmullRomCurve3([
     V(BOWSER_BIG.x + 3.3, yB + 1.1, BOWSER_BIG.z + 0.95),
     V(BOWSER_BIG.x + 0.6, ground(BOWSER_BIG.x + 0.6, -5.2) + 0.32, -5.2),
@@ -804,7 +767,7 @@ function buildLorryPipes(heightAt) {
     V(-12.1, 1.6, -0.35),
   ]);
 
-  /* bowser → SMALL rig power-pack inlet */
+  /* ORANGE pipe: orange bowser → SMALL rig power-pack inlet */
   const curveB = new THREE.CatmullRomCurve3([
     V(BOWSER_SMALL.x + 3.3, yS + 1.1, BOWSER_SMALL.z + 0.95),
     V(16.7, ground(16.7, -4.6) + 0.32, -4.6),
@@ -812,53 +775,40 @@ function buildLorryPipes(heightAt) {
     V(18.35, 1.25, 0.2),
   ]);
 
-  /* station ↔ station connecting main (the two groups joined) */
-  const curveC = new THREE.CatmullRomCurve3([
-    V(BOWSER_BIG.x + 3.3, yB + 0.95, BOWSER_BIG.z - 0.95),
-    V(-1.5, ground(-1.5, -9.2) + 0.35, -9.2),
-    V(4.5, ground(4.5, -9.2) + 0.35, -9.2),
-    V(8.4, ground(8.4, -8.8) + 0.4, -8.8),
-    V(BOWSER_SMALL.x - 3.35, yS + 0.95, BOWSER_SMALL.z - 0.95),
-  ]);
-
-  function addPipe(curve, r) {
-    const mesh = new THREE.Mesh(new THREE.TubeGeometry(curve, 64, r, 8, false), pipeMat);
+  function addPipe(curve, r, mat) {
+    const mesh = new THREE.Mesh(new THREE.TubeGeometry(curve, 64, r, 8, false), mat);
     mesh.castShadow = mesh.receiveShadow = true;
     group.add(mesh);
 
-    /* couplings along the run */
     for (const t of [0.05, 0.25, 0.45, 0.65, 0.85, 0.97]) {
       const pos = curve.getPointAt(t);
       const tan = curve.getTangentAt(t).normalize();
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(r + 0.05, 0.04, 10, 22), ringMat);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(r + 0.05, 0.04, 10, 22), couplingMat);
       ring.position.copy(pos);
       ring.quaternion.setFromUnitVectors(ZAX, tan);
       ring.castShadow = true;
       group.add(ring);
     }
 
-    /* valve wheel mid-run */
     const vp = curve.getPointAt(0.5);
-    const stem = cyl(0.045, 0.045, 0.5, ringMat, 8);
+    const stem = cyl(0.045, 0.045, 0.5, couplingMat, 8);
     stem.position.set(vp.x, vp.y + 0.25, vp.z);
     group.add(stem);
-    const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.03, 10, 24), ringMat);
+    const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.035, 10, 24), mat);
     wheel.rotation.x = -Math.PI / 2;
     wheel.position.set(vp.x, vp.y + 0.5, vp.z);
     wheel.castShadow = true;
     group.add(wheel);
   }
 
-  addPipe(curveA, 0.1);
-  addPipe(curveB, 0.1);
-  addPipe(curveC, 0.12);                           // thicker connecting main
+  addPipe(curveA, 0.1, greenPipeMat);             // green → BIG rig
+  addPipe(curveB, 0.1, orangePipeMat);            // orange → SMALL rig
 
-  /* junction manifolds at both bowsers */
-  const jB = box(0.55, 0.5, 1.6, ringMat);
+  const jB = box(0.55, 0.5, 1.6, greenPipeMat);
   jB.position.set(BOWSER_BIG.x + 3.3, yB + 0.9, BOWSER_BIG.z);
   group.add(jB);
-  const jS = box(0.5, 0.5, 0.5, ringMat);
-  jS.position.set(BOWSER_SMALL.x - 3.35, yS + 0.85, BOWSER_SMALL.z - 0.95);
+  const jS = box(0.55, 0.5, 1.6, orangePipeMat);
+  jS.position.set(BOWSER_SMALL.x + 3.3, yS + 0.9, BOWSER_SMALL.z);
   group.add(jS);
 
   return group;
@@ -869,21 +819,21 @@ function buildLorryPipes(heightAt) {
    all rendered through a handful of InstancedMeshes.
    ============================================================ */
 function makeLeafGeometry(width, curve, crease) {
-  const ST = 6;                                    // stations along the leaf
+  const ST = 6;
   const positions = [];
   const indices = [];
   for (let i = 0; i <= ST; i++) {
     const t = i / ST;
     const w = (width * 0.5) * Math.sin(Math.PI * Math.pow(t, 0.85));
-    const bend = -curve * t * t;                   // tip curls back
-    positions.push(-w, t, bend);                          // left edge
-    positions.push(0, t, bend + crease * (1 - t * 0.55)); // lifted midrib
-    positions.push(w, t, bend);                           // right edge
+    const bend = -curve * t * t;
+    positions.push(-w, t, bend);
+    positions.push(0, t, bend + crease * (1 - t * 0.55));
+    positions.push(w, t, bend);
   }
   for (let i = 0; i < ST; i++) {
     const a = i * 3, b = (i + 1) * 3;
-    indices.push(a, b, a + 1, a + 1, b, b + 1);           // left half
-    indices.push(a + 1, b + 1, a + 2, a + 2, b + 1, b + 2); // right half
+    indices.push(a, b, a + 1, a + 1, b, b + 1);
+    indices.push(a + 1, b + 1, a + 2, a + 2, b + 1, b + 2);
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -892,12 +842,12 @@ function makeLeafGeometry(width, curve, crease) {
   return geo;
 }
 
-const LEAF_PALETTE = [                             // vivid daytime greens
+const LEAF_PALETTE = [
   new THREE.Color(0x2f5a1e), new THREE.Color(0x3a6b24),
   new THREE.Color(0x46802c), new THREE.Color(0x549436),
   new THREE.Color(0x619c3c),
 ];
-const LEAF_SUN = new THREE.Color(0xa8c862);        // sun-facing tint
+const LEAF_SUN = new THREE.Color(0xa8c862);
 const WOOD_TRUNK = new THREE.Color(0x4a3a26);
 const WOOD_TWIG = new THREE.Color(0x6b5138);
 
@@ -991,7 +941,7 @@ function growBranch(out, origin, dir, length, radius, depth, cfg, rnd, treeH, le
   const nSplits = isTrunk ? cfg.trunkSplits : cfg.branchSplits + (rnd() < 0.3 ? 1 : 0);
 
   for (let c = 0; c < nSplits; c++) {
-    if (!isTrunk && rnd() < 0.12) continue;        // natural gaps in the crown
+    if (!isTrunk && rnd() < 0.12) continue;
     const leader = isTrunk && c === 0 && cfg.leader;
     const tilt = leader
       ? 0.05 + rnd() * 0.09
@@ -1114,7 +1064,7 @@ function buildTerrain() {
     return h * f;
   }
 
-  /* ground with vertex colors — vivid greens like the reference */
+  /* ground with vertex colors — vivid greens */
   const geo = new THREE.PlaneGeometry(200, 200, 88, 88);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position;
@@ -1150,10 +1100,8 @@ function buildTerrain() {
   /* scatter helper */
   const rnd = mulberry32(20240);
   const clearOfWorkArea = (x, z) => padFactor(x, z) > 0.85 && Math.hypot(x, z) < 70;
-  /* keep trees off the support vehicles */
   const VEHICLES = [
     [BOWSER_BIG.x, BOWSER_BIG.z], [BOWSER_SMALL.x, BOWSER_SMALL.z],
-    [PICKUP_BIG.x, PICKUP_BIG.z], [PICKUP_SMALL.x, PICKUP_SMALL.z],
   ];
   const clearOfVehicles = (x, z) =>
     !VEHICLES.some(([vx, vz]) => Math.hypot(x - vx, z - vz) < 5);
@@ -1179,10 +1127,9 @@ function buildTerrain() {
     }
   };
 
-  /* shared collector for all woody plants */
   const forest = makeForestCollector();
 
-  /* grass tufts (instanced) — denser, brighter */
+  /* grass tufts (instanced) */
   {
     const gGeo = new THREE.ConeGeometry(0.1, 0.55, 4); gGeo.translate(0, 0.27, 0);
     const gMat = new THREE.MeshStandardMaterial({ roughness: 1, metalness: 0, flatShading: true });
@@ -1202,7 +1149,7 @@ function buildTerrain() {
     group.add(grass);
   }
 
-  /* shrubs — leafy (same positions logic, local seeded detail) */
+  /* shrubs — leafy */
   {
     const B = 72;
     const pts = scatter(B, 8, 60);
@@ -1251,7 +1198,7 @@ function buildTerrain() {
     group.add(rocks);
   }
 
-  /* forest — 40 leafy trees, denser like the reference image */
+  /* forest — 40 leafy trees */
   {
     const TREES = 40;
     const treePts = scatter(TREES, 14, 56,
@@ -1809,9 +1756,10 @@ class MachineUnit {
 }
 
 /* ============================================================
-   RigViewer — ONE scene, both machines + convoys + pipes,
-   camera, hover/click, floating label, VISIBLE error
-   reporting, guaranteed first paint, safe disposal.
+   RigViewer — ONE scene, both machines + color-matched
+   bowsers/pipes, PERSISTENT floating machine labels, camera,
+   hover/click, fatal-only error banner, guaranteed first
+   paint, safe disposal.
    ============================================================ */
 export class RigViewer {
   constructor({ canvas, onHover, onSelect, onError }) {
@@ -1825,7 +1773,7 @@ export class RigViewer {
     this._down = { x: 0, y: 0, moved: false };
     this._bound = [];
     this._reported = {};
-    this._labelEl = null; this._labelSub = null;
+    this._labels = null;
     this._retryTimers = [];
     this.units = {};
 
@@ -1873,6 +1821,10 @@ export class RigViewer {
 
     this._bindEvents();
 
+    /* persistent floating name labels above each machine */
+    try { this._ensureMachineLabels(); }
+    catch (err) { this._fail('labels', err); }
+
     this._ro = new ResizeObserver(() => this._resize());
     this._ro.observe(canvas.parentElement);
     this._onWinResize = () => this._resize();
@@ -1888,16 +1840,19 @@ export class RigViewer {
     this._raf = requestAnimationFrame(this._loop);
   }
 
-  _fail(tag, err) {
+  /* ---------- error reporting: non-fatal → console only,
+     fatal (nothing renders) → on-screen banner via onError ---------- */
+  _fail(tag, err, fatal) {
     if (this._reported[tag]) return;
     this._reported[tag] = true;
-    console.error('[rig3d] ' + tag + ' failed:', err);
-    if (this.onError) { try { this.onError(err); } catch (_) { /* ignore */ } }
+    if (fatal) console.error('[rig3d] ' + tag + ' failed:', err);
+    else console.warn('[rig3d] ' + tag + ' failed (non-fatal):', err);
+    if (fatal && this.onError) { try { this.onError(err); } catch (_) { /* ignore */ } }
   }
   _paint() {
     if (this.disposed || !this.w || !this.renderer || !this.scene) return;
     try { this.renderer.render(this.scene, this.camera); }
-    catch (err) { this._fail('render', err); }
+    catch (err) { this._fail('render', err, true); }
   }
 
   /* ---------- public API (React-facing) ---------- */
@@ -1927,7 +1882,7 @@ export class RigViewer {
     } catch (err) { this._fail('sky', err); }
 
     try {
-      /* bright daytime lighting like the reference */
+      /* bright daytime lighting */
       s.add(new THREE.HemisphereLight(0xcfe5f0, 0x4a6a35, 1.0));
       const sun = new THREE.DirectionalLight(0xfff2dd, 3.0);
       sun.position.set(40, 55, 30);
@@ -1951,15 +1906,12 @@ export class RigViewer {
     } catch (err) { this._fail('terrain', err); }
     const safeH = heightAt || ((x, z) => 0);
 
-    /* support convoys — one per rig, like the reference image */
+    /* one square-tank bowser per rig — color-matched */
     try { s.add(buildWaterLorry(0x16a34a, safeH, BOWSER_BIG.x, BOWSER_BIG.z)); }
     catch (err) { this._fail('lorry-big', err); }
     try { s.add(buildWaterLorry(0xd97706, safeH, BOWSER_SMALL.x, BOWSER_SMALL.z)); }
     catch (err) { this._fail('lorry-small', err); }
-    try { s.add(buildPickup(0x16a34a, safeH, PICKUP_BIG.x, PICKUP_BIG.z, PICKUP_BIG.yaw)); }
-    catch (err) { this._fail('pickup-big', err); }
-    try { s.add(buildPickup(0xd97706, safeH, PICKUP_SMALL.x, PICKUP_SMALL.z, PICKUP_SMALL.yaw)); }
-    catch (err) { this._fail('pickup-small', err); }
+    /* green→green and orange→orange pipe connections only */
     try { s.add(buildLorryPipes(safeH)); }
     catch (err) { this._fail('pipes', err); }
   }
@@ -1995,7 +1947,7 @@ export class RigViewer {
     });
     add('webglcontextlost', (e) => {
       e.preventDefault();
-      this._fail('webgl-context', new Error('WebGL context lost'));
+      this._fail('webgl-context', new Error('WebGL context lost'), true);
     });
   }
 
@@ -2023,49 +1975,56 @@ export class RigViewer {
     }
     if (this.onHover) this.onHover(key);
     this.canvas.style.cursor = key ? 'pointer' : 'grab';
-    if (key && this.units[key]) this._fillLabel(key);
   }
 
-  _ensureLabel() {
-    if (this._labelEl) return;
-    const el = document.createElement('div');
-    el.style.cssText = [
-      'position:absolute', 'left:0', 'top:0', 'z-index:6', 'pointer-events:none',
-      'opacity:0', 'transition:opacity .25s', 'transform:translate(-50%,-100%)',
-      'padding:8px 14px', 'border-radius:10px',
-      'background:rgba(6,10,17,.88)', 'border:1px solid #20bea5',
-      'backdrop-filter:blur(4px)', '-webkit-backdrop-filter:blur(4px)',
-      'font:700 13px "Chakra Petch","Segoe UI",sans-serif', 'letter-spacing:.1em',
-      'color:#fff', 'white-space:nowrap', 'text-align:center',
-    ].join(';');
-    const sub = document.createElement('div');
-    sub.style.cssText = 'font:600 9px "IBM Plex Mono",monospace;letter-spacing:.24em;margin-top:4px;opacity:.9;';
-    el.appendChild(document.createTextNode(''));
-    el.appendChild(sub);
-    this.canvas.parentElement.appendChild(el);
-    this._labelEl = el; this._labelSub = sub;
+  /* ---------- persistent floating machine name labels ---------- */
+  _ensureMachineLabels() {
+    if (this._labels) return;
+    this._labels = {};
+    for (const key of ['big', 'small']) {
+      const m = MACHINES[key];
+      const el = document.createElement('div');
+      el.style.cssText = [
+        'position:absolute', 'left:0', 'top:0', 'z-index:6', 'pointer-events:none',
+        'opacity:0', 'transform:translate(-50%,-100%)',
+        'padding:7px 13px', 'border-radius:10px',
+        'background:rgba(6,10,17,.84)',
+        'border:1px solid ' + m.color,
+        'backdrop-filter:blur(4px)', '-webkit-backdrop-filter:blur(4px)',
+        'white-space:nowrap', 'text-align:center',
+        'transition:box-shadow .25s,border-width .15s',
+      ].join(';');
+      const title = document.createElement('div');
+      title.style.cssText = 'font:700 12px "Chakra Petch","Segoe UI",sans-serif;letter-spacing:.12em;color:#fff;margin-bottom:3px';
+      title.textContent = m.idx + ' · ' + m.title;
+      const sub = document.createElement('div');
+      sub.style.cssText = 'font:600 8px "IBM Plex Mono",monospace;letter-spacing:.26em;color:' + m.lt;
+      sub.textContent = m.tag;
+      el.appendChild(title);
+      el.appendChild(sub);
+      this.canvas.parentElement.appendChild(el);
+      this._labels[key] = el;
+    }
   }
-  _fillLabel(key) {
-    this._ensureLabel();
-    const m = MACHINES[key];
-    this._labelEl.childNodes[0].nodeValue = m.title;
-    this._labelSub.textContent = m.tag;
-    this._labelEl.style.borderColor = m.color;
-    this._labelSub.style.color = m.lt;
-  }
-  _updateLabel() {
-    if (!this._labelEl) return;
-    const key = this._hoverKey;
-    const unit = key ? this.units[key] : null;
-    if (!unit || !this.w || this.disposed) { this._labelEl.style.opacity = '0'; return; }
-    _lv.set(0, unit.cfg.hitbox.cy + unit.cfg.hitbox.h * 0.5 + 0.3, 0);
-    unit.root.localToWorld(_lv);
-    _lv.project(this.camera);
-    const x = (_lv.x * 0.5 + 0.5) * this.w;
-    const y = (-_lv.y * 0.5 + 0.5) * this.h;
-    this._labelEl.style.opacity = '1';
-    this._labelEl.style.left = clamp(x, 90, this.w - 90) + 'px';
-    this._labelEl.style.top = clamp(y - 16, 64, this.h - 60) + 'px';
+  _updateLabels() {
+    if (!this._labels) return;
+    for (const key of ['big', 'small']) {
+      const el = this._labels[key];
+      const unit = this.units[key];
+      if (!unit || !this.w || this.disposed) { el.style.opacity = '0'; continue; }
+      _lv.set(0, unit.cfg.hitbox.cy + unit.cfg.hitbox.h * 0.5 + 0.3, 0);
+      unit.root.localToWorld(_lv);
+      _lv.project(this.camera);
+      if (_lv.z > 1) { el.style.opacity = '0'; continue; }   // behind the camera
+      const x = (_lv.x * 0.5 + 0.5) * this.w;
+      const y = (-_lv.y * 0.5 + 0.5) * this.h;
+      el.style.opacity = '1';
+      el.style.left = clamp(x, 110, this.w - 110) + 'px';
+      el.style.top = clamp(y - 18, 60, this.h - 70) + 'px';
+      const hovered = this._hoverKey === key;
+      el.style.boxShadow = hovered ? '0 0 22px ' + MACHINES[key].csh : 'none';
+      el.style.borderWidth = hovered ? '2px' : '1px';
+    }
   }
 
   _resize() {
@@ -2108,7 +2067,7 @@ export class RigViewer {
       catch (err) { this._fail('unit:' + k, err); }
     }
     this._paint();
-    this._updateLabel();
+    this._updateLabels();
   }
 
   dispose() {
@@ -2126,7 +2085,10 @@ export class RigViewer {
     for (const [type, fn] of this._bound) this.canvas.removeEventListener(type, fn);
     this._bound.length = 0;
     try { this.controls.dispose(); } catch (_) {}
-    if (this._labelEl) { this._labelEl.remove(); this._labelEl = null; this._labelSub = null; }
+    if (this._labels) {
+      for (const k in this._labels) { this._labels[k].remove(); }
+      this._labels = null;
+    }
     if (this.scene) {
       try {
         const mats = new Set(), texs = new Set();
