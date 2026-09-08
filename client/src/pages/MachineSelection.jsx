@@ -14,6 +14,7 @@ const MachineSelection = () => {
 
   const canvasRef = useRef(null);
   const viewerRef = useRef(null);
+  const selectRef = useRef(() => {});
   const navigatingRef = useRef(false);
 
   const [hovered, setHovered] = useState(null);
@@ -37,17 +38,28 @@ const MachineSelection = () => {
     navigate('/dashboard');
   }, [navigate, setMachine]);
 
+  // Always-fresh selection callback for the viewer (created once below).
+  selectRef.current = handleSelect;
+
+  /* ---- 3D scene: created EXACTLY ONCE (empty deps + selectRef),
+     so an unstable context value can never dispose/recreate the
+     viewer on the same canvas. Any 3D error is reported, never
+     swallowed — and the labels above still navigate. ---- */
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return undefined;
 
-    let viewer;
+    let viewer = null;
 
     try {
       viewer = new RigViewer({
         canvas,
         onHover: (key) => setHovered(key),
-        onSelect: (key) => handleSelect(key),
+        onSelect: (key) => selectRef.current(key),
+        onError: (err) => {
+          console.error('Machine selection 3D error:', err);
+          setSceneError(true);
+        },
       });
       viewerRef.current = viewer;
       setSceneError(false);
@@ -65,7 +77,7 @@ const MachineSelection = () => {
       }
       viewerRef.current = null;
     };
-  }, [handleSelect]);
+  }, []);
 
   useEffect(() => {
     try {
