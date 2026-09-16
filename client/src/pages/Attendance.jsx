@@ -383,6 +383,9 @@ export default function Attendance() {
   const [advancePaymentMode, setAdvancePaymentMode] = useState('cash');
   const [advanceNotes, setAdvanceNotes] = useState('');
   const [savingAdvance, setSavingAdvance] = useState(false);
+  const [editingAdvance, setEditingAdvance] = useState(null);
+  const [deleteAdvanceDialog, setDeleteAdvanceDialog] = useState(null);
+  const [deletingAdvance, setDeletingAdvance] = useState(false);
 
   const [
     error,
@@ -1179,47 +1182,130 @@ export default function Attendance() {
 
 
 
+  const openAddAdvance = () => {
+    setEditingAdvance(null);
+    setAdvanceAmount('');
+    setAdvancePaymentMode('cash');
+    setAdvanceNotes('');
+    setAdvanceDate(toDateKey(new Date()));
+    setError('');
+    setAdvanceModal(true);
+  };
+
+  const openEditAdvance = (item) => {
+    setEditingAdvance(item);
+    setAdvanceAmount(String(item?.advanceAmount ?? ''));
+    setAdvanceDate(
+      item?.date
+        ? toDateKey(new Date(item.date))
+        : item?.month
+          ? `${item.month}-01`
+          : toDateKey(new Date())
+    );
+    setAdvancePaymentMode(item?.paymentMode || 'cash');
+    setAdvanceNotes(item?.notes || '');
+    setError('');
+    setAdvanceModal(true);
+  };
+
+  const closeAdvanceModal = () => {
+    if (savingAdvance) return;
+    setAdvanceModal(false);
+    setEditingAdvance(null);
+    setAdvanceAmount('');
+    setAdvancePaymentMode('cash');
+    setAdvanceNotes('');
+    setAdvanceDate(toDateKey(new Date()));
+  };
+
   const saveAdvance = async () => {
     if (!selectedEmployee) {
       setError('Please select an employee.');
       return;
     }
+
     const amount = Number(advanceAmount);
     if (!amount || amount <= 0) {
       setError('Enter a valid advance amount.');
       return;
     }
+
     if (!advanceDate) {
       setError('Select an advance date.');
       return;
     }
+
     try {
       setSavingAdvance(true);
       setError('');
-      await apiRequest('/salary-advances', {
-        method: 'POST',
-        body: JSON.stringify({
-          employeeId: selectedEmployee,
-          month: advanceDate.slice(0, 7),
-          machineType: currentMachine,
-          advanceAmount: amount,
-          paymentMode: advancePaymentMode,
-          notes: advanceNotes.trim(),
-          date: advanceDate,
-        }),
-      });
-      setAdvanceModal(false);
-      setAdvanceAmount('');
-      setAdvancePaymentMode('cash');
-      setAdvanceNotes('');
-      setAdvanceDate(toDateKey(new Date()));
-      setSuccess('Salary advance added successfully.');
+
+      const payload = {
+        employeeId: selectedEmployee,
+        month: advanceDate.slice(0, 7),
+        machineType: currentMachine,
+        advanceAmount: amount,
+        paymentMode: advancePaymentMode,
+        notes: advanceNotes.trim(),
+        date: advanceDate,
+      };
+
+      if (editingAdvance?._id) {
+        await apiRequest(
+          `/salary-advances/${editingAdvance._id}`,
+          {
+            method: 'PUT',
+            body: JSON.stringify(payload),
+          }
+        );
+        setSuccess('Salary advance updated successfully.');
+      } else {
+        await apiRequest('/salary-advances', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        setSuccess('Salary advance added successfully.');
+      }
+
+      closeAdvanceModal();
       await loadAdvances();
     } catch (err) {
-      console.error('Advance error:', err);
-      setError(err?.message || 'Unable to save salary advance.');
+      console.error('Advance save error:', err);
+      setError(
+        err?.message ||
+          (editingAdvance
+            ? 'Unable to update salary advance.'
+            : 'Unable to save salary advance.')
+      );
     } finally {
       setSavingAdvance(false);
+    }
+  };
+
+  const confirmDeleteAdvance = async () => {
+    if (!deleteAdvanceDialog?._id) return;
+
+    try {
+      setDeletingAdvance(true);
+      setError('');
+
+      await apiRequest(
+        `/salary-advances/${deleteAdvanceDialog._id}`,
+        {
+          method: 'DELETE',
+        }
+      );
+
+      setDeleteAdvanceDialog(null);
+      setSuccess('Salary advance deleted successfully.');
+      await loadAdvances();
+    } catch (err) {
+      console.error('Advance delete error:', err);
+      setError(
+        err?.message ||
+          'Unable to delete salary advance.'
+      );
+    } finally {
+      setDeletingAdvance(false);
     }
   };
 
@@ -1943,10 +2029,24 @@ export default function Attendance() {
         .advance-title-row { display: flex; justify-content: space-between; align-items: baseline; }
         .advance-count { color: #75899b; font-size: 12px; font-weight: 600; }
         .advance-list { margin-top: 10px; }
-        .advance-item { display: flex; justify-content: space-between; gap: 15px; padding: 12px 0; border-bottom: 1px solid #eef2f6; font-size: 14px; }
+        .advance-item { display: flex; justify-content: space-between; align-items: center; gap: 15px; padding: 12px 0; border-bottom: 1px solid #eef2f6; font-size: 14px; }
         .advance-item:last-child { border-bottom: 0; }
         .advance-date { color: #75889a; font-size: 12px; margin-top: 2px; }
+        .advance-item-right { display: flex; align-items: center; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
         .advance-amount { color: #b96a0f; font-weight: 800; white-space: nowrap; }
+        .advance-actions { display: flex; align-items: center; gap: 6px; }
+        .advance-edit-button, .advance-delete-button { border: 0; background: transparent; cursor: pointer; font-size: 12px; font-weight: 700; padding: 5px 7px; border-radius: 6px; }
+        .advance-edit-button { color: #2563eb; }
+        .advance-edit-button:hover:not(:disabled) { background: #eff6ff; }
+        .advance-delete-button { color: #dc2626; }
+        .advance-delete-button:hover:not(:disabled) { background: #fef2f2; }
+        .advance-edit-button:disabled, .advance-delete-button:disabled { opacity: .5; cursor: not-allowed; }
+        .delete-advance-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+        .delete-advance-label { color: #64748b; font-size: 11px; font-weight: 800; letter-spacing: .05em; margin-bottom: 5px; }
+        .delete-advance-amount { color: #b91c1c; font-size: 25px; font-weight: 900; }
+        .delete-advance-meta { color: #64748b; font-size: 12px; margin-top: 4px; }
+        .delete-advance-notes { color: #334155; font-size: 13px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #e2e8f0; }
+        .modal-warning { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; border-radius: 10px; padding: 12px 14px; font-size: 13px; line-height: 1.5; margin-bottom: 18px; }
         .empty-advance { padding: 12px 0; color: #8495a5; font-size: 13px; }
         .advance-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 
@@ -2018,6 +2118,14 @@ export default function Attendance() {
 
           .advance-form-grid {
             grid-template-columns: 1fr;
+          }
+          .advance-item {
+            align-items: flex-start;
+          }
+          .advance-item-right {
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 5px;
           }
 
           .alert {
@@ -2318,7 +2426,7 @@ export default function Attendance() {
                 <button
                   type="button"
                   className="advance-button"
-                  onClick={() => setAdvanceModal(true)}
+                  onClick={openAddAdvance}
                   disabled={savingAdvance}
                 >
                   + Add Salary Advance
@@ -2340,7 +2448,27 @@ export default function Attendance() {
                             {item.date ? formatDate(new Date(item.date)) : item.month || '-'}
                           </div>
                         </div>
-                        <div className="advance-amount">- {formatMoney(item.advanceAmount)}</div>
+                        <div className="advance-item-right">
+                          <div className="advance-amount">- {formatMoney(item.advanceAmount)}</div>
+                          <div className="advance-actions">
+                            <button
+                              type="button"
+                              className="advance-edit-button"
+                              onClick={() => openEditAdvance(item)}
+                              disabled={savingAdvance || deletingAdvance}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="advance-delete-button"
+                              onClick={() => setDeleteAdvanceDialog(item)}
+                              disabled={savingAdvance || deletingAdvance}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -3084,6 +3212,78 @@ export default function Attendance() {
         )}
 
 
+      {deleteAdvanceDialog && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !deletingAdvance) {
+              setDeleteAdvanceDialog(null);
+            }
+          }}
+        >
+          <div className="modal">
+            <div className="modal-header">
+              <div>
+                <h2 className="modal-title">Delete Salary Advance</h2>
+                <div className="modal-date">{employee?.name}</div>
+              </div>
+              <button
+                type="button"
+                className="close-button"
+                onClick={() => setDeleteAdvanceDialog(null)}
+                disabled={deletingAdvance}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="delete-advance-box">
+              <div className="delete-advance-label">ADVANCE TO DELETE</div>
+              <div className="delete-advance-amount">
+                {formatMoney(deleteAdvanceDialog.advanceAmount)}
+              </div>
+              <div className="delete-advance-meta">
+                {deleteAdvanceDialog.date
+                  ? formatDate(new Date(deleteAdvanceDialog.date))
+                  : deleteAdvanceDialog.month || '-'}
+                {' • '}
+                {deleteAdvanceDialog.paymentMode || 'Cash'}
+              </div>
+              {deleteAdvanceDialog.notes && (
+                <div className="delete-advance-notes">
+                  {deleteAdvanceDialog.notes}
+                </div>
+              )}
+            </div>
+
+            <div className="modal-warning">
+              This advance will be removed from the employee's salary calculation.
+              This action cannot be undone from this screen.
+            </div>
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="button"
+                onClick={() => setDeleteAdvanceDialog(null)}
+                disabled={deletingAdvance}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="button danger"
+                onClick={confirmDeleteAdvance}
+                disabled={deletingAdvance}
+              >
+                {deletingAdvance ? 'Deleting...' : 'Delete Advance'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
       {advanceModal && (
         <div
           className="modal-backdrop"
@@ -3094,10 +3294,10 @@ export default function Attendance() {
           <div className="modal wide">
             <div className="modal-header">
               <div>
-                <h2 className="modal-title">Add Salary Advance</h2>
+                <h2 className="modal-title">{editingAdvance ? 'Edit Salary Advance' : 'Add Salary Advance'}</h2>
                 <div className="modal-date">{employee?.name}</div>
               </div>
-              <button type="button" className="close-button" onClick={() => setAdvanceModal(false)} disabled={savingAdvance}>×</button>
+              <button type="button" className="close-button" onClick={closeAdvanceModal} disabled={savingAdvance}>×</button>
             </div>
 
             <div className="advance-form-grid">
@@ -3125,9 +3325,9 @@ export default function Attendance() {
             </div>
 
             <div className="modal-actions">
-              <button type="button" className="button" onClick={() => setAdvanceModal(false)} disabled={savingAdvance}>Cancel</button>
+              <button type="button" className="button" onClick={closeAdvanceModal} disabled={savingAdvance}>Cancel</button>
               <button type="button" className="button green" onClick={saveAdvance} disabled={savingAdvance}>
-                {savingAdvance ? 'Saving...' : 'Save Advance'}
+                {savingAdvance ? (editingAdvance ? 'Updating...' : 'Saving...') : (editingAdvance ? 'Update Advance' : 'Save Advance')}
               </button>
             </div>
           </div>
