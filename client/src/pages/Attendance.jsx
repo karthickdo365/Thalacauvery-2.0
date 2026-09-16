@@ -365,10 +365,8 @@ const calculateEmployeeListSalary = (
     0
   );
 
-  const finalSalary = Math.max(
-    salaryBeforeAdvance - totalAdvance,
-    0
-  );
+  const finalSalary =
+    salaryBeforeAdvance - totalAdvance;
 
   return {
     totalDays,
@@ -1103,10 +1101,7 @@ export default function Attendance() {
       );
 
     const finalSalary =
-      Math.max(
-        salaryBeforeAdvance - totalAdvance,
-        0
-      );
+      salaryBeforeAdvance - totalAdvance;
 
     return {
       monthsWorked,
@@ -1902,6 +1897,10 @@ export default function Attendance() {
           font-weight: 900;
         }
 
+        .salary-final-value.negative {
+          color: #d72d2d;
+        }
+
         .calendar-card {
           padding: 22px 24px;
         }
@@ -2593,7 +2592,11 @@ export default function Attendance() {
           </div>
         )}
 
-        {/* Employee */}
+        {/* Employee section intentionally kept in code but disabled.
+            It can be re-enabled later by changing false to true. */}
+        {false && (
+          <>
+        {/* Employee section temporarily disabled */}
         <div className="card employee-card">
 
           <label className="field-label">
@@ -2672,6 +2675,9 @@ export default function Attendance() {
             </div>
           )}
         </div>
+
+          </>
+        )}
 
         {/* ==========================================================
             ALL EMPLOYEE SALARY LIST - EXTRA VIEW
