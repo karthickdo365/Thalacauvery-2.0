@@ -2592,7 +2592,11 @@ export default function Attendance() {
           </div>
         )}
 
-        {/* Employee */}
+        {/* Employee section intentionally kept in code but disabled.
+            It can be re-enabled later by changing false to true. */}
+        {false && (
+          <>
+        {/* Employee section temporarily disabled */}
         <div className="card employee-card">
 
           <label className="field-label">
@@ -2671,6 +2675,9 @@ export default function Attendance() {
             </div>
           )}
         </div>
+
+          </>
+        )}
 
         {/* ==========================================================
             ALL EMPLOYEE SALARY LIST - EXTRA VIEW
