@@ -211,6 +211,46 @@ const formatDateShort = (date) => {
   ).format(date);
 };
 
+// Salary-advance APIs can use slightly different field names depending
+// on the backend version. Prefer the actual transaction date and only
+// fall back to the month when no date was returned.
+const getAdvanceDate = (item) => {
+  if (!item) return null;
+
+  const rawDate =
+    item.date ||
+    item.advanceDate ||
+    item.transactionDate ||
+    item.paymentDate;
+
+  if (!rawDate) return null;
+
+  const date = new Date(rawDate);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const formatAdvanceDate = (item) => {
+  const date = getAdvanceDate(item);
+
+  if (date) {
+    return formatDate(date);
+  }
+
+  // Keep the month visible if the API only returned the month.
+  if (item?.month) {
+    const monthDate = new Date(`${item.month}-01T00:00:00`);
+
+    if (!Number.isNaN(monthDate.getTime())) {
+      return new Intl.DateTimeFormat('en-IN', {
+        month: 'long',
+        year: 'numeric',
+      }).format(monthDate);
+    }
+  }
+
+  return 'Date not available';
+};
+
 const formatMoney = (value) => {
   return new Intl.NumberFormat(
     'en-IN',
@@ -1751,7 +1791,8 @@ export default function Attendance() {
         .advance-date {
           color: #75889a;
           font-size: 12px;
-          margin-top: 2px;
+          margin-top: 3px;
+          line-height: 1.4;
         }
 
         .advance-amount {
@@ -2566,13 +2607,7 @@ export default function Attendance() {
                               </div>
 
                               <div className="advance-date">
-                                {item.date
-                                  ? formatDate(
-                                      new Date(
-                                        item.date
-                                      )
-                                    )
-                                  : item.month}
+                                {formatAdvanceDate(item)}
                               </div>
                             </div>
 
