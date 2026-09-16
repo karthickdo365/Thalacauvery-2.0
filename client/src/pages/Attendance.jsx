@@ -262,6 +262,125 @@ const formatAdvanceDate = (item) => {
   return 'Date not available';
 };
 
+
+/*
+|--------------------------------------------------------------------------
+| All-employee salary summary helper
+|--------------------------------------------------------------------------
+*/
+
+const calculateEmployeeListSalary = (
+  employee,
+  attendanceRecords = [],
+  advances = []
+) => {
+  const today = new Date();
+  const todayOnly = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate()
+  );
+
+  const joiningDate = employee?.date
+    ? new Date(employee.date)
+    : todayOnly;
+
+  const start =
+    joiningDate > todayOnly
+      ? todayOnly
+      : new Date(
+          joiningDate.getFullYear(),
+          joiningDate.getMonth(),
+          joiningDate.getDate()
+        );
+
+  const millisecondsPerDay =
+    24 * 60 * 60 * 1000;
+
+  const totalDays = Math.max(
+    Math.floor(
+      (todayOnly - start) /
+        millisecondsPerDay
+    ) + 1,
+    0
+  );
+
+  const absentKeys = new Set();
+
+  for (const record of attendanceRecords) {
+    if (
+      normalizeStatus(record?.status) !==
+      'absent'
+    ) {
+      continue;
+    }
+
+    const rawDate =
+      record?.date ||
+      record?.attendanceDate ||
+      record?.absenceDate;
+
+    if (!rawDate) continue;
+
+    const key = toDateKey(rawDate);
+    if (!key) continue;
+
+    const date = parseDateKey(key);
+    if (
+      date &&
+      date >= start &&
+      date <= todayOnly
+    ) {
+      absentKeys.add(key);
+    }
+  }
+
+  const absentDays = absentKeys.size;
+  const presentDays = Math.max(
+    totalDays - absentDays,
+    0
+  );
+
+  const monthlySalary =
+    Number(employee?.salary) || 0;
+
+  const dailySalary =
+    monthlySalary / 30;
+
+  const grossSalary =
+    dailySalary * totalDays;
+
+  const absentDeduction =
+    dailySalary * absentDays;
+
+  const totalAdvance = advances.reduce(
+    (sum, item) =>
+      sum +
+      (Number(item?.advanceAmount) || 0),
+    0
+  );
+
+  const salaryBeforeAdvance = Math.max(
+    grossSalary - absentDeduction,
+    0
+  );
+
+  const finalSalary = Math.max(
+    salaryBeforeAdvance - totalAdvance,
+    0
+  );
+
+  return {
+    totalDays,
+    presentDays,
+    absentDays,
+    grossSalary,
+    absentDeduction,
+    totalAdvance,
+    finalSalary,
+  };
+};
+
 /*
 |--------------------------------------------------------------------------
 | WhatsApp share helpers
@@ -424,6 +543,11 @@ export default function Attendance() {
   const [editingAdvance, setEditingAdvance] = useState(null);
   const [deleteAdvanceDialog, setDeleteAdvanceDialog] = useState(null);
   const [deletingAdvance, setDeletingAdvance] = useState(false);
+
+  // Extra employee salary list. Existing selected-employee
+  // attendance/salary flow remains unchanged.
+  const [allEmployeeSalaryRows, setAllEmployeeSalaryRows] = useState([]);
+  const [allEmployeeSalaryLoading, setAllEmployeeSalaryLoading] = useState(false);
 
   const [
     error,
@@ -659,6 +783,94 @@ export default function Attendance() {
   ]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    const loadAllEmployeeSalary = async () => {
+      if (!employees.length) {
+        setAllEmployeeSalaryRows([]);
+        return;
+      }
+
+      setAllEmployeeSalaryLoading(true);
+
+      const rows = await Promise.all(
+        employees.map(async (item) => {
+          const employeeId = item?._id;
+
+          try {
+            const [attendanceData, advanceData] =
+              await Promise.all([
+                apiRequest(
+                  `/attendance?employeeId=${employeeId}&machineType=${currentMachine}&limit=500`
+                ),
+                apiRequest(
+                  `/salary-advances?employeeId=${employeeId}&machineType=${currentMachine}&limit=500`
+                ),
+              ]);
+
+            const attendance = extractList(
+              attendanceData,
+              [
+                'records',
+                'attendance',
+                'data',
+                'items',
+              ]
+            ).map(normalizeAttendanceRecord);
+
+            const employeeAdvances =
+              extractList(
+                advanceData,
+                [
+                  'records',
+                  'advances',
+                  'data',
+                  'items',
+                ]
+              );
+
+            return {
+              employee: item,
+              salary: calculateEmployeeListSalary(
+                item,
+                attendance,
+                employeeAdvances
+              ),
+              failed: false,
+            };
+          } catch (err) {
+            console.warn(
+              `Unable to load salary data for ${item?.name || 'employee'}:`,
+              err?.message || err
+            );
+
+            return {
+              employee: item,
+              salary: calculateEmployeeListSalary(
+                item,
+                [],
+                []
+              ),
+              failed: true,
+            };
+          }
+        })
+      );
+
+      if (!cancelled) {
+        setAllEmployeeSalaryRows(rows);
+        setAllEmployeeSalaryLoading(false);
+      }
+    };
+
+    loadAllEmployeeSalary();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [employees, currentMachine]);
+
+  useEffect(() => {
     setShareCard(null);
     setOptimisticAbsent({});
     setOptimisticRemoved({});
@@ -755,7 +967,6 @@ export default function Attendance() {
         absentDeduction: 0,
         advance: 0,
         finalSalary: 0,
-        advanceCarryForward: 0,
       };
     }
 
@@ -897,12 +1108,6 @@ export default function Attendance() {
         0
       );
 
-    const advanceCarryForward =
-      Math.max(
-        totalAdvance - salaryBeforeAdvance,
-        0
-      );
-
     return {
       monthsWorked,
       totalDays:
@@ -913,7 +1118,6 @@ export default function Attendance() {
       absentDeduction,
       advance: totalAdvance,
       finalSalary,
-      advanceCarryForward,
     };
   }, [
     employee,
@@ -1698,36 +1902,6 @@ export default function Attendance() {
           font-weight: 900;
         }
 
-        .advance-carry-forward {
-          margin-top: 10px;
-          padding: 12px 14px;
-          border: 1px solid #f2d38a;
-          background: #fffaf0;
-          border-radius: 10px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-          color: #9a5a00;
-          font-size: 13px;
-        }
-
-        .advance-carry-forward > div {
-          display: flex;
-          flex-direction: column;
-          gap: 3px;
-        }
-
-        .advance-carry-forward span {
-          color: #8a7355;
-          font-size: 11px;
-        }
-
-        .advance-carry-forward > strong {
-          white-space: nowrap;
-          font-size: 15px;
-        }
-
         .calendar-card {
           padding: 22px 24px;
         }
@@ -2175,6 +2349,134 @@ export default function Attendance() {
           margin-bottom: 16px;
         }
 
+        /* ---------------- All employee salary list ---------------- */
+
+        .all-salary-card {
+          margin-bottom: 20px;
+          padding: 22px 24px;
+        }
+
+        .all-salary-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+
+        .all-salary-header-text {
+          color: #718397;
+          font-size: 13px;
+          margin-top: 4px;
+        }
+
+        .all-salary-count {
+          color: #718397;
+          font-size: 12px;
+          font-weight: 700;
+          white-space: nowrap;
+        }
+
+        .all-salary-table-wrap {
+          margin-top: 16px;
+          overflow-x: auto;
+          border: 1px solid #e7edf2;
+          border-radius: 12px;
+        }
+
+        .all-salary-table {
+          width: 100%;
+          min-width: 920px;
+          border-collapse: collapse;
+          font-size: 13px;
+        }
+
+        .all-salary-table th {
+          padding: 12px 14px;
+          background: #f7fafc;
+          color: #6d8092;
+          font-size: 11px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: .03em;
+          text-align: left;
+          white-space: nowrap;
+          border-bottom: 1px solid #e7edf2;
+        }
+
+        .all-salary-table td {
+          padding: 13px 14px;
+          color: #334b61;
+          border-bottom: 1px solid #eef2f6;
+          white-space: nowrap;
+        }
+
+        .all-salary-table tbody tr:last-child td {
+          border-bottom: 0;
+        }
+
+        .all-salary-table tbody tr {
+          cursor: pointer;
+          transition: background .12s;
+        }
+
+        .all-salary-table tbody tr:hover {
+          background: #f8fcfb;
+        }
+
+        .all-salary-table tbody tr.selected {
+          background: #eefbf7;
+        }
+
+        .all-salary-name {
+          color: #162f48;
+          font-weight: 800;
+        }
+
+        .all-salary-sub {
+          margin-top: 2px;
+          color: #8a9aaa;
+          font-size: 11px;
+        }
+
+        .all-salary-money {
+          font-weight: 750;
+          color: #19334d;
+        }
+
+        .all-salary-advance {
+          color: #b96a0f;
+          font-weight: 750;
+        }
+
+        .all-salary-final {
+          color: #087d73;
+          font-weight: 850;
+        }
+
+        .all-salary-present {
+          color: #0a9b68;
+          font-weight: 750;
+        }
+
+        .all-salary-absent {
+          color: #d63b3b;
+          font-weight: 750;
+        }
+
+        .all-salary-warning {
+          margin-top: 10px;
+          color: #8a7355;
+          font-size: 12px;
+        }
+
+        .all-salary-loading {
+          padding: 24px;
+          text-align: center;
+          color: #718397;
+          font-size: 13px;
+        }
+
         /* ---------------- Responsive ---------------- */
 
         @media (max-width: 1100px) {
@@ -2371,6 +2673,102 @@ export default function Attendance() {
           )}
         </div>
 
+        {/* ==========================================================
+            ALL EMPLOYEE SALARY LIST - EXTRA VIEW
+            ========================================================== */}
+        <div className="card all-salary-card">
+          <div className="all-salary-header">
+            <div>
+              <h2 className="section-title">
+                All Employee Salary
+              </h2>
+              <div className="all-salary-header-text">
+                Worked days, absent days, advances and current payable salary.
+              </div>
+            </div>
+            <span className="all-salary-count">
+              {employees.length} employees
+            </span>
+          </div>
+
+          {allEmployeeSalaryLoading ? (
+            <div className="all-salary-loading">
+              Loading employee salary details...
+            </div>
+          ) : allEmployeeSalaryRows.length === 0 ? (
+            <div className="empty-advance">
+              No employee salary data available.
+            </div>
+          ) : (
+            <div className="all-salary-table-wrap">
+              <table className="all-salary-table">
+                <thead>
+                  <tr>
+                    <th>Employee</th>
+                    <th>Joining Date</th>
+                    <th>Monthly Salary</th>
+                    <th>Days Worked</th>
+                    <th>Absent</th>
+                    <th>Advance</th>
+                    <th>Final Salary</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allEmployeeSalaryRows.map((row) => {
+                    const item = row.employee;
+                    const salary = row.salary;
+                    const isSelected =
+                      String(item?._id) ===
+                      String(selectedEmployee);
+
+                    return (
+                      <tr
+                        key={item?._id}
+                        className={
+                          isSelected ? 'selected' : ''
+                        }
+                        onClick={() =>
+                          setSelectedEmployee(item?._id || '')
+                        }
+                        title="Click to view this employee's attendance"
+                      >
+                        <td>
+                          <div className="all-salary-name">
+                            {item?.name || 'Unnamed Employee'}
+                          </div>
+                          <div className="all-salary-sub">
+                            {item?.type || item?.userType || 'Employee'}
+                          </div>
+                        </td>
+                        <td>
+                          {item?.date
+                            ? formatDate(new Date(item.date))
+                            : '-'}
+                        </td>
+                        <td className="all-salary-money">
+                          {formatMoney(item?.salary)}
+                        </td>
+                        <td className="all-salary-present">
+                          {salary.presentDays}
+                        </td>
+                        <td className="all-salary-absent">
+                          {salary.absentDays}
+                        </td>
+                        <td className="all-salary-advance">
+                          {formatMoney(salary.totalAdvance)}
+                        </td>
+                        <td className="all-salary-final">
+                          {formatMoney(salary.finalSalary)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
         {!employee ? (
           <div className="card empty-state">
             <div className="empty-state-icon">
@@ -2503,21 +2901,6 @@ export default function Attendance() {
 
                 </div>
 
-                {salarySummary.advanceCarryForward > 0 && (
-                  <div className="advance-carry-forward">
-                    <div>
-                      <strong>Advance Carry Forward</strong>
-                      <span>
-                        Advance exceeds the current payable salary.
-                      </span>
-                    </div>
-                    <strong>
-                      {formatMoney(
-                        salarySummary.advanceCarryForward
-                      )}
-                    </strong>
-                  </div>
-                )}
 
                 <button
                   type="button"
