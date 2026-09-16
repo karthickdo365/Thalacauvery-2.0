@@ -266,8 +266,6 @@ const getDefaultValues = (
 
   brokerId: '',
 
-  partyName: '',
-
   outerPipeFeet: '',
 
   innerPipeFeet: '',
@@ -1049,10 +1047,6 @@ const BorewellBills = () => {
           point.brokerId ||
           '',
 
-        partyName:
-          point.partyName ||
-          '',
-
         outerPipeFeet:
           point.outerPipeFeet ||
           '',
@@ -1518,35 +1512,7 @@ const BorewellBills = () => {
                   />
 
                 </Grid>
-
-
-                {/* ==================================================
-                    PARTY
-                ================================================== */}
-
-                <Grid
-                  item
-                  xs={12}
-                  sm={6}
-                  md={3}
-                >
-
-                  <TextField
-                    fullWidth
-                    size="small"
-                    label="Party Name"
-                    InputLabelProps={{
-                      shrink: true,
-                    }}
-                    {...register(
-                      'partyName'
-                    )}
-                  />
-
-                </Grid>
-
-
-                {/* ==================================================
+{/* ==================================================
                     SERVICE
                 ================================================== */}
 
@@ -2115,7 +2081,7 @@ const BorewellBills = () => {
               <TextField
                 fullWidth
                 size="small"
-                placeholder={`Search ${machineLabel.toLowerCase()} party...`}
+                placeholder={`Search ${machineLabel.toLowerCase()} bills...`}
                 value={
                   search
                 }
@@ -2171,9 +2137,7 @@ const BorewellBills = () => {
 
                   {[
                     'Date',
-                    'Machine',
                     'Broker',
-                    'Party',
                     'Depth',
                     'Type',
                     'Total (₹)',
@@ -2208,7 +2172,7 @@ const BorewellBills = () => {
                   <TableRow>
 
                     <TableCell
-                      colSpan={9}
+                      colSpan={7}
                       align="center"
                       sx={{
                         color:
@@ -2258,34 +2222,6 @@ const BorewellBills = () => {
                       </TableCell>
 
 
-                      {/* MACHINE */}
-
-                      <TableCell>
-
-                        <Chip
-                          label={
-                            point.machineType ===
-                            'big'
-                              ? 'Big'
-                              : 'Small'
-                          }
-                          size="small"
-                          sx={{
-                            ...machineChipSx(
-                              point.machineType ===
-                                'big'
-                            ),
-
-                            fontSize:
-                              '0.68rem',
-
-                            height:
-                              20,
-                          }}
-                        />
-
-                      </TableCell>
-
 
                       {/* BROKER */}
 
@@ -2308,22 +2244,6 @@ const BorewellBills = () => {
 
                       </TableCell>
 
-
-                      {/* PARTY */}
-
-                      <TableCell
-                        sx={{
-                          fontSize:
-                            '0.82rem',
-                        }}
-                      >
-
-                        {
-                          point.partyName ||
-                          '—'
-                        }
-
-                      </TableCell>
 
 
                       {/* DEPTH */}
