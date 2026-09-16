@@ -376,6 +376,81 @@ export default function Attendance() {
     setConfirmAbsentModal,
   ] = useState(false);
 
+  const [
+    error,
+    setError,
+  ] = useState('');
+
+  const [
+    success,
+    setSuccess,
+  ] = useState('');
+
+  const [
+    shareCard,
+    setShareCard,
+  ] = useState(null);
+
+  const [
+    optimisticAbsent,
+    setOptimisticAbsent,
+  ] = useState({});
+
+  const [
+    optimisticRemoved,
+    setOptimisticRemoved,
+  ] = useState({});
+
+  const [
+    selectedDate,
+    setSelectedDate,
+  ] = useState(null);
+
+  const [
+    absentReason,
+    setAbsentReason,
+  ] = useState('');
+
+  const [
+    absentEndDate,
+    setAbsentEndDate,
+  ] = useState('');
+
+  const [
+    showAbsentEndDate,
+    setShowAbsentEndDate,
+  ] = useState(false);
+
+  const [
+    absentModal,
+    setAbsentModal,
+  ] = useState(false);
+
+  const [
+    savingAbsent,
+    setSavingAbsent,
+  ] = useState(false);
+
+  const [
+    detailsDate,
+    setDetailsDate,
+  ] = useState(null);
+
+  const [
+    detailsInfo,
+    setDetailsInfo,
+  ] = useState(null);
+
+  const [
+    detailsModal,
+    setDetailsModal,
+  ] = useState(false);
+
+  const [
+    revertingAbsent,
+    setRevertingAbsent,
+  ] = useState(false);
+
   /*
    * Current employee
    */
