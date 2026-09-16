@@ -217,13 +217,30 @@ const formatDateShort = (date) => {
 const getAdvanceDate = (item) => {
   if (!item) return null;
 
+  // Prefer the actual date saved with the salary advance.
+  // createdAt is only a fallback for older backend records that do not
+  // return the `date` field yet.
   const rawDate =
     item.date ||
     item.advanceDate ||
     item.transactionDate ||
-    item.paymentDate;
+    item.paymentDate ||
+    item.createdAt;
 
   if (!rawDate) return null;
+
+  // Handle YYYY-MM-DD without timezone conversion. This prevents a date
+  // such as 2026-06-12 from becoming 2026-06-11 in some browser timezones.
+  const dateOnly = String(rawDate).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnly) {
+    const [, year, month, day] = dateOnly;
+    const date = new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day)
+    );
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
 
   const date = new Date(rawDate);
   return Number.isNaN(date.getTime()) ? null : date;
@@ -233,19 +250,8 @@ const formatAdvanceDate = (item) => {
   const date = getAdvanceDate(item);
 
   if (date) {
-    return formatDate(date);
-  }
-
-  // Keep the month visible if the API only returned the month.
-  if (item?.month) {
-    const monthDate = new Date(`${item.month}-01T00:00:00`);
-
-    if (!Number.isNaN(monthDate.getTime())) {
-      return new Intl.DateTimeFormat('en-IN', {
-        month: 'long',
-        year: 'numeric',
-      }).format(monthDate);
-    }
+    // Explicit DD-MM-YYYY format as requested.
+    return `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()}`;
   }
 
   return 'Date not available';
