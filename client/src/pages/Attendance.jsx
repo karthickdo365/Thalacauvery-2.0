@@ -211,50 +211,6 @@ const formatDateShort = (date) => {
   ).format(date);
 };
 
-// Salary-advance APIs can use slightly different field names depending
-// on the backend version. Prefer the actual transaction date and only
-// fall back to the month when no date was returned.
-const getAdvanceDate = (item) => {
-  if (!item) return null;
-
-  // Prefer the actual date saved with the salary advance.
-  // createdAt is only a fallback for older backend records that do not
-  // return the `date` field yet.
-  const rawDate =
-    item.date ||
-    item.advanceDate ||
-    item.transactionDate ||
-    item.paymentDate ||
-    item.createdAt;
-
-  if (!rawDate) return null;
-
-  // Handle YYYY-MM-DD without timezone conversion. This prevents a date
-  // such as 2026-06-12 from becoming 2026-06-11 in some browser timezones.
-  const dateOnly = String(rawDate).match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (dateOnly) {
-    const [, year, month, day] = dateOnly;
-    const date = new Date(
-      Number(year),
-      Number(month) - 1,
-      Number(day)
-    );
-    return Number.isNaN(date.getTime()) ? null : date;
-  }
-
-  const date = new Date(rawDate);
-  return Number.isNaN(date.getTime()) ? null : date;
-};
-
-const formatAdvanceDate = (item) => {
-  const date = getAdvanceDate(item);
-
-  if (date) {
-    // Explicit DD-MM-YYYY format as requested.
-    return `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()}`;
-  }
-
-  return 'Date not available';
 };
 
 const formatMoney = (value) => {
@@ -413,12 +369,6 @@ export default function Attendance() {
   ] = useState([]);
 
   /*
-   * Salary advances
-   */
-  const [
-    advances,
-    setAdvances,
-  ] = useState([]);
 
   /*
    * Loading
@@ -534,39 +484,6 @@ export default function Attendance() {
   ] = useState({});
 
   /*
-   * Advance modal
-   */
-  const [
-    advanceModal,
-    setAdvanceModal,
-  ] = useState(false);
-
-  const [
-    advanceAmount,
-    setAdvanceAmount,
-  ] = useState('');
-
-  const [
-    advanceDate,
-    setAdvanceDate,
-  ] = useState(
-    toDateKey(new Date())
-  );
-
-  const [
-    advancePaymentMode,
-    setAdvancePaymentMode,
-  ] = useState('cash');
-
-  const [
-    advanceNotes,
-    setAdvanceNotes,
-  ] = useState('');
-
-  const [
-    savingAdvance,
-    setSavingAdvance,
-  ] = useState(false);
 
   /*
    * Current employee
@@ -698,43 +615,6 @@ export default function Attendance() {
   };
 
   /*
-   |--------------------------------------------------------------------------
-   | Load salary advances
-   |--------------------------------------------------------------------------
-   */
-
-  const loadAdvances = async () => {
-    if (!selectedEmployee) {
-      setAdvances([]);
-      return;
-    }
-
-    try {
-      const data =
-        await apiRequest(
-          `/salary-advances?employeeId=${selectedEmployee}&machineType=${currentMachine}&limit=500`
-        );
-
-      setAdvances(
-        extractList(data, [
-          'records',
-          'advances',
-          'data',
-        ])
-      );
-    } catch (err) {
-      /*
-       * If salary advance endpoint does not
-       * exist yet, don't break attendance.
-       */
-      console.warn(
-        'Advance loading:',
-        err.message
-      );
-
-      setAdvances([]);
-    }
-  };
 
   useEffect(() => {
     loadEmployees();
@@ -742,7 +622,6 @@ export default function Attendance() {
 
   useEffect(() => {
     loadAttendance();
-    loadAdvances();
   }, [
     selectedEmployee,
     currentMachine,
@@ -843,7 +722,6 @@ export default function Attendance() {
         absentDays: 0,
         grossSalary: 0,
         absentDeduction: 0,
-        advance: 0,
         finalSalary: 0,
       };
     }
@@ -969,22 +847,6 @@ export default function Attendance() {
       dailySalary *
       absentDays;
 
-    const totalAdvance =
-      advances.reduce(
-        (sum, item) =>
-          sum +
-          (
-            Number(
-              item.advanceAmount
-            ) || 0
-          ),
-        0
-      );
-
-    const finalSalary =
-      grossSalary -
-      absentDeduction -
-      totalAdvance;
 
     return {
       monthsWorked,
@@ -994,14 +856,11 @@ export default function Attendance() {
       absentDays,
       grossSalary,
       absentDeduction,
-      advance:
-        totalAdvance,
       finalSalary,
     };
   }, [
     employee,
     absentMap,
-    advances,
   ]);
 
   /*
@@ -1316,93 +1175,6 @@ export default function Attendance() {
     }
   };
 
-  const saveAdvance = async () => {
-    if (!selectedEmployee) {
-      setError(
-        'Please select an employee.'
-      );
-      return;
-    }
-
-    const amount =
-      Number(advanceAmount);
-
-    if (
-      !amount ||
-      amount <= 0
-    ) {
-      setError(
-        'Enter a valid advance amount.'
-      );
-      return;
-    }
-
-    try {
-      setSavingAdvance(true);
-      setError('');
-
-      await apiRequest(
-        '/salary-advances',
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            employeeId:
-              selectedEmployee,
-
-            month:
-              advanceDate.slice(
-                0,
-                7
-              ),
-
-            machineType:
-              currentMachine,
-
-            advanceAmount:
-              amount,
-
-            paymentMode:
-              advancePaymentMode,
-
-            notes:
-              advanceNotes.trim(),
-
-            date:
-              advanceDate,
-          }),
-        }
-      );
-
-      setAdvanceModal(false);
-
-      setAdvanceAmount('');
-      setAdvancePaymentMode(
-        'cash'
-      );
-      setAdvanceNotes('');
-      setAdvanceDate(
-        toDateKey(
-          new Date()
-        )
-      );
-
-      setSuccess(
-        'Salary advance added successfully.'
-      );
-
-      await loadAdvances();
-    } catch (err) {
-      console.error(
-        'Advance error:',
-        err
-      );
-
-      setError(
-        err.message ||
-          'Unable to save advance.'
-      );
-    } finally {
-      setSavingAdvance(false);
     }
   };
 
@@ -1741,77 +1513,6 @@ export default function Attendance() {
           font-weight: 900;
         }
 
-        .advance-button {
-          width: 100%;
-          height: 44px;
-          margin-top: 14px;
-          border: 0;
-          border-radius: 10px;
-          background: #16324c;
-          color: white;
-          font-weight: 750;
-          font-size: 14px;
-          cursor: pointer;
-          transition: background .15s;
-        }
-
-        .advance-button:hover {
-          background: #1f4463;
-        }
-
-        /* ---------------- Advances list ---------------- */
-
-        .advance-section {
-          margin-top: 22px;
-        }
-
-        .advance-title-row {
-          display: flex;
-          justify-content: space-between;
-          align-items: baseline;
-        }
-
-        .advance-count {
-          color: #75899b;
-          font-size: 12px;
-          font-weight: 600;
-        }
-
-        .advance-list {
-          margin-top: 10px;
-        }
-
-        .advance-item {
-          display: flex;
-          justify-content: space-between;
-          gap: 15px;
-          padding: 12px 0;
-          border-bottom: 1px solid #eef2f6;
-          font-size: 14px;
-        }
-
-        .advance-item:last-child {
-          border-bottom: 0;
-        }
-
-        .advance-date {
-          color: #75889a;
-          font-size: 12px;
-          margin-top: 3px;
-          line-height: 1.4;
-        }
-
-        .advance-amount {
-          color: #b96a0f;
-          font-weight: 800;
-          white-space: nowrap;
-        }
-
-        .empty-advance {
-          padding: 12px 0;
-          color: #8495a5;
-          font-size: 13px;
-        }
 
         /* ---------------- Calendar ---------------- */
 
@@ -2184,11 +1885,6 @@ export default function Attendance() {
           cursor: not-allowed;
         }
 
-        .advance-form-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 14px;
-        }
 
         /* Absent details popup */
 
@@ -2256,9 +1952,6 @@ export default function Attendance() {
             grid-template-columns: 1fr 1fr;
           }
 
-          .advance-form-grid {
-            grid-template-columns: 1fr;
-          }
 
           .alert {
             left: 16px;
@@ -2434,10 +2127,6 @@ export default function Attendance() {
             </h2>
 
             <p>
-              Choose an employee above
-              to manage attendance,
-              salary and advances.
-            </p>
           </div>
         ) : (
 
@@ -2535,18 +2224,6 @@ export default function Attendance() {
                     </strong>
                   </div>
 
-                  <div className="salary-line deduction">
-                    <span>
-                      Total Advance
-                    </span>
-
-                    <strong>
-                      -{' '}
-                      {formatMoney(
-                        salarySummary.advance
-                      )}
-                    </strong>
-                  </div>
 
                 </div>
 
@@ -2564,73 +2241,6 @@ export default function Attendance() {
 
                 </div>
 
-                <button
-                  className="advance-button"
-                  onClick={() =>
-                    setAdvanceModal(
-                      true
-                    )
-                  }
-                >
-                  + Add Salary Advance
-                </button>
-
-                {/* Advances */}
-                <div className="advance-section">
-
-                  <div className="advance-title-row">
-                    <h3 className="section-title">
-                      Salary Advances
-                    </h3>
-
-                    <span className="advance-count">
-                      {advances.length}{' '}
-                      records
-                    </span>
-                  </div>
-
-                  <div className="advance-list">
-
-                    {advances.length === 0 ? (
-                      <div className="empty-advance">
-                        No salary advances
-                        recorded.
-                      </div>
-                    ) : (
-                      advances.map(
-                        (item) => (
-                          <div
-                            className="advance-item"
-                            key={
-                              item._id
-                            }
-                          >
-                            <div>
-                              <div>
-                                {item.notes ||
-                                  item.paymentMode ||
-                                  'Salary Advance'}
-                              </div>
-
-                              <div className="advance-date">
-                                {formatAdvanceDate(item)}
-                              </div>
-                            </div>
-
-                            <div className="advance-amount">
-                              -{' '}
-                              {formatMoney(
-                                item.advanceAmount
-                              )}
-                            </div>
-                          </div>
-                        )
-                      )
-                    )}
-
-                  </div>
-
-                </div>
 
               </div>
 
@@ -3369,199 +2979,6 @@ export default function Attendance() {
           </div>
         )}
 
-      {/* ============================================================
-          ADVANCE MODAL
-          ============================================================ */}
-
-      {advanceModal && (
-        <div
-          className="modal-backdrop"
-          onMouseDown={(event) => {
-            if (
-              event.target ===
-              event.currentTarget
-            ) {
-              setAdvanceModal(
-                false
-              );
-            }
-          }}
-        >
-
-          <div className="modal wide">
-
-            <div className="modal-header">
-
-              <div>
-                <h2 className="modal-title">
-                  Add Salary Advance
-                </h2>
-
-                <div className="modal-date">
-                  {employee?.name}
-                </div>
-              </div>
-
-              <button
-                className="close-button"
-                onClick={() =>
-                  setAdvanceModal(
-                    false
-                  )
-                }
-              >
-                ×
-              </button>
-
-            </div>
-
-            <div className="advance-form-grid">
-
-              <div>
-                <label className="text-label">
-                  Date
-                </label>
-
-                <input
-                  type="date"
-                  className="text-input"
-                  value={
-                    advanceDate
-                  }
-                  onChange={(
-                    event
-                  ) =>
-                    setAdvanceDate(
-                      event.target
-                        .value
-                    )
-                  }
-                />
-              </div>
-
-              <div>
-                <label className="text-label">
-                  Advance Amount
-                </label>
-
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  className="text-input"
-                  placeholder="₹0.00"
-                  value={
-                    advanceAmount
-                  }
-                  onChange={(
-                    event
-                  ) =>
-                    setAdvanceAmount(
-                      event.target
-                        .value
-                    )
-                  }
-                />
-              </div>
-
-              <div>
-                <label className="text-label">
-                  Payment Mode
-                </label>
-
-                <select
-                  className="select-input"
-                  style={{
-                    maxWidth:
-                      'none',
-                  }}
-                  value={
-                    advancePaymentMode
-                  }
-                  onChange={(
-                    event
-                  ) =>
-                    setAdvancePaymentMode(
-                      event.target
-                        .value
-                    )
-                  }
-                >
-                  <option value="cash">
-                    Cash
-                  </option>
-
-                  <option value="gpay">
-                    GPay
-                  </option>
-
-                  <option value="net_banking">
-                    Net Banking
-                  </option>
-
-                  <option value="cheque">
-                    Cheque
-                  </option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-label">
-                  Notes
-                </label>
-
-                <input
-                  className="text-input"
-                  placeholder="Optional"
-                  value={
-                    advanceNotes
-                  }
-                  onChange={(
-                    event
-                  ) =>
-                    setAdvanceNotes(
-                      event.target
-                        .value
-                    )
-                  }
-                />
-              </div>
-
-            </div>
-
-            <div className="modal-actions">
-
-              <button
-                className="button"
-                onClick={() =>
-                  setAdvanceModal(
-                    false
-                  )
-                }
-              >
-                Cancel
-              </button>
-
-              <button
-                className="button green"
-                onClick={
-                  saveAdvance
-                }
-                disabled={
-                  savingAdvance
-                }
-              >
-                {savingAdvance
-                  ? 'Saving...'
-                  : 'Save Advance'}
-              </button>
-
-            </div>
-
-          </div>
-
-        </div>
-      )}
     </div>
   );
 }
