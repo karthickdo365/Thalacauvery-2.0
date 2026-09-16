@@ -755,6 +755,7 @@ export default function Attendance() {
         absentDeduction: 0,
         advance: 0,
         finalSalary: 0,
+        advanceCarryForward: 0,
       };
     }
 
@@ -884,10 +885,23 @@ export default function Attendance() {
       0
     );
 
-    const finalSalary = Math.max(
-      grossSalary - absentDeduction - totalAdvance,
-      0
-    );
+    const salaryBeforeAdvance =
+      Math.max(
+        grossSalary - absentDeduction,
+        0
+      );
+
+    const finalSalary =
+      Math.max(
+        salaryBeforeAdvance - totalAdvance,
+        0
+      );
+
+    const advanceCarryForward =
+      Math.max(
+        totalAdvance - salaryBeforeAdvance,
+        0
+      );
 
     return {
       monthsWorked,
@@ -899,6 +913,7 @@ export default function Attendance() {
       absentDeduction,
       advance: totalAdvance,
       finalSalary,
+      advanceCarryForward,
     };
   }, [
     employee,
@@ -1683,9 +1698,35 @@ export default function Attendance() {
           font-weight: 900;
         }
 
+        .advance-carry-forward {
+          margin-top: 10px;
+          padding: 12px 14px;
+          border: 1px solid #f2d38a;
+          background: #fffaf0;
+          border-radius: 10px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          color: #9a5a00;
+          font-size: 13px;
+        }
 
+        .advance-carry-forward > div {
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+        }
 
+        .advance-carry-forward span {
+          color: #8a7355;
+          font-size: 11px;
+        }
 
+        .advance-carry-forward > strong {
+          white-space: nowrap;
+          font-size: 15px;
+        }
 
         .calendar-card {
           padding: 22px 24px;
@@ -2461,6 +2502,22 @@ export default function Attendance() {
                   </div>
 
                 </div>
+
+                {salarySummary.advanceCarryForward > 0 && (
+                  <div className="advance-carry-forward">
+                    <div>
+                      <strong>Advance Carry Forward</strong>
+                      <span>
+                        Advance exceeds the current payable salary.
+                      </span>
+                    </div>
+                    <strong>
+                      {formatMoney(
+                        salarySummary.advanceCarryForward
+                      )}
+                    </strong>
+                  </div>
+                )}
 
                 <button
                   type="button"
