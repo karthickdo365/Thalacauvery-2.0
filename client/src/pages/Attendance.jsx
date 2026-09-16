@@ -211,7 +211,7 @@ const formatDateShort = (date) => {
   ).format(date);
 };
 
- = (value) => {
+const formatMoney = (value) => {
   return new Intl.NumberFormat(
     'en-IN',
     {
@@ -366,7 +366,15 @@ export default function Attendance() {
     setAttendanceRecords,
   ] = useState([]);
 
+  const [
+    loading,
+    setLoading,
+  ] = useState(false);
 
+  const [
+    confirmAbsentModal,
+    setConfirmAbsentModal,
+  ] = useState(false);
 
   /*
    * Current employee
