@@ -211,9 +211,7 @@ const formatDateShort = (date) => {
   ).format(date);
 };
 
-};
-
-const formatMoney = (value) => {
+ = (value) => {
   return new Intl.NumberFormat(
     'en-IN',
     {
@@ -368,122 +366,7 @@ export default function Attendance() {
     setAttendanceRecords,
   ] = useState([]);
 
-  /*
 
-  /*
-   * Loading
-   */
-  const [
-    loading,
-    setLoading,
-  ] = useState(false);
-
-  /*
-   * Error / success
-   */
-  const [
-    error,
-    setError,
-  ] = useState('');
-
-  const [
-    success,
-    setSuccess,
-  ] = useState('');
-
-  /*
-   * Mark-absent modal (present day -> absent)
-   */
-  const [
-    absentModal,
-    setAbsentModal,
-  ] = useState(false);
-
-  const [
-    selectedDate,
-    setSelectedDate,
-  ] = useState(null);
-
-  const [
-    absentReason,
-    setAbsentReason,
-  ] = useState('');
-
-  // Optional continuous-leave end date.
-  const [
-    absentEndDate,
-    setAbsentEndDate,
-  ] = useState('');
-
-  const [
-    showAbsentEndDate,
-    setShowAbsentEndDate,
-  ] = useState(false);
-
-  const [
-    savingAbsent,
-    setSavingAbsent,
-  ] = useState(false);
-
-  const [
-    confirmAbsentModal,
-    setConfirmAbsentModal,
-  ] = useState(false);
-
-  /*
-   * Holds the WhatsApp-ready message for
-   * the absence that was just saved, so a
-   * "Share via WhatsApp" card can appear
-   * without blocking on the save request.
-   */
-  const [
-    shareCard,
-    setShareCard,
-  ] = useState(null);
-
-  /*
-   * Absent-day details popup (absent day -> view / revert)
-   */
-  const [
-    detailsModal,
-    setDetailsModal,
-  ] = useState(false);
-
-  const [
-    detailsDate,
-    setDetailsDate,
-  ] = useState(null);
-
-  const [
-    detailsInfo,
-    setDetailsInfo,
-  ] = useState(null);
-
-  const [
-    revertingAbsent,
-    setRevertingAbsent,
-  ] = useState(false);
-
-  /*
-   * Optimistic overlay applied on top of absentMap so the calendar
-   * reflects a save/revert instantly, without needing to fabricate
-   * fake flat "attendance records" (the real backend shape is a
-   * per-month document with a nested absentDates array, not a flat
-   * per-date record — mixing the two caused other real records to
-   * be dropped for the brief window before the refetch completed).
-   * Cleared once loadAttendance() brings back authoritative data.
-   */
-  const [
-    optimisticAbsent,
-    setOptimisticAbsent,
-  ] = useState({});
-
-  const [
-    optimisticRemoved,
-    setOptimisticRemoved,
-  ] = useState({});
-
-  /*
 
   /*
    * Current employee
@@ -613,8 +496,6 @@ export default function Attendance() {
       setLoading(false);
     }
   };
-
-  /*
 
   useEffect(() => {
     loadEmployees();
@@ -847,6 +728,9 @@ export default function Attendance() {
       dailySalary *
       absentDays;
 
+    const finalSalary =
+      grossSalary -
+      absentDeduction;
 
     return {
       monthsWorked,
@@ -1175,8 +1059,7 @@ export default function Attendance() {
     }
   };
 
-    }
-  };
+
 
   /*
    |--------------------------------------------------------------------------
@@ -1514,7 +1397,8 @@ export default function Attendance() {
         }
 
 
-        /* ---------------- Calendar ---------------- */
+
+
 
         .calendar-card {
           padding: 22px 24px;
@@ -1886,6 +1770,7 @@ export default function Attendance() {
         }
 
 
+
         /* Absent details popup */
 
         .details-reason-box {
@@ -1951,6 +1836,7 @@ export default function Attendance() {
           .summary-grid {
             grid-template-columns: 1fr 1fr;
           }
+
 
 
           .alert {
@@ -2127,6 +2013,9 @@ export default function Attendance() {
             </h2>
 
             <p>
+              Choose an employee above
+              to manage attendance and salary.
+            </p>
           </div>
         ) : (
 
@@ -2240,6 +2129,7 @@ export default function Attendance() {
                   </div>
 
                 </div>
+
 
 
               </div>
@@ -2978,6 +2868,7 @@ export default function Attendance() {
 
           </div>
         )}
+
 
     </div>
   );
