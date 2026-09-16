@@ -224,6 +224,44 @@ const formatMoney = (value) => {
   );
 };
 
+// Salary-advance APIs can return the transaction date under different
+// field names depending on the backend/model version. Normalize them in
+// one place so the UI does not randomly fall back to the month.
+const getAdvanceDateValue = (item) => {
+  if (!item) return null;
+
+  return (
+    item.date ||
+    item.advanceDate ||
+    item.paymentDate ||
+    item.transactionDate ||
+    item.createdAt ||
+    null
+  );
+};
+
+const formatAdvanceDate = (item) => {
+  const rawDate = getAdvanceDateValue(item);
+
+  if (rawDate) {
+    const parsed = new Date(rawDate);
+    if (!Number.isNaN(parsed.getTime())) {
+      return formatDate(parsed);
+    }
+  }
+
+  // Older records may only have a month. Keep the fallback readable.
+  if (item?.month) {
+    const parsedMonth = new Date(`${item.month}-01T00:00:00`);
+    if (!Number.isNaN(parsedMonth.getTime())) {
+      return formatDate(parsedMonth);
+    }
+    return item.month;
+  }
+
+  return 'Date not available';
+};
+
 /*
 |--------------------------------------------------------------------------
 | WhatsApp share helpers
@@ -1195,9 +1233,10 @@ export default function Attendance() {
   const openEditAdvance = (item) => {
     setEditingAdvance(item);
     setAdvanceAmount(String(item?.advanceAmount ?? ''));
+    const rawAdvanceDate = getAdvanceDateValue(item);
     setAdvanceDate(
-      item?.date
-        ? toDateKey(new Date(item.date))
+      rawAdvanceDate && !Number.isNaN(new Date(rawAdvanceDate).getTime())
+        ? toDateKey(new Date(rawAdvanceDate))
         : item?.month
           ? `${item.month}-01`
           : toDateKey(new Date())
@@ -2445,7 +2484,7 @@ export default function Attendance() {
                         <div>
                           <div>{item.notes || item.paymentMode || 'Salary Advance'}</div>
                           <div className="advance-date">
-                            {item.date ? formatDate(new Date(item.date)) : item.month || '-'}
+                            {formatAdvanceDate(item)}
                           </div>
                         </div>
                         <div className="advance-item-right">
@@ -3243,9 +3282,7 @@ export default function Attendance() {
                 {formatMoney(deleteAdvanceDialog.advanceAmount)}
               </div>
               <div className="delete-advance-meta">
-                {deleteAdvanceDialog.date
-                  ? formatDate(new Date(deleteAdvanceDialog.date))
-                  : deleteAdvanceDialog.month || '-'}
+                {formatAdvanceDate(deleteAdvanceDialog)}
                 {' • '}
                 {deleteAdvanceDialog.paymentMode || 'Cash'}
               </div>
