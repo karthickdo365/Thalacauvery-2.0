@@ -2136,6 +2136,7 @@ const BorewellBills = () => {
                 <TableRow>
 
                   {[
+                    'S.No',
                     'Date',
                     'Broker',
                     'Depth',
@@ -2172,7 +2173,7 @@ const BorewellBills = () => {
                   <TableRow>
 
                     <TableCell
-                      colSpan={7}
+                      colSpan={8}
                       align="center"
                       sx={{
                         color:
@@ -2195,7 +2196,7 @@ const BorewellBills = () => {
                 {/* ROWS */}
 
                 {points.map(
-                  (point) => (
+                  (point, index) => (
 
                     <TableRow
                       key={
@@ -2203,6 +2204,19 @@ const BorewellBills = () => {
                       }
                       hover
                     >
+
+                      {/* S.NO */}
+
+                      <TableCell
+                        sx={{
+                          fontSize:
+                            '0.82rem',
+                          fontWeight: 600,
+                          width: 70,
+                        }}
+                      >
+                        {page * rowsPerPage + index + 1}
+                      </TableCell>
 
                       {/* DATE */}
 
