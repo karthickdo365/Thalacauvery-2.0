@@ -379,6 +379,200 @@ const calculateEmployeeListSalary = (
   };
 };
 
+const calculateEmployeeListSalary = (
+  employee,
+  attendanceRecords = [],
+  advances = []
+) => {
+  const today = new Date();
+  const todayOnly = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate()
+  );
+
+  const joiningDate = employee?.date
+    ? new Date(employee.date)
+    : todayOnly;
+
+  const start =
+    joiningDate > todayOnly
+      ? todayOnly
+      : new Date(
+          joiningDate.getFullYear(),
+          joiningDate.getMonth(),
+          joiningDate.getDate()
+        );
+
+  const millisecondsPerDay =
+    24 * 60 * 60 * 1000;
+
+  const totalDays = Math.max(
+    Math.floor(
+      (todayOnly - start) /
+        millisecondsPerDay
+    ) + 1,
+    0
+  );
+
+  const absentKeys = new Set();
+
+  for (const record of attendanceRecords) {
+    if (
+      normalizeStatus(record?.status) !==
+      'absent'
+    ) {
+      continue;
+    }
+
+    const rawDate =
+      record?.date ||
+      record?.attendanceDate ||
+      record?.absenceDate;
+
+    if (!rawDate) continue;
+
+    const key = toDateKey(rawDate);
+    if (!key) continue;
+
+    const date = parseDateKey(key);
+    if (
+      date &&
+      date >= start &&
+      date <= todayOnly
+    ) {
+      absentKeys.add(key);
+    }
+  }
+
+  const absentDays = absentKeys.size;
+  const presentDays = Math.max(
+    totalDays - absentDays,
+    0
+  );
+
+  const monthlySalary =
+    Number(employee?.salary) || 0;
+
+  const dailySalary =
+    monthlySalary / 30;
+
+  const grossSalary =
+    dailySalary * totalDays;
+
+  const absentDeduction =
+    dailySalary * absentDays;
+
+  const totalAdvance = advances.reduce(
+    (sum, item) =>
+      sum +
+      (Number(item?.advanceAmount) || 0),
+    0
+  );
+
+  const salaryBeforeAdvance = Math.max(
+    grossSalary - absentDeduction,
+    0
+  );
+
+  const finalSalary =
+    salaryBeforeAdvance - totalAdvance;
+
+  return {
+    totalDays,
+    presentDays,
+    absentDays,
+    grossSalary,
+    absentDeduction,
+    totalAdvance,
+    finalSalary,
+  };
+};
+
+
+/*
+|--------------------------------------------------------------------------
+| Date-range salary report helper
+|--------------------------------------------------------------------------
+*/
+const calculateEmployeeRangeSalary = (
+  employee,
+  attendanceRecords = [],
+  advances = [],
+  startKey,
+  endKey
+) => {
+  const todayKey = toDateKey(new Date());
+  const requestedStart = startKey || todayKey;
+  const requestedEnd = endKey || todayKey;
+
+  if (!requestedStart || !requestedEnd || requestedEnd < requestedStart) {
+    return { totalDays: 0, presentDays: 0, absentDays: 0, grossSalary: 0, absentDeduction: 0, totalAdvance: 0, finalSalary: 0 };
+  }
+
+  const joiningKey = employee?.date ? toDateKey(new Date(employee.date)) : requestedStart;
+  const effectiveStart = joiningKey && joiningKey > requestedStart ? joiningKey : requestedStart;
+  const effectiveEnd = requestedEnd > todayKey ? todayKey : requestedEnd;
+
+  if (effectiveEnd < effectiveStart) {
+    return { totalDays: 0, presentDays: 0, absentDays: 0, grossSalary: 0, absentDeduction: 0, totalAdvance: 0, finalSalary: 0 };
+  }
+
+  const rangeDates = getDateRange(effectiveStart, effectiveEnd);
+  const rangeSet = new Set(rangeDates);
+  const absentKeys = new Set();
+
+  for (const record of attendanceRecords) {
+    if (normalizeStatus(record?.status) === 'absent') {
+      const rawDate = record?.date || record?.attendanceDate || record?.absenceDate;
+      const key = rawDate ? toDateKey(rawDate) : '';
+      if (key && rangeSet.has(key)) absentKeys.add(key);
+    }
+
+    if (Array.isArray(record?.absentDates)) {
+      for (const item of record.absentDates) {
+        const key = toDateKey(item?.date || item);
+        if (key && rangeSet.has(key)) absentKeys.add(key);
+      }
+    }
+  }
+
+  const totalDays = rangeDates.length;
+  const absentDays = absentKeys.size;
+  const presentDays = Math.max(totalDays - absentDays, 0);
+  const monthlySalary = Number(employee?.salary) || 0;
+  const dailySalary = monthlySalary / 30;
+  const grossSalary = dailySalary * totalDays;
+  const absentDeduction = dailySalary * absentDays;
+
+  const totalAdvance = advances.reduce((sum, item) => {
+    const rawDate = getAdvanceDateValue(item);
+    const advanceKey = rawDate
+      ? toDateKey(new Date(rawDate))
+      : item?.month ? `${item.month}-01` : '';
+
+    if (advanceKey && advanceKey >= effectiveStart && advanceKey <= effectiveEnd) {
+      return sum + (Number(item?.advanceAmount) || 0);
+    }
+    return sum;
+  }, 0);
+
+  const salaryBeforeAdvance = Math.max(grossSalary - absentDeduction, 0);
+  const finalSalary = salaryBeforeAdvance - totalAdvance;
+
+  return {
+    totalDays,
+    presentDays,
+    absentDays,
+    grossSalary,
+    absentDeduction,
+    totalAdvance,
+    finalSalary,
+    startDate: effectiveStart,
+    endDate: effectiveEnd,
+  };
+};
+
 /*
 |--------------------------------------------------------------------------
 | WhatsApp share helpers
@@ -541,6 +735,13 @@ export default function Attendance() {
   const [editingAdvance, setEditingAdvance] = useState(null);
   const [deleteAdvanceDialog, setDeleteAdvanceDialog] = useState(null);
   const [deletingAdvance, setDeletingAdvance] = useState(false);
+
+  const [reportStartDate, setReportStartDate] = useState(() => {
+    const now = new Date();
+    return toDateKey(new Date(now.getFullYear(), now.getMonth(), 1));
+  });
+  const [reportEndDate, setReportEndDate] = useState(() => toDateKey(new Date()));
+  const [reportPreview, setReportPreview] = useState(false);
 
   // Extra employee salary list. Existing selected-employee
   // attendance/salary flow remains unchanged.
@@ -834,6 +1035,8 @@ export default function Attendance() {
                 attendance,
                 employeeAdvances
               ),
+              attendance,
+              advances: employeeAdvances,
               failed: false,
             };
           } catch (err) {
@@ -849,6 +1052,8 @@ export default function Attendance() {
                 [],
                 []
               ),
+              attendance: [],
+              advances: [],
               failed: true,
             };
           }
@@ -1562,7 +1767,111 @@ export default function Attendance() {
     }
   };
 
+  
   /*
+  |--------------------------------------------------------------------------
+  | Date-range salary report
+  |--------------------------------------------------------------------------
+  */
+  const reportRows = useMemo(() => {
+    return allEmployeeSalaryRows.map((row) => ({
+      ...row,
+      reportSalary: calculateEmployeeRangeSalary(
+        row.employee,
+        row.attendance || [],
+        row.advances || [],
+        reportStartDate,
+        reportEndDate
+      ),
+    }));
+  }, [allEmployeeSalaryRows, reportStartDate, reportEndDate]);
+
+  const reportTotals = useMemo(() => {
+    return reportRows.reduce(
+      (totals, row) => {
+        const salary = row.reportSalary || {};
+        totals.employees += 1;
+        totals.totalDays += Number(salary.totalDays) || 0;
+        totals.presentDays += Number(salary.presentDays) || 0;
+        totals.absentDays += Number(salary.absentDays) || 0;
+        totals.grossSalary += Number(salary.grossSalary) || 0;
+        totals.absentDeduction += Number(salary.absentDeduction) || 0;
+        totals.totalAdvance += Number(salary.totalAdvance) || 0;
+        totals.finalSalary += Number(salary.finalSalary) || 0;
+        return totals;
+      },
+      {
+        employees: 0,
+        totalDays: 0,
+        presentDays: 0,
+        absentDays: 0,
+        grossSalary: 0,
+        absentDeduction: 0,
+        totalAdvance: 0,
+        finalSalary: 0,
+      }
+    );
+  }, [reportRows]);
+
+  const reportPeriodValid =
+    Boolean(reportStartDate) &&
+    Boolean(reportEndDate) &&
+    reportEndDate >= reportStartDate;
+
+  const setQuickReportRange = (type) => {
+    const now = new Date();
+    const today = toDateKey(now);
+    const monthsBack = {
+      month: 0,
+      '2months': 1,
+      '6months': 5,
+      year: 11,
+    };
+
+    if (monthsBack[type] !== undefined) {
+      setReportStartDate(
+        toDateKey(
+          new Date(
+            now.getFullYear(),
+            now.getMonth() - monthsBack[type],
+            1
+          )
+        )
+      );
+      setReportEndDate(today);
+      setReportPreview(false);
+    }
+  };
+
+  const generateSalaryReport = () => {
+    if (!reportStartDate || !reportEndDate) {
+      setError('Please select both report dates.');
+      return;
+    }
+
+    if (reportEndDate < reportStartDate) {
+      setError('Report To Date cannot be before From Date.');
+      return;
+    }
+
+    if (!reportRows.length) {
+      setError('No employee data is available for this report.');
+      return;
+    }
+
+    setError('');
+    setReportPreview(true);
+  };
+
+  const printSalaryReport = () => {
+    if (!reportPreview || !reportPeriodValid) return;
+
+    window.setTimeout(() => {
+      window.print();
+    }, 50);
+  };
+
+/*
    |--------------------------------------------------------------------------
    | Clear notifications
    |--------------------------------------------------------------------------
@@ -2476,6 +2785,45 @@ export default function Attendance() {
           font-size: 13px;
         }
 
+        /* ---------------- Salary report ---------------- */
+
+        .report-card { margin-bottom: 20px; padding: 22px 24px; }
+        .report-header { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; }
+        .report-controls { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:18px; }
+        .report-field { min-width:0; }
+        .report-quick-buttons { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+        .report-quick-button { border:1px solid #d7e0e8; background:#fff; color:#35536d; border-radius:9px; padding:8px 12px; font-size:12px; font-weight:750; cursor:pointer; }
+        .report-quick-button:hover { background:#f4f8fa; }
+        .report-actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:16px; }
+        .report-preview { margin-top:20px; padding-top:20px; border-top:1px solid #e7edf2; }
+        .report-summary-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:16px; }
+        .report-summary-box { padding:13px 14px; background:#f8fafc; border:1px solid #e5ebf1; border-radius:11px; }
+        .report-summary-label { color:#718397; font-size:11px; font-weight:800; text-transform:uppercase; }
+        .report-summary-value { margin-top:5px; color:#17324d; font-size:19px; font-weight:850; }
+        .report-table-wrap { margin-top:16px; overflow-x:auto; border:1px solid #e4ebf1; border-radius:12px; }
+        .report-table { width:100%; min-width:1050px; border-collapse:collapse; font-size:12px; }
+        .report-table th { padding:11px 12px; background:#f7fafc; color:#687c90; text-align:left; font-size:10px; font-weight:850; text-transform:uppercase; border-bottom:1px solid #e4ebf1; white-space:nowrap; }
+        .report-table td { padding:11px 12px; color:#334b61; border-bottom:1px solid #eef2f6; white-space:nowrap; }
+        .report-table tbody tr:last-child td { border-bottom:0; }
+        .report-print-title { font-size:24px; font-weight:900; color:#132c45; margin:0; }
+        .report-print-period { margin-top:5px; color:#657a8e; font-size:13px; }
+        .print-report { display:none; }
+
+        @media print {
+          @page { size:A4 landscape; margin:10mm; }
+          body * { visibility:hidden !important; }
+          .print-report, .print-report * { visibility:visible !important; }
+          .print-report { display:block !important; position:absolute; left:0; top:0; width:100%; background:white; color:#111; font-family:Arial,sans-serif; }
+          .print-report table { width:100%; border-collapse:collapse; margin-top:18px; font-size:10px; }
+          .print-report th, .print-report td { border:1px solid #bbb; padding:6px 7px; text-align:left; }
+          .print-report th { background:#f1f1f1 !important; font-weight:700; }
+          .print-report .print-total td { font-weight:800; background:#f5f5f5 !important; }
+          .print-report .print-summary { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:15px; }
+          .print-report .print-summary-box { border:1px solid #bbb; padding:8px; }
+          .print-report .print-summary-label { font-size:9px; color:#555; }
+          .print-report .print-summary-value { margin-top:3px; font-size:13px; font-weight:700; }
+        }
+
         /* ---------------- Responsive ---------------- */
 
         @media (max-width: 1100px) {
@@ -2485,6 +2833,8 @@ export default function Attendance() {
         }
 
         @media (max-width: 700px) {
+          .report-controls { grid-template-columns:1fr; }
+          .report-summary-grid { grid-template-columns:1fr 1fr; }
           .attendance-page {
             padding: 16px;
           }
@@ -2677,6 +3027,233 @@ export default function Attendance() {
         </div>
 
           </>
+        )}
+
+        {/* ==========================================================
+            DATE-RANGE SALARY REPORT
+            ========================================================== */}
+        <div className="card report-card">
+          <div className="report-header">
+            <div>
+              <h2 className="section-title">Salary Report / PDF</h2>
+              <div className="section-subtitle">
+                Select any period to calculate employee salary, attendance and advances.
+              </div>
+            </div>
+          </div>
+
+          <div className="report-controls">
+            <div className="report-field">
+              <label className="text-label">From Date</label>
+              <input
+                type="date"
+                className="text-input"
+                value={reportStartDate}
+                max={reportEndDate || toDateKey(new Date())}
+                onChange={(event) => {
+                  setReportStartDate(event.target.value);
+                  setReportPreview(false);
+                }}
+              />
+            </div>
+
+            <div className="report-field">
+              <label className="text-label">To Date</label>
+              <input
+                type="date"
+                className="text-input"
+                value={reportEndDate}
+                min={reportStartDate || undefined}
+                max={toDateKey(new Date())}
+                onChange={(event) => {
+                  setReportEndDate(event.target.value);
+                  setReportPreview(false);
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="report-quick-buttons">
+            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('month')}>This Month</button>
+            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('2months')}>Last 2 Months</button>
+            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('6months')}>Last 6 Months</button>
+            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('year')}>Last 12 Months</button>
+          </div>
+
+          <div className="report-actions">
+            <button
+              type="button"
+              className="button green"
+              onClick={generateSalaryReport}
+              disabled={allEmployeeSalaryLoading || !reportPeriodValid}
+            >
+              Generate Report
+            </button>
+
+            {reportPreview && (
+              <button
+                type="button"
+                className="button"
+                onClick={printSalaryReport}
+              >
+                Print / Save as PDF
+              </button>
+            )}
+          </div>
+
+          {reportPreview && reportPeriodValid && (
+            <div className="report-preview">
+              <h3 className="section-title">Report Preview</h3>
+              <div className="section-subtitle">
+                {formatDate(parseDateKey(reportStartDate))} to {formatDate(parseDateKey(reportEndDate))}
+              </div>
+
+              <div className="report-summary-grid">
+                <div className="report-summary-box">
+                  <div className="report-summary-label">Employees</div>
+                  <div className="report-summary-value">{reportTotals.employees}</div>
+                </div>
+                <div className="report-summary-box">
+                  <div className="report-summary-label">Present Days</div>
+                  <div className="report-summary-value">{reportTotals.presentDays}</div>
+                </div>
+                <div className="report-summary-box">
+                  <div className="report-summary-label">Absent Days</div>
+                  <div className="report-summary-value">{reportTotals.absentDays}</div>
+                </div>
+                <div className="report-summary-box">
+                  <div className="report-summary-label">Final Payable</div>
+                  <div className="report-summary-value">{formatMoney(reportTotals.finalSalary)}</div>
+                </div>
+              </div>
+
+              <div className="report-table-wrap">
+                <table className="report-table">
+                  <thead>
+                    <tr>
+                      <th>S.No</th>
+                      <th>Employee</th>
+                      <th>Joining Date</th>
+                      <th>Working Days</th>
+                      <th>Present</th>
+                      <th>Absent</th>
+                      <th>Gross Salary</th>
+                      <th>Absent Deduction</th>
+                      <th>Advance</th>
+                      <th>Final Salary</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reportRows.map((row, index) => {
+                      const item = row.employee;
+                      const salary = row.reportSalary;
+                      return (
+                        <tr key={item?._id || index}>
+                          <td>{index + 1}</td>
+                          <td>{item?.name || 'Unnamed Employee'}</td>
+                          <td>{item?.date ? formatDate(new Date(item.date)) : '-'}</td>
+                          <td>{salary.totalDays}</td>
+                          <td>{salary.presentDays}</td>
+                          <td>{salary.absentDays}</td>
+                          <td>{formatMoney(salary.grossSalary)}</td>
+                          <td>{formatMoney(salary.absentDeduction)}</td>
+                          <td>{formatMoney(salary.totalAdvance)}</td>
+                          <td>{formatMoney(salary.finalSalary)}</td>
+                        </tr>
+                      );
+                    })}
+                    <tr>
+                      <td colSpan={3}><strong>Total</strong></td>
+                      <td><strong>{reportTotals.totalDays}</strong></td>
+                      <td><strong>{reportTotals.presentDays}</strong></td>
+                      <td><strong>{reportTotals.absentDays}</strong></td>
+                      <td><strong>{formatMoney(reportTotals.grossSalary)}</strong></td>
+                      <td><strong>{formatMoney(reportTotals.absentDeduction)}</strong></td>
+                      <td><strong>{formatMoney(reportTotals.totalAdvance)}</strong></td>
+                      <td><strong>{formatMoney(reportTotals.finalSalary)}</strong></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {reportPreview && reportPeriodValid && (
+          <div className="print-report">
+            <h1 className="report-print-title">Employee Salary Report</h1>
+            <div className="report-print-period">
+              Period: {formatDate(parseDateKey(reportStartDate))} to {formatDate(parseDateKey(reportEndDate))}
+              {' • '}
+              {currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}
+            </div>
+
+            <div className="print-summary">
+              <div className="print-summary-box">
+                <div className="print-summary-label">Employees</div>
+                <div className="print-summary-value">{reportTotals.employees}</div>
+              </div>
+              <div className="print-summary-box">
+                <div className="print-summary-label">Present Days</div>
+                <div className="print-summary-value">{reportTotals.presentDays}</div>
+              </div>
+              <div className="print-summary-box">
+                <div className="print-summary-label">Absent Days</div>
+                <div className="print-summary-value">{reportTotals.absentDays}</div>
+              </div>
+              <div className="print-summary-box">
+                <div className="print-summary-label">Final Payable</div>
+                <div className="print-summary-value">{formatMoney(reportTotals.finalSalary)}</div>
+              </div>
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  <th>S.No</th>
+                  <th>Employee</th>
+                  <th>Joining Date</th>
+                  <th>Working Days</th>
+                  <th>Present</th>
+                  <th>Absent</th>
+                  <th>Gross Salary</th>
+                  <th>Absent Deduction</th>
+                  <th>Advance</th>
+                  <th>Final Salary</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reportRows.map((row, index) => {
+                  const item = row.employee;
+                  const salary = row.reportSalary;
+                  return (
+                    <tr key={item?._id || index}>
+                      <td>{index + 1}</td>
+                      <td>{item?.name || 'Unnamed Employee'}</td>
+                      <td>{item?.date ? formatDate(new Date(item.date)) : '-'}</td>
+                      <td>{salary.totalDays}</td>
+                      <td>{salary.presentDays}</td>
+                      <td>{salary.absentDays}</td>
+                      <td>{formatMoney(salary.grossSalary)}</td>
+                      <td>{formatMoney(salary.absentDeduction)}</td>
+                      <td>{formatMoney(salary.totalAdvance)}</td>
+                      <td>{formatMoney(salary.finalSalary)}</td>
+                    </tr>
+                  );
+                })}
+                <tr className="print-total">
+                  <td colSpan={3}>TOTAL</td>
+                  <td>{reportTotals.totalDays}</td>
+                  <td>{reportTotals.presentDays}</td>
+                  <td>{reportTotals.absentDays}</td>
+                  <td>{formatMoney(reportTotals.grossSalary)}</td>
+                  <td>{formatMoney(reportTotals.absentDeduction)}</td>
+                  <td>{formatMoney(reportTotals.totalAdvance)}</td>
+                  <td>{formatMoney(reportTotals.finalSalary)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         )}
 
         {/* ==========================================================
