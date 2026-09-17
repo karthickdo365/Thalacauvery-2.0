@@ -379,116 +379,6 @@ const calculateEmployeeListSalary = (
   };
 };
 
-const calculateEmployeeListSalary = (
-  employee,
-  attendanceRecords = [],
-  advances = []
-) => {
-  const today = new Date();
-  const todayOnly = new Date(
-    today.getFullYear(),
-    today.getMonth(),
-    today.getDate()
-  );
-
-  const joiningDate = employee?.date
-    ? new Date(employee.date)
-    : todayOnly;
-
-  const start =
-    joiningDate > todayOnly
-      ? todayOnly
-      : new Date(
-          joiningDate.getFullYear(),
-          joiningDate.getMonth(),
-          joiningDate.getDate()
-        );
-
-  const millisecondsPerDay =
-    24 * 60 * 60 * 1000;
-
-  const totalDays = Math.max(
-    Math.floor(
-      (todayOnly - start) /
-        millisecondsPerDay
-    ) + 1,
-    0
-  );
-
-  const absentKeys = new Set();
-
-  for (const record of attendanceRecords) {
-    if (
-      normalizeStatus(record?.status) !==
-      'absent'
-    ) {
-      continue;
-    }
-
-    const rawDate =
-      record?.date ||
-      record?.attendanceDate ||
-      record?.absenceDate;
-
-    if (!rawDate) continue;
-
-    const key = toDateKey(rawDate);
-    if (!key) continue;
-
-    const date = parseDateKey(key);
-    if (
-      date &&
-      date >= start &&
-      date <= todayOnly
-    ) {
-      absentKeys.add(key);
-    }
-  }
-
-  const absentDays = absentKeys.size;
-  const presentDays = Math.max(
-    totalDays - absentDays,
-    0
-  );
-
-  const monthlySalary =
-    Number(employee?.salary) || 0;
-
-  const dailySalary =
-    monthlySalary / 30;
-
-  const grossSalary =
-    dailySalary * totalDays;
-
-  const absentDeduction =
-    dailySalary * absentDays;
-
-  const totalAdvance = advances.reduce(
-    (sum, item) =>
-      sum +
-      (Number(item?.advanceAmount) || 0),
-    0
-  );
-
-  const salaryBeforeAdvance = Math.max(
-    grossSalary - absentDeduction,
-    0
-  );
-
-  const finalSalary =
-    salaryBeforeAdvance - totalAdvance;
-
-  return {
-    totalDays,
-    presentDays,
-    absentDays,
-    grossSalary,
-    absentDeduction,
-    totalAdvance,
-    finalSalary,
-  };
-};
-
 
 /*
 |--------------------------------------------------------------------------
@@ -2572,6 +2462,16 @@ export default function Attendance() {
 
         .button.green:hover:not(:disabled) {
           background: #099270;
+        }
+
+        .button.danger {
+          border: 0;
+          background: #d92f2f;
+          color: white;
+        }
+
+        .button.danger:hover:not(:disabled) {
+          background: #c22626;
         }
 
         .button:disabled {
