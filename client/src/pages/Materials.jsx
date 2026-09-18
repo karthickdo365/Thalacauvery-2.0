@@ -1603,9 +1603,9 @@ const Materials = () => {
                 <TableRow>
 
                   {[
+                    'S.No',
                     'Date',
                     'Type',
-                    'Description',
                     'Quantity',
                     'Cost/L',
                     'Total / Amount',
@@ -1677,6 +1677,13 @@ const Materials = () => {
                       hover
                     >
 
+                      {/* S.NO */}
+
+                      <TableCell>
+                        {page * rowsPerPage + materials.indexOf(material) + 1}
+                      </TableCell>
+
+
                       {/* DATE */}
 
                       <TableCell>
@@ -1695,21 +1702,6 @@ const Materials = () => {
                       <TableCell>
 
                         {material.type}
-
-                      </TableCell>
-
-
-                      {/* DESCRIPTION */}
-
-                      <TableCell>
-
-                        {material.type ===
-                        'Others'
-                          ? (
-                            material.description ||
-                            '—'
-                          )
-                          : '—'}
 
                       </TableCell>
 
