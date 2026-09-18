@@ -801,7 +801,6 @@ const SECOND_ROW = [
 const StatCard = ({
   title,
   value,
-  subValue,
   icon,
   color,
   onClick,
@@ -849,7 +848,7 @@ const StatCard = ({
 
         p: '14px !important',
 
-        minHeight: 78,
+        minHeight: 74,
       }}
     >
       {/* Icon */}
@@ -903,20 +902,6 @@ const StatCard = ({
           }}
         >
           {title}
-          {subValue !== undefined &&
-            subValue !== null &&
-            subValue !== '' && (
-              <Box
-                component="span"
-                sx={{
-                  ml: 0.5,
-                  color: '#64748b',
-                  fontWeight: 700,
-                }}
-              >
-                {subValue}
-              </Box>
-            )}
         </Typography>
 
         <Typography
@@ -942,7 +927,6 @@ const StatCard = ({
         >
           {value}
         </Typography>
-
       </Box>
 
       {/* Arrow */}
@@ -2128,6 +2112,11 @@ const Dashboard = () => {
     setPointRows,
   ] = useState([]);
 
+  const [
+    employeeRows,
+    setEmployeeRows,
+  ] = useState([]);
+
   const {
     currentMachine,
   } = useMachine();
@@ -2257,6 +2246,62 @@ const Dashboard = () => {
       };
 
     loadPoints();
+  }, [
+    currentMachine,
+  ]);
+
+  /* =======================================================
+     FETCH EMPLOYEES / SALARY
+  ======================================================= */
+
+  useEffect(() => {
+    if (
+      currentMachine !==
+        'big' &&
+      currentMachine !==
+        'small'
+    ) {
+      setEmployeeRows([]);
+      return;
+    }
+
+    const loadEmployees =
+      async () => {
+        try {
+          const {
+            data,
+          } = await api.get(
+            '/users',
+            {
+              params: {
+                type: 'Employee',
+                limit: 500,
+                machineType:
+                  currentMachine,
+              },
+            }
+          );
+
+          setEmployeeRows(
+            Array.isArray(
+              data?.users
+            )
+              ? data.users
+              : []
+          );
+        } catch (
+          error
+        ) {
+          console.error(
+            'Failed to load employees:',
+            error
+          );
+
+          setEmployeeRows([]);
+        }
+      };
+
+    loadEmployees();
   }, [
     currentMachine,
   ]);
@@ -2445,34 +2490,6 @@ const Dashboard = () => {
           0
         );
 
-  const getMaterialQuantity =
-    (type) =>
-      materialRows
-        .filter(
-          (material) =>
-            isMaterialType(
-              material,
-              type
-            )
-        )
-        .reduce(
-          (
-            sum,
-            material
-          ) =>
-            sum +
-            safeNum(
-              material?.quantity
-            ),
-          0
-        );
-
-  const bitQuantity =
-    getMaterialQuantity('bit');
-
-  const hammerQuantity =
-    getMaterialQuantity('hammer');
-
   const diesel =
     stats?.diesel !=
     null
@@ -2513,7 +2530,49 @@ const Dashboard = () => {
           'hammer'
         );
 
+  const getMaterialQuantity =
+    (type) =>
+      materialRows
+        .filter(
+          (material) =>
+            isMaterialType(
+              material,
+              type
+            )
+        )
+        .reduce(
+          (
+            sum,
+            material
+          ) =>
+            sum +
+            safeNum(
+              material?.quantity
+            ),
+          0
+        );
+
+  const bitQuantity =
+    getMaterialQuantity('bit');
+
+  const hammerQuantity =
+    getMaterialQuantity('hammer');
+
+  const totalSalary =
+    employeeRows.reduce(
+      (
+        sum,
+        employee
+      ) =>
+        sum +
+        safeNum(
+          employee?.salary
+        ),
+      0
+    );
+
   const employees =
+    employeeRows.length;
     stats?.totalEmployees ??
     stats?.employee ??
     0;
@@ -2530,74 +2589,61 @@ const Dashboard = () => {
     );
 
   /*
-   * Pipe quantity helper.
-   * Supports the common field names used by the borewell point
-   * payload. If a specific quantity field is not present, it safely
-   * falls back to the generic quantity/count fields.
+   * Pipe quantity is calculated from total feet.
+   * One pipe = 20 ft.
+   *
+   * Example:
+   * 110 / 20 = 5.5 -> 6 pipes
+   * 112 / 20 = 5.6 -> 6 pipes
+   * 120 / 20 = 6   -> 6 pipes
    */
-  const sumPipeQuantity = (fieldNames) =>
-    pointRows.reduce(
-      (sum, point) => {
-        const names = Array.isArray(fieldNames)
-          ? fieldNames
-          : [fieldNames];
+  const getPipeQuantity = (feet) =>
+    feet > 0
+      ? Math.ceil(feet / 20)
+      : 0;
 
-        for (const field of names) {
-          const value = point?.[field];
+  const outerFeet = isBig
+    ? sumPointField('plasticOuterFeet')
+    : sumPointField('outerPipeFeet');
 
-          if (
-            value !== undefined &&
-            value !== null &&
-            value !== ''
-          ) {
-            return sum + safeNum(value);
-          }
-        }
+  const innerFeet = isBig
+    ? sumPointField('plasticInnerFeet')
+    : sumPointField('innerPipeFeet');
 
-        return sum;
-      },
-      0
-    );
+  const smallInnerFeet =
+    sumPointField('smallPipeFeet');
+
+  const outerQuantity =
+    getPipeQuantity(outerFeet);
+
+  const innerQuantity =
+    getPipeQuantity(innerFeet);
+
+  const smallInnerQuantity =
+    getPipeQuantity(smallInnerFeet);
 
   const pipeCards = isBig
     ? [
         {
           key: 'bigOuter',
-          title: 'Outer',
-          value: `${sumPointField('plasticOuterFeet')} ft`,
-          subValue: `(${sumPipeQuantity([
-            'plasticOuterQuantity',
-            'plasticOuterQty',
-            'outerPipeQuantity',
-            'outerPipeQty',
-            'outerQuantity',
-          ])})`,
+          title: `Outer (${outerQuantity})`,
+          value: `${outerFeet} ft`,
           icon: <WaterDropIcon />,
           color: NAVY,
         },
         {
           key: 'bigInner',
-          title: 'Inner',
-          value: `${sumPointField('plasticInnerFeet')} ft`,
-          subValue: `(${sumPipeQuantity([
-            'plasticInnerQuantity',
-            'plasticInnerQty',
-            'innerPipeQuantity',
-            'innerPipeQty',
-            'innerQuantity',
-          ])})`,
+          title: `Inner (${innerQuantity})`,
+          value: `${innerFeet} ft`,
           icon: <WaterDropIcon />,
           color: TEAL,
         },
         {
           key: 'bigJI',
-          title: 'JI',
+          title: `JI (${getPipeQuantity(
+            sumPointField('jiInnerFeet')
+          )})`,
           value: `${sumPointField('jiInnerFeet')} ft`,
-          subValue: `(${sumPipeQuantity([
-            'jiInnerQuantity',
-            'jiInnerQty',
-            'jiQuantity',
-          ])})`,
           icon: <WaterDropIcon />,
           color: '#0891b2',
         },
@@ -2605,39 +2651,22 @@ const Dashboard = () => {
     : [
         {
           key: 'smallOuter',
-          title: 'Outer',
-          value: `${sumPointField('outerPipeFeet')} ft`,
-          subValue: `(${sumPipeQuantity([
-            'outerPipeQuantity',
-            'outerPipeQty',
-            'outerQuantity',
-          ])})`,
+          title: `Outer (${outerQuantity})`,
+          value: `${outerFeet} ft`,
           icon: <WaterDropIcon />,
           color: NAVY,
         },
         {
           key: 'smallInner',
-          title: 'Inner',
-          value: `${sumPointField('innerPipeFeet')} ft`,
-          subValue: `(${sumPipeQuantity([
-            'innerPipeQuantity',
-            'innerPipeQty',
-            'innerQuantity',
-          ])})`,
+          title: `Inner (${innerQuantity})`,
+          value: `${innerFeet} ft`,
           icon: <WaterDropIcon />,
           color: TEAL,
         },
         {
-          key: 'smallInner',
-          title: 'Small Inner',
-          value: `${sumPointField('smallPipeFeet')} ft`,
-          subValue: `(${sumPipeQuantity([
-            'smallPipeQuantity',
-            'smallPipeQty',
-            'smallInnerQuantity',
-            'smallInnerQty',
-            'smallQuantity',
-          ])})`,
+          key: 'smallInnerPipe',
+          title: `Small Inner (${smallInnerQuantity})`,
+          value: `${smallInnerFeet} ft`,
           icon: <WaterDropIcon />,
           color: '#0891b2',
         },
@@ -2900,13 +2929,11 @@ const Dashboard = () => {
     {
       key: 'bit',
 
-      title: 'Bit',
+      title:
+        `Bit (${bitQuantity})`,
 
       value:
         fmt(bit),
-
-      subValue:
-        `(${bitQuantity})`,
 
       icon:
         <ConstructionIcon />,
@@ -2918,13 +2945,10 @@ const Dashboard = () => {
       key: 'hammer',
 
       title:
-        'Hammer',
+        `Hammer (${hammerQuantity})`,
 
       value:
         fmt(hammer),
-
-      subValue:
-        `(${hammerQuantity})`,
 
       icon:
         <BuildIcon />,
@@ -3014,9 +3038,6 @@ const Dashboard = () => {
                   value={
                     card.value
                   }
-                  subValue={
-                    card.subValue
-                  }
                   icon={
                     card.icon
                   }
@@ -3102,7 +3123,6 @@ const Dashboard = () => {
               <StatCard
                 title={card.title}
                 value={card.value}
-                subValue={card.subValue}
                 icon={card.icon}
                 color={card.color}
               />
@@ -3155,7 +3175,7 @@ const Dashboard = () => {
                         fontSize: '0.6rem',
                       }}
                     >
-                      Total Sale
+                      Total Salary
                     </Typography>
                     <Typography
                       sx={{
@@ -3163,13 +3183,7 @@ const Dashboard = () => {
                         fontSize: '0.78rem',
                       }}
                     >
-                      {fmt(
-                        pointRows.reduce(
-                          (sum, point) =>
-                            sum + safeNum(point?.totalAmount),
-                          0
-                        )
-                      )}
+                      {fmt(totalSalary)}
                     </Typography>
                   </Box>
 
