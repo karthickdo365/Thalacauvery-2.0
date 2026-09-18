@@ -523,10 +523,6 @@ const getEmployeePhone = (emp) => {
   );
 };
 
-const getUserPhone = (user) => {
-  return getEmployeePhone(user);
-};
-
 const shareOnWhatsApp = (
   text,
   phone
@@ -639,9 +635,9 @@ export default function Attendance() {
   });
   const [reportEndDate, setReportEndDate] = useState(() => toDateKey(new Date()));
 
-  // Data used only to build the whole-employee partner report.
-  // The old separate salary-list UI has been removed.
+  // Employee salary data used to build the whole-employee partner report.
   const [allEmployeeSalaryRows, setAllEmployeeSalaryRows] = useState([]);
+  const [allEmployeeSalaryLoading, setAllEmployeeSalaryLoading] = useState(false);
 
   const [
     error,
@@ -652,6 +648,11 @@ export default function Attendance() {
     success,
     setSuccess,
   ] = useState('');
+
+  const [
+    shareCard,
+    setShareCard,
+  ] = useState(null);
 
   const [
     optimisticAbsent,
@@ -756,8 +757,8 @@ export default function Attendance() {
       // Attendance & Salary is only for employees.
       // Brokers must not appear in this dropdown.
       // Keep the broker records in the database; only filter them here.
-      const getUserType = (item) =>
-        String(
+      const list = allUsers.filter((item) => {
+        const type = String(
           item?.type ||
           item?.userType ||
           item?.role ||
@@ -766,13 +767,16 @@ export default function Attendance() {
           .trim()
           .toLowerCase();
 
-      const list = allUsers.filter((item) => {
-        const type = getUserType(item);
         return type !== 'broker' && type !== 'partner';
       });
 
       const partnerList = allUsers.filter((item) => {
-        const type = getUserType(item);
+        const type = String(
+          item?.type ||
+          item?.userType ||
+          item?.role ||
+          ''
+        ).trim().toLowerCase();
         return type === 'partner';
       });
 
@@ -893,6 +897,8 @@ export default function Attendance() {
         return;
       }
 
+      setAllEmployeeSalaryLoading(true);
+
       const rows = await Promise.all(
         employees.map(async (item) => {
           const employeeId = item?._id;
@@ -931,10 +937,12 @@ export default function Attendance() {
 
             return {
               employee: item,
-              salary: calculateEmployeeListSalary(
+              salary: calculateEmployeeRangeSalary(
                 item,
                 attendance,
-                employeeAdvances
+                employeeAdvances,
+                reportStartDate,
+                reportEndDate
               ),
               attendance,
               advances: employeeAdvances,
@@ -948,10 +956,12 @@ export default function Attendance() {
 
             return {
               employee: item,
-              salary: calculateEmployeeListSalary(
+              salary: calculateEmployeeRangeSalary(
                 item,
                 [],
-                []
+                [],
+                reportStartDate,
+                reportEndDate
               ),
               attendance: [],
               advances: [],
@@ -963,6 +973,7 @@ export default function Attendance() {
 
       if (!cancelled) {
         setAllEmployeeSalaryRows(rows);
+        setAllEmployeeSalaryLoading(false);
       }
     };
 
@@ -971,10 +982,10 @@ export default function Attendance() {
     return () => {
       cancelled = true;
     };
-  }, [employees, currentMachine]);
-
+  }, [employees, currentMachine, reportStartDate, reportEndDate]);
 
   useEffect(() => {
+    setShareCard(null);
     setOptimisticAbsent({});
     setOptimisticRemoved({});
   }, [selectedEmployee]);
@@ -1446,6 +1457,23 @@ export default function Attendance() {
 
       setSuccess(skippedCount > 0 ? `${rangeMessage} ${skippedCount} existing day(s) skipped.` : rangeMessage);
 
+      const shareDateLabel = dateKeys.length === 1
+        ? formatDate(selectedDate)
+        : `${formatDate(startDate)} to ${formatDate(endDate)}`;
+
+      if (savedCount > 0) {
+        setShareCard({
+          label: shareDateLabel,
+          text: buildAbsenceShareText({
+            employeeName: employee?.name,
+            unitLabel: currentMachine === 'big' ? 'Big Machine' : 'Small Machine',
+            dateLabel: shareDateLabel,
+            reason: absentReason,
+          }),
+          phone: getEmployeePhone(employee),
+        });
+      }
+
       await loadAttendance();
 
       // Real data now includes these dates — safe to drop the overlay.
@@ -1679,52 +1707,6 @@ export default function Attendance() {
     Boolean(reportEndDate) &&
     reportEndDate >= reportStartDate;
 
-  const rangeEmployeeRows = useMemo(() => {
-    if (!reportPeriodValid) return [];
-
-    return allEmployeeSalaryRows.map((row) => ({
-      ...row,
-      salary: calculateEmployeeRangeSalary(
-        row.employee,
-        row.attendance || [],
-        row.advances || [],
-        reportStartDate,
-        reportEndDate
-      ),
-    }));
-  }, [
-    allEmployeeSalaryRows,
-    reportStartDate,
-    reportEndDate,
-    reportPeriodValid,
-  ]);
-
-  const rangeReportTotals = useMemo(() => {
-    return rangeEmployeeRows.reduce(
-      (totals, row) => {
-        const salary = row.salary || {};
-        totals.totalDays += Number(salary.totalDays) || 0;
-        totals.presentDays += Number(salary.presentDays) || 0;
-        totals.absentDays += Number(salary.absentDays) || 0;
-        totals.grossSalary += Number(salary.grossSalary) || 0;
-        totals.absentDeduction += Number(salary.absentDeduction) || 0;
-        totals.totalAdvance += Number(salary.totalAdvance) || 0;
-        totals.finalSalary += Number(salary.finalSalary) || 0;
-        return totals;
-      },
-      { employees: 0, totalDays: 0, presentDays: 0, absentDays: 0, grossSalary: 0, absentDeduction: 0, totalAdvance: 0, finalSalary: 0 }
-    );
-  }, [rangeEmployeeRows]);
-
-  const printWholeEmployeeReport = () => {
-    if (!reportPeriodValid || !rangeEmployeeRows.length) {
-      setError('Select a valid date range with employee data before printing.');
-      return;
-    }
-
-    window.setTimeout(() => window.print(), 50);
-  };
-
   const setQuickReportRange = (type) => {
     const now = new Date();
     const today = toDateKey(now);
@@ -1777,22 +1759,18 @@ export default function Attendance() {
         ? startLabel
         : `${startLabel} to ${endLabel}`;
 
-    const rangeSet = new Set(getDateRange(reportStartDate, reportEndDate));
-    const absentDates = Object.keys(absentMap).filter((key) => rangeSet.has(key)).sort();
-    const rangeAdvances = advances.filter((item) => {
-      const rawDate = getAdvanceDateValue(item);
-      const key = rawDate ? toDateKey(new Date(rawDate)) : item?.month ? `${item.month}-01` : '';
-      return key && key >= reportStartDate && key <= reportEndDate;
-    });
-
     const lines = [
-      '*SALARY BILL*',
+      '*Salary Bill*',
       '',
       `Employee: ${employee?.name || '-'}`,
       `Machine: ${currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}`,
       `Period: ${periodLabel}`,
       '',
-      `Joining Date: ${employee?.date ? formatDate(new Date(employee.date)) : '-'}`,
+      `Joining Date: ${
+        employee?.date
+          ? formatDate(new Date(employee.date))
+          : '-'
+      }`,
       `Monthly Salary: ${formatMoney(Number(employee?.salary) || 0)}`,
       `Working Days: ${individualSalary.totalDays || 0}`,
       `Present Days: ${individualSalary.presentDays || 0}`,
@@ -1800,23 +1778,9 @@ export default function Attendance() {
       `Gross Salary: ${formatMoney(individualSalary.grossSalary)}`,
       `Absent Deduction: ${formatMoney(individualSalary.absentDeduction)}`,
       `Salary Advance: ${formatMoney(individualSalary.totalAdvance)}`,
+      '',
+      `*Final Salary: ${formatMoney(individualSalary.finalSalary)}*`,
     ];
-
-    if (absentDates.length) {
-      lines.push('', '*Absent Dates*');
-      absentDates.forEach((key, index) => {
-        lines.push(`${index + 1}. ${formatDate(parseDateKey(key))}`);
-      });
-    }
-
-    if (rangeAdvances.length) {
-      lines.push('', '*Advance Details*');
-      rangeAdvances.forEach((item, index) => {
-        lines.push(`${index + 1}. ${formatAdvanceDate(item)} - ${formatMoney(item?.advanceAmount)}`);
-      });
-    }
-
-    lines.push('', `*Final Salary: ${formatMoney(individualSalary.finalSalary)}*`);
 
     shareOnWhatsApp(
       lines.join('\n'),
@@ -1828,17 +1792,53 @@ export default function Attendance() {
     );
   };
 
+  /*
    |--------------------------------------------------------------------------
-   | Build one employee's salary line-item text (used by both the
-   | per-employee share button and the all-employee combined report)
+   | Whole employee report for partner
    |--------------------------------------------------------------------------
    */
+  const partner = useMemo(() => {
+    return partners.find((item) => String(item?._id) === String(selectedPartner));
+  }, [partners, selectedPartner]);
+
+  const reportRows = useMemo(() => {
+    return allEmployeeSalaryRows.map((row) => ({
+      ...row,
+      reportSalary: calculateEmployeeRangeSalary(
+        row.employee,
+        row.attendance || [],
+        row.advances || [],
+        reportStartDate,
+        reportEndDate
+      ),
+    }));
+  }, [allEmployeeSalaryRows, reportStartDate, reportEndDate]);
+
+  const reportTotals = useMemo(() => reportRows.reduce((totals, row) => {
+    const salary = row.reportSalary || {};
+    totals.totalDays += Number(salary.totalDays) || 0;
+    totals.presentDays += Number(salary.presentDays) || 0;
+    totals.absentDays += Number(salary.absentDays) || 0;
+    totals.grossSalary += Number(salary.grossSalary) || 0;
+    totals.absentDeduction += Number(salary.absentDeduction) || 0;
+    totals.totalAdvance += Number(salary.totalAdvance) || 0;
+    totals.finalSalary += Number(salary.finalSalary) || 0;
+    return totals;
+  }, {
+    totalDays: 0, presentDays: 0, absentDays: 0, grossSalary: 0,
+    absentDeduction: 0, totalAdvance: 0, finalSalary: 0,
+  }), [reportRows]);
+
+  const getReportPeriodLabel = () => {
+    const start = formatDate(parseDateKey(reportStartDate));
+    const end = formatDate(parseDateKey(reportEndDate));
+    return reportStartDate === reportEndDate ? start : `${start} to ${end}`;
+  };
+
   const buildEmployeeSalaryLines = (row, index) => {
-    const item = row.employee;
-    const salary = row.salary || {};
-
+    const item = row?.employee;
+    const salary = row?.reportSalary || {};
     const prefix = typeof index === 'number' ? `${index + 1}. ` : '';
-
     return [
       `${prefix}${item?.name || 'Unnamed Employee'}`,
       `   Joining Date: ${item?.date ? formatDate(new Date(item.date)) : '-'}`,
@@ -1853,92 +1853,65 @@ export default function Attendance() {
     ];
   };
 
-  /*
-
-  /*
-   |--------------------------------------------------------------------------
-   | Share the combined All Employee salary report on WhatsApp
-   |--------------------------------------------------------------------------
-   */
-  const shareAllEmployeesToWhatsApp = () => {
-    if (!reportPeriodValid) {
-      setError('Select a valid From Date and To Date.');
-      return;
-    }
-
-    if (!rangeEmployeeRows.length) {
-      setError('No employee salary data is available for this date range.');
-      return;
-    }
-
-    if (!selectedPartner) {
-      setError('Please select a partner before sharing the whole employee report.');
-      return;
-    }
-
-    const partner = partners.find(
-      (item) => String(item?._id) === String(selectedPartner)
-    );
-
-    if (!partner) {
-      setError('Selected partner was not found.');
-      return;
-    }
-
-    const totals = rangeEmployeeRows.reduce(
-      (acc, row) => {
-        const salary = row.salary || {};
-        acc.totalDays += Number(salary.totalDays) || 0;
-        acc.presentDays += Number(salary.presentDays) || 0;
-        acc.absentDays += Number(salary.absentDays) || 0;
-        acc.grossSalary += Number(salary.grossSalary) || 0;
-        acc.absentDeduction += Number(salary.absentDeduction) || 0;
-        acc.totalAdvance += Number(salary.totalAdvance) || 0;
-        acc.finalSalary += Number(salary.finalSalary) || 0;
-        return acc;
-      },
-      { totalDays: 0, presentDays: 0, absentDays: 0, grossSalary: 0, absentDeduction: 0, totalAdvance: 0, finalSalary: 0 }
-    );
-
-    const startLabel = formatDate(parseDateKey(reportStartDate));
-    const endLabel = formatDate(parseDateKey(reportEndDate));
-    const periodLabel = reportStartDate === reportEndDate
-      ? startLabel
-      : `${startLabel} to ${endLabel}`;
+  const shareIndividualSalaryOnWhatsApp = () => {
+    if (!employee) { setError('Please select an employee first.'); return; }
+    if (!reportPeriodValid) { setError('Please select a valid From Date and To Date.'); return; }
+    if (!individualSalary) { setError('Salary details are not available.'); return; }
 
     const lines = [
-      '*EMPLOYEE SALARY REPORT*',
-      '',
+      '*EMPLOYEE SALARY BILL*', '',
+      `Employee: ${employee?.name || '-'}`,
+      `Machine: ${currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}`,
+      `Period: ${getReportPeriodLabel()}`,
+      `Joining Date: ${employee?.date ? formatDate(new Date(employee.date)) : '-'}`, '',
+      `Monthly Salary: ${formatMoney(Number(employee?.salary) || 0)}`,
+      `Working Days: ${individualSalary.totalDays || 0}`,
+      `Present Days: ${individualSalary.presentDays || 0}`,
+      `Absent Days: ${individualSalary.absentDays || 0}`,
+      `Gross Salary: ${formatMoney(individualSalary.grossSalary)}`,
+      `Absent Deduction: ${formatMoney(individualSalary.absentDeduction)}`,
+      `Salary Advance: ${formatMoney(individualSalary.totalAdvance)}`, '',
+      `*FINAL SALARY: ${formatMoney(individualSalary.finalSalary)}*`,
+    ];
+    shareOnWhatsApp(lines.join('\n'), getEmployeePhone(employee));
+    setSuccess(`Salary bill opened in WhatsApp for ${employee?.name || 'employee'}.`);
+  };
+
+  const shareWholeReportToPartner = () => {
+    if (!partner) { setError('Please select a partner first.'); return; }
+    if (!reportPeriodValid) { setError('Please select a valid From Date and To Date.'); return; }
+    if (!reportRows.length) { setError('No employee salary data is available for this report.'); return; }
+
+    const lines = [
+      '*EMPLOYEE SALARY REPORT*', '',
       `Partner: ${partner?.name || '-'}`,
       `Machine: ${currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}`,
-      `Period: ${periodLabel}`,
-      `Total Employees: ${rangeEmployeeRows.length}`,
-      '',
-      '*EMPLOYEE DETAILS*',
-      '',
+      `Period: ${getReportPeriodLabel()}`,
+      `Total Employees: ${reportRows.length}`, '',
+      '*EMPLOYEE DETAILS*', '',
     ];
-
-    rangeEmployeeRows.forEach((row, index) => {
-      lines.push(...buildEmployeeSalaryLines(row, index), '');
-    });
-
+    reportRows.forEach((row, index) => lines.push(...buildEmployeeSalaryLines(row, index), ''));
     lines.push(
       '*TOTAL SUMMARY*',
-      `Employees: ${rangeEmployeeRows.length}`,
-      `Working Days: ${totals.totalDays}`,
-      `Present Days: ${totals.presentDays}`,
-      `Absent Days: ${totals.absentDays}`,
-      `Gross Salary: ${formatMoney(totals.grossSalary)}`,
-      `Absent Deduction: ${formatMoney(totals.absentDeduction)}`,
-      `Salary Advance: ${formatMoney(totals.totalAdvance)}`,
-      `*Final Payable: ${formatMoney(totals.finalSalary)}*`
+      `Employees: ${reportRows.length}`,
+      `Working Days: ${reportTotals.totalDays}`,
+      `Present Days: ${reportTotals.presentDays}`,
+      `Absent Days: ${reportTotals.absentDays}`,
+      `Gross Salary: ${formatMoney(reportTotals.grossSalary)}`,
+      `Absent Deduction: ${formatMoney(reportTotals.absentDeduction)}`,
+      `Salary Advance: ${formatMoney(reportTotals.totalAdvance)}`,
+      `*FINAL PAYABLE: ${formatMoney(reportTotals.finalSalary)}*`
     );
+    shareOnWhatsApp(lines.join('\n'), getEmployeePhone(partner));
+    setSuccess(`Whole employee report opened in WhatsApp for ${partner?.name || 'partner'}.`);
+  };
 
-    shareOnWhatsApp(lines.join('\n'), getUserPhone(partner));
-
-    setSuccess(
-      `Whole employee salary report opened in WhatsApp for ${partner?.name || 'partner'}.`
-    );
+  const printWholeEmployeeReport = () => {
+    if (!reportPeriodValid || !reportRows.length) {
+      setError('Please select a valid period and wait for employee data to load.');
+      return;
+    }
+    window.setTimeout(() => window.print(), 50);
   };
 
 /*
@@ -2737,165 +2710,6 @@ export default function Attendance() {
           margin-bottom: 16px;
         }
 
-        /* ---------------- All employee salary list ---------------- */
-
-        .all-salary-card {
-          margin-bottom: 20px;
-          padding: 22px 24px;
-        }
-
-        .all-salary-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          gap: 12px;
-          flex-wrap: wrap;
-        }
-
-        .all-salary-header-text {
-          color: #718397;
-          font-size: 13px;
-          margin-top: 4px;
-        }
-
-        .all-salary-count {
-          color: #718397;
-          font-size: 12px;
-          font-weight: 700;
-          white-space: nowrap;
-        }
-
-        .all-salary-table-wrap {
-          margin-top: 16px;
-          overflow-x: auto;
-          border: 1px solid #e7edf2;
-          border-radius: 12px;
-        }
-
-        .all-salary-table {
-          width: 100%;
-          min-width: 920px;
-          border-collapse: collapse;
-          font-size: 13px;
-        }
-
-        .all-salary-table th {
-          padding: 12px 14px;
-          background: #f7fafc;
-          color: #6d8092;
-          font-size: 11px;
-          font-weight: 800;
-          text-transform: uppercase;
-          letter-spacing: .03em;
-          text-align: left;
-          white-space: nowrap;
-          border-bottom: 1px solid #e7edf2;
-        }
-
-        .all-salary-table td {
-          padding: 13px 14px;
-          color: #334b61;
-          border-bottom: 1px solid #eef2f6;
-          white-space: nowrap;
-        }
-
-        .all-salary-table tbody tr:last-child td {
-          border-bottom: 0;
-        }
-
-        .all-salary-table tbody tr {
-          cursor: pointer;
-          transition: background .12s;
-        }
-
-        .all-salary-table tbody tr:hover {
-          background: #f8fcfb;
-        }
-
-        .all-salary-table tbody tr.selected {
-          background: #eefbf7;
-        }
-
-        .all-salary-name {
-          color: #162f48;
-          font-weight: 800;
-        }
-
-        .all-salary-sub {
-          margin-top: 2px;
-          color: #8a9aaa;
-          font-size: 11px;
-        }
-
-        .all-salary-money {
-          font-weight: 750;
-          color: #19334d;
-        }
-
-        .all-salary-advance {
-          color: #b96a0f;
-          font-weight: 750;
-        }
-
-        .all-salary-final {
-          color: #087d73;
-          font-weight: 850;
-        }
-
-        .all-salary-present {
-          color: #0a9b68;
-          font-weight: 750;
-        }
-
-        .all-salary-absent {
-          color: #d63b3b;
-          font-weight: 750;
-        }
-
-        .all-salary-warning {
-          margin-top: 10px;
-          color: #8a7355;
-          font-size: 12px;
-        }
-
-        .all-salary-loading {
-          padding: 24px;
-          text-align: center;
-          color: #718397;
-          font-size: 13px;
-        }
-
-        /* ---------------- All employee salary: header actions & row share ---------------- */
-
-        .all-salary-header-actions {
-          display: flex;
-          align-items: center;
-          gap: 14px;
-          flex-wrap: wrap;
-        }
-
-        .all-salary-share-button {
-          height: 36px;
-          padding: 0 14px;
-          font-size: 12px;
-        }
-
-        .row-whatsapp-button {
-          border: 1px solid #bdeecb;
-          background: #eafcf1;
-          color: #0f8a4d;
-          border-radius: 8px;
-          padding: 6px 10px;
-          font-size: 12px;
-          font-weight: 750;
-          cursor: pointer;
-          white-space: nowrap;
-        }
-
-        .row-whatsapp-button:hover {
-          background: #d7f7e4;
-        }
-
         /* ---------------- Individual WhatsApp salary bill ---------------- */
 
         .report-card {
@@ -3079,234 +2893,48 @@ export default function Attendance() {
         }
 
         /* ---------------- Whole employee report ---------------- */
-
-        .partner-report-card {
-          margin-bottom: 20px;
-          padding: 22px 24px;
-        }
-
-        .whole-report-preview {
-          margin-top: 20px;
-          padding: 18px;
-          border: 1px solid #dfe5ea;
-          background: #fff;
-          border-radius: 10px;
-        }
-
-        .whole-report-title-row {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          gap: 20px;
-          margin-bottom: 18px;
-        }
-
-        .whole-report-company {
-          color: #17324d;
-          font-size: 13px;
-          font-weight: 700;
-          margin-bottom: 5px;
-        }
-
-        .whole-report-title-row h3 {
-          margin: 0;
-          color: #132e4a;
-          font-size: 28px;
-          font-weight: 850;
-        }
-
-        .whole-report-period {
-          margin-top: 8px;
-          color: #3f4b58;
-          font-size: 15px;
-        }
-
-        .whole-report-partner {
-          padding: 8px 12px;
-          border: 1px solid #d7e0e8;
-          border-radius: 7px;
-          color: #475569;
-          font-size: 12px;
-          white-space: nowrap;
-        }
-
-        .whole-report-summary {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 10px;
-          margin: 20px 0 22px;
-        }
-
-        .whole-report-summary > div {
-          min-height: 68px;
-          padding: 11px 12px;
-          border: 1px solid #cbd5e1;
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-        }
-
-        .whole-report-summary span {
-          color: #5b6470;
-          font-size: 11px;
-        }
-
-        .whole-report-summary strong {
-          margin-top: 5px;
-          color: #20242a;
-          font-size: 16px;
-        }
-
-        .whole-report-summary .negative strong {
-          color: #c92c2c;
-        }
-
-        .whole-report-table-wrap {
-          overflow-x: auto;
-          border: 1px solid #aeb7c0;
-        }
-
-        .whole-report-table {
-          width: 100%;
-          min-width: 1050px;
-          border-collapse: collapse;
-          font-size: 12px;
-        }
-
-        .whole-report-table th,
-        .whole-report-table td {
-          padding: 8px 10px;
-          border: 1px solid #b6bec7;
-          text-align: left;
-          white-space: nowrap;
-        }
-
-        .whole-report-table th {
-          background: #fafafa;
-          color: #171a1e;
-          font-weight: 800;
-        }
-
-        .whole-report-table td {
-          color: #22272d;
-        }
-
-        .whole-report-total td {
-          font-weight: 850;
-          background: #fafafa;
-          color: #15191d;
-        }
-
-        .all-salary-period-note {
-          color: #718397;
-          font-size: 12px;
-        }
-
-        .print-report-page {
-          display: none;
-        }
-
+        .partner-report-preview { margin-top:20px; padding:20px; border:1px solid #e4ebf1; border-radius:14px; background:#fbfdfd; }
+        .partner-report-title-row { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; padding-bottom:16px; border-bottom:1px solid #e8eef2; }
+        .partner-report-title-row h3 { margin:0; font-size:24px; font-weight:850; color:#17324d; }
+        .partner-report-title-row div { margin-top:5px; color:#718397; font-size:13px; }
+        .partner-badge { margin-top:0 !important; padding:7px 11px; border-radius:999px; background:#eef8f5; color:#087d73 !important; font-size:11px !important; font-weight:800; white-space:nowrap; }
+        .report-summary-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:16px; }
+        .report-summary-box { padding:13px 14px; border:1px solid #dce4ea; background:#fff; }
+        .report-summary-label { color:#718397; font-size:11px; font-weight:700; }
+        .report-summary-value { margin-top:5px; color:#17324d; font-size:19px; font-weight:850; }
+        .report-table-wrap { margin-top:18px; overflow-x:auto; }
+        .report-table { width:100%; border-collapse:collapse; min-width:980px; background:#fff; }
+        .report-table th,.report-table td { border:1px solid #bfc5ca; padding:9px 10px; text-align:left; font-size:12px; white-space:nowrap; }
+        .report-table th { background:#f7f8f9; color:#17202a; font-weight:800; }
+        .report-total-row td { font-weight:800; background:#fafafa; }
+        .print-report { display:none; }
         @media print {
-          @page {
-            size: A4 landscape;
-            margin: 12mm;
-          }
+          body * { visibility:hidden !important; }
+          .print-report,.print-report * { visibility:visible !important; }
+          .print-report { display:block !important; position:absolute; left:0; top:0; width:100%; padding:22px 30px; background:#fff; color:#111; font-family:Arial,Helvetica,sans-serif; }
+          .print-report-title { margin:0 0 8px; font-size:28px; font-weight:800; }
+          .report-print-period { margin-bottom:20px; font-size:14px; }
+          .print-summary { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:20px; }
+          .print-summary-box { border:1px solid #bfc5ca; padding:10px; }
+          .print-summary-label { font-size:11px; }
+          .print-summary-value { margin-top:4px; font-size:17px; font-weight:800; }
+          .print-report table { width:100%; border-collapse:collapse; font-size:10px; }
+          .print-report th,.print-report td { border:1px solid #aaa; padding:7px 6px; text-align:left; white-space:nowrap; }
+          .print-report th,.print-total td { font-weight:800; }
+          @page { size:landscape; margin:10mm; }
+        }
 
-          body {
-            background: #fff !important;
-          }
-
-          .attendance-page {
-            padding: 0 !important;
-            background: #fff !important;
-          }
-
-          .attendance-page > .attendance-container > * {
-            display: none !important;
-          }
-
-          .attendance-page > .attendance-container > .print-report-page {
-            display: block !important;
-          }
-
-          .print-report-page {
-            width: 100%;
-            color: #20242a;
-            font-family: Arial, Helvetica, sans-serif;
-          }
-
-          .print-report-company {
-            text-align: center;
-            font-size: 13px;
-            font-weight: 700;
-            margin-bottom: 12px;
-          }
-
-          .print-report-page h1 {
-            margin: 0;
-            font-size: 25px;
-            font-weight: 800;
-            color: #142f4b;
-          }
-
-          .print-report-period {
-            margin-top: 8px;
-            font-size: 13px;
-            color: #35404c;
-          }
-
-          .print-report-summary {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 10px;
-            margin: 22px 0;
-          }
-
-          .print-report-summary-box {
-            border: 1px solid #b8bec4;
-            padding: 10px;
-            min-height: 54px;
-          }
-
-          .print-report-summary-box span {
-            display: block;
-            font-size: 10px;
-            color: #59616a;
-          }
-
-          .print-report-summary-box strong {
-            display: block;
-            margin-top: 5px;
-            font-size: 15px;
-          }
-
-          .print-report-summary-box.negative strong {
-            color: #c92c2c;
-          }
-
-          .print-report-page table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 10px;
-          }
-
-          .print-report-page th,
-          .print-report-page td {
-            border: 1px solid #aeb4ba;
-            padding: 7px 8px;
-            text-align: left;
-            white-space: nowrap;
-          }
-
-          .print-report-page th {
-            font-weight: 800;
-            background: #fafafa;
-          }
-
-          .print-report-page .print-total td {
-            font-weight: 800;
-            background: #fafafa;
-          }
+        .selected-report-person {
+          min-height:46px;
+          display:flex;
+          align-items:center;
+          padding:0 14px;
+          border:1px solid #d3dce6;
+          border-radius:10px;
+          background:#f8fafc;
+          color:#17324d;
+          font-size:15px;
+          font-weight:700;
         }
 
         /* ---------------- Responsive ---------------- */
@@ -3352,12 +2980,6 @@ export default function Attendance() {
           }
         }
 
-        @media (max-width: 700px) {
-          .all-salary-header-actions {
-            width: 100%;
-            justify-content: space-between;
-          }
-        }
       `}</style>
 
       <div className="attendance-container">
@@ -3397,6 +3019,131 @@ export default function Attendance() {
           </div>
         )}
 
+        {/* Share via WhatsApp */}
+        {shareCard && (
+          <div className="card share-card">
+            <div className="share-card-text">
+              <strong>
+                {shareCard.label}
+              </strong>{' '}
+              is ready to share.
+            </div>
+
+            <div className="share-card-actions">
+              <button
+                type="button"
+                className="whatsapp-button"
+                onClick={() =>
+                  shareOnWhatsApp(
+                    shareCard.text,
+                    shareCard.phone
+                  )
+                }
+              >
+                Share via WhatsApp
+              </button>
+
+              <button
+                type="button"
+                className="close-button"
+                onClick={() =>
+                  setShareCard(null)
+                }
+                aria-label="Dismiss"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Employee section intentionally kept in code but disabled.
+            It can be re-enabled later by changing false to true. */}
+        {false && (
+          <>
+        {/* Employee section temporarily disabled */}
+        <div className="card employee-card">
+
+          <label className="field-label">
+            Employee
+          </label>
+
+          <select
+            className="select-input"
+            value={
+              selectedEmployee
+            }
+            onChange={(event) => {
+              setSelectedEmployee(
+                event.target.value
+              );
+            }}
+          >
+            <option value="">
+              Select Employee
+            </option>
+
+            {employees.map(
+              (item) => (
+                <option
+                  key={item._id}
+                  value={item._id}
+                >
+                  {item.name}
+                </option>
+              )
+            )}
+          </select>
+
+          {employee && (
+            <div className="employee-info">
+
+              <div>
+                <div className="employee-name">
+                  {employee.name}
+                </div>
+
+                <div className="employee-type">
+                  {employee.type ||
+                    'Employee'}
+                </div>
+              </div>
+
+              <div>
+                <div className="info-label">
+                  Joining Date
+                </div>
+
+                <div className="info-value">
+                  {employee.date
+                    ? formatDate(
+                        new Date(
+                          employee.date
+                        )
+                      )
+                    : '-'}
+                </div>
+              </div>
+
+              <div>
+                <div className="info-label">
+                  Monthly Salary
+                </div>
+
+                <div className="info-value">
+                  {formatMoney(
+                    employee.salary
+                  )}
+                </div>
+              </div>
+
+            </div>
+          )}
+        </div>
+
+          </>
+        )}
+
         {/* ==========================================================
             INDIVIDUAL SALARY WHATSAPP BILL
             ========================================================== */}
@@ -3413,18 +3160,9 @@ export default function Attendance() {
           <div className="report-controls individual-report-controls">
             <div className="report-field">
               <label className="text-label">Employee</label>
-              <select
-                className="select-input"
-                value={selectedEmployee}
-                onChange={(event) => setSelectedEmployee(event.target.value)}
-              >
-                <option value="">Select Employee</option>
-                {employees.map((item) => (
-                  <option key={item?._id} value={item?._id}>
-                    {item?.name || 'Unnamed Employee'}
-                  </option>
-                ))}
-              </select>
+              <div className="selected-report-person">
+                {employee?.name || 'Select an employee above'}
+              </div>
             </div>
 
             <div className="report-field">
@@ -3466,16 +3204,79 @@ export default function Attendance() {
             </button>
           </div>
 
-          <div className="individual-share-actions">
-            <button
-              type="button"
-              className="button whatsapp-button"
-              onClick={shareIndividualSalaryOnWhatsApp}
-              disabled={!employee || !individualSalary || !reportPeriodValid}
-            >
-              📱 Share Individual Bill to Employee
-            </button>
-          </div>
+          {employee && individualSalary && reportPeriodValid && (
+            <div className="individual-bill-preview">
+              <div className="individual-bill-heading">
+                <div>
+                  <h3>{employee?.name || 'Employee'}</h3>
+                  <div>
+                    {formatDate(parseDateKey(reportStartDate))} to{' '}
+                    {formatDate(parseDateKey(reportEndDate))}
+                  </div>
+                </div>
+
+                <div className="individual-bill-machine">
+                  {currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}
+                </div>
+              </div>
+
+              <div className="individual-summary-grid">
+                <div className="individual-summary-box">
+                  <span>Working Days</span>
+                  <strong>{individualSalary.totalDays}</strong>
+                </div>
+                <div className="individual-summary-box">
+                  <span>Present</span>
+                  <strong>{individualSalary.presentDays}</strong>
+                </div>
+                <div className="individual-summary-box absent">
+                  <span>Absent</span>
+                  <strong>{individualSalary.absentDays}</strong>
+                </div>
+                <div className="individual-summary-box final">
+                  <span>Final Salary</span>
+                  <strong>{formatMoney(individualSalary.finalSalary)}</strong>
+                </div>
+              </div>
+
+              <div className="individual-salary-lines">
+                <div>
+                  <span>Monthly Salary</span>
+                  <strong>{formatMoney(Number(employee?.salary) || 0)}</strong>
+                </div>
+                <div>
+                  <span>Gross Salary</span>
+                  <strong>{formatMoney(individualSalary.grossSalary)}</strong>
+                </div>
+                <div>
+                  <span>Absent Deduction</span>
+                  <strong className="negative-value">
+                    {formatMoney(individualSalary.absentDeduction)}
+                  </strong>
+                </div>
+                <div>
+                  <span>Salary Advance</span>
+                  <strong className="negative-value">
+                    {formatMoney(individualSalary.totalAdvance)}
+                  </strong>
+                </div>
+              </div>
+
+              <div className="report-actions">
+                <button
+                  type="button"
+                  className="button whatsapp-button"
+                  onClick={shareIndividualSalaryOnWhatsApp}
+                >
+                  WhatsApp
+                </button>
+              </div>
+
+              <div className="whatsapp-note">
+                The bill is shared as a WhatsApp message. The employee's saved phone number is used when available.
+              </div>
+            </div>
+          )}
 
           {!employee && (
             <div className="individual-bill-empty">
@@ -3485,110 +3286,32 @@ export default function Attendance() {
         </div>
 
 
-        <div className="print-report-page">
-          <div className="print-report-company">Thalacauvery Borewell</div>
-          <h1>Employee Salary Report</h1>
-          <div className="print-report-period">
-            Period: {formatDate(parseDateKey(reportStartDate))} to {formatDate(parseDateKey(reportEndDate))} • {currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}
-          </div>
-
-          <div className="print-report-summary">
-            <div className="print-report-summary-box"><span>Employees</span><strong>{rangeEmployeeRows.length}</strong></div>
-            <div className="print-report-summary-box"><span>Present Days</span><strong>{rangeReportTotals.presentDays}</strong></div>
-            <div className="print-report-summary-box"><span>Absent Days</span><strong>{rangeReportTotals.absentDays}</strong></div>
-            <div className={`print-report-summary-box ${rangeReportTotals.finalSalary < 0 ? 'negative' : ''}`}><span>Final Payable</span><strong>{formatMoney(rangeReportTotals.finalSalary)}</strong></div>
-          </div>
-
-          <table>
-            <thead>
-              <tr>
-                <th>S.No</th><th>Employee</th><th>Joining Date</th><th>Working Days</th><th>Present</th><th>Absent</th><th>Gross Salary</th><th>Absent Deduction</th><th>Advance</th><th>Final Salary</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rangeEmployeeRows.map((row, index) => {
-                const item = row.employee;
-                const salary = row.salary || {};
-                return (
-                  <tr key={item?._id || index}>
-                    <td>{index + 1}</td>
-                    <td>{item?.name || 'Unnamed Employee'}</td>
-                    <td>{item?.date ? formatDate(new Date(item.date)) : '-'}</td>
-                    <td>{salary.totalDays}</td>
-                    <td>{salary.presentDays}</td>
-                    <td>{salary.absentDays}</td>
-                    <td>{formatMoney(salary.grossSalary)}</td>
-                    <td>{formatMoney(salary.absentDeduction)}</td>
-                    <td>{formatMoney(salary.totalAdvance)}</td>
-                    <td>{formatMoney(salary.finalSalary)}</td>
-                  </tr>
-                );
-              })}
-              <tr className="print-total">
-                <td colSpan={3}>TOTAL</td>
-                <td>{rangeReportTotals.totalDays}</td>
-                <td>{rangeReportTotals.presentDays}</td>
-                <td>{rangeReportTotals.absentDays}</td>
-                <td>{formatMoney(rangeReportTotals.grossSalary)}</td>
-                <td>{formatMoney(rangeReportTotals.absentDeduction)}</td>
-                <td>{formatMoney(rangeReportTotals.totalAdvance)}</td>
-                <td>{formatMoney(rangeReportTotals.finalSalary)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
         {/* ==========================================================
             WHOLE EMPLOYEE REPORT FOR PARTNER
             ========================================================== */}
-        <div className="card partner-report-card">
+        <div className="card report-card partner-report-card">
           <div className="report-header">
             <div>
-              <h2 className="section-title">Employee Salary Report</h2>
-              <div className="section-subtitle">
-                Select a partner and date range. The complete employee report can be shared to that partner's WhatsApp.
-              </div>
+              <h2 className="section-title">Whole Employee Report</h2>
+              <div className="section-subtitle">Select a partner and date range to share the complete employee report.</div>
             </div>
           </div>
 
           <div className="report-controls partner-report-controls">
             <div className="report-field">
               <label className="text-label">Partner</label>
-              <select
-                className="select-input"
-                value={selectedPartner}
-                onChange={(event) => setSelectedPartner(event.target.value)}
-              >
+              <select className="select-input" value={selectedPartner} onChange={(event) => setSelectedPartner(event.target.value)}>
                 <option value="">Select Partner</option>
-                {partners.map((item) => (
-                  <option key={item?._id} value={item?._id}>
-                    {item?.name || 'Unnamed Partner'}
-                  </option>
-                ))}
+                {partners.map((item) => <option key={item?._id} value={item?._id}>{item?.name || 'Unnamed Partner'}</option>)}
               </select>
             </div>
-
             <div className="report-field">
               <label className="text-label">From Date</label>
-              <input
-                type="date"
-                className="text-input"
-                value={reportStartDate}
-                max={reportEndDate || toDateKey(new Date())}
-                onChange={(event) => setReportStartDate(event.target.value)}
-              />
+              <input type="date" className="text-input" value={reportStartDate} max={reportEndDate || toDateKey(new Date())} onChange={(event) => setReportStartDate(event.target.value)} />
             </div>
-
             <div className="report-field">
               <label className="text-label">To Date</label>
-              <input
-                type="date"
-                className="text-input"
-                value={reportEndDate}
-                min={reportStartDate || undefined}
-                max={toDateKey(new Date())}
-                onChange={(event) => setReportEndDate(event.target.value)}
-              />
+              <input type="date" className="text-input" value={reportEndDate} min={reportStartDate || undefined} max={toDateKey(new Date())} onChange={(event) => setReportEndDate(event.target.value)} />
             </div>
           </div>
 
@@ -3599,100 +3322,61 @@ export default function Attendance() {
             <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('year')}>Last 12 Months</button>
           </div>
 
-          {reportPeriodValid && rangeEmployeeRows.length > 0 ? (
-            <div className="whole-report-preview">
-              <div className="whole-report-title-row">
+          {reportPeriodValid && (
+            <div className="partner-report-preview">
+              <div className="partner-report-title-row">
                 <div>
-                  <div className="whole-report-company">Thalacauvery Borewell</div>
                   <h3>Employee Salary Report</h3>
-                  <div className="whole-report-period">
-                    Period: {formatDate(parseDateKey(reportStartDate))} to {formatDate(parseDateKey(reportEndDate))} • {currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}
-                  </div>
+                  <div>Period: {getReportPeriodLabel()} • {currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}</div>
                 </div>
-                <div className="whole-report-partner">
-                  Partner: {partners.find((item) => String(item?._id) === String(selectedPartner))?.name || 'Not selected'}
-                </div>
+                {partner && <div className="partner-badge">To: {partner?.name}</div>}
               </div>
 
-              <div className="whole-report-summary">
-                <div><span>Employees</span><strong>{rangeEmployeeRows.length}</strong></div>
-                <div><span>Present Days</span><strong>{rangeReportTotals.presentDays}</strong></div>
-                <div><span>Absent Days</span><strong>{rangeReportTotals.absentDays}</strong></div>
-                <div className={rangeReportTotals.finalSalary < 0 ? 'negative' : ''}><span>Final Payable</span><strong>{formatMoney(rangeReportTotals.finalSalary)}</strong></div>
+              <div className="report-summary-grid">
+                <div className="report-summary-box"><div className="report-summary-label">Employees</div><div className="report-summary-value">{reportRows.length}</div></div>
+                <div className="report-summary-box"><div className="report-summary-label">Present Days</div><div className="report-summary-value">{reportTotals.presentDays}</div></div>
+                <div className="report-summary-box"><div className="report-summary-label">Absent Days</div><div className="report-summary-value">{reportTotals.absentDays}</div></div>
+                <div className="report-summary-box"><div className="report-summary-label">Final Payable</div><div className="report-summary-value">{formatMoney(reportTotals.finalSalary)}</div></div>
               </div>
 
-              <div className="whole-report-table-wrap">
-                <table className="whole-report-table">
-                  <thead>
-                    <tr>
-                      <th>S.No</th>
-                      <th>Employee</th>
-                      <th>Joining Date</th>
-                      <th>Working Days</th>
-                      <th>Present</th>
-                      <th>Absent</th>
-                      <th>Gross Salary</th>
-                      <th>Absent Deduction</th>
-                      <th>Advance</th>
-                      <th>Final Salary</th>
-                    </tr>
-                  </thead>
+              <div className="report-table-wrap">
+                <table className="report-table">
+                  <thead><tr><th>S.No</th><th>Employee</th><th>Joining Date</th><th>Working Days</th><th>Present</th><th>Absent</th><th>Gross Salary</th><th>Absent Deduction</th><th>Advance</th><th>Final Salary</th></tr></thead>
                   <tbody>
-                    {rangeEmployeeRows.map((row, index) => {
-                      const item = row.employee;
-                      const salary = row.salary || {};
-                      return (
-                        <tr key={item?._id || index}>
-                          <td>{index + 1}</td>
-                          <td>{item?.name || 'Unnamed Employee'}</td>
-                          <td>{item?.date ? formatDate(new Date(item.date)) : '-'}</td>
-                          <td>{salary.totalDays}</td>
-                          <td>{salary.presentDays}</td>
-                          <td>{salary.absentDays}</td>
-                          <td>{formatMoney(salary.grossSalary)}</td>
-                          <td>{formatMoney(salary.absentDeduction)}</td>
-                          <td>{formatMoney(salary.totalAdvance)}</td>
-                          <td>{formatMoney(salary.finalSalary)}</td>
-                        </tr>
-                      );
+                    {reportRows.map((row, index) => {
+                      const item = row.employee; const salary = row.reportSalary || {};
+                      return <tr key={item?._id || index}><td>{index + 1}</td><td>{item?.name || 'Unnamed Employee'}</td><td>{item?.date ? formatDate(new Date(item.date)) : '-'}</td><td>{salary.totalDays}</td><td>{salary.presentDays}</td><td>{salary.absentDays}</td><td>{formatMoney(salary.grossSalary)}</td><td>{formatMoney(salary.absentDeduction)}</td><td>{formatMoney(salary.totalAdvance)}</td><td>{formatMoney(salary.finalSalary)}</td></tr>;
                     })}
-                    <tr className="whole-report-total">
-                      <td colSpan={3}>TOTAL</td>
-                      <td>{rangeReportTotals.totalDays}</td>
-                      <td>{rangeReportTotals.presentDays}</td>
-                      <td>{rangeReportTotals.absentDays}</td>
-                      <td>{formatMoney(rangeReportTotals.grossSalary)}</td>
-                      <td>{formatMoney(rangeReportTotals.absentDeduction)}</td>
-                      <td>{formatMoney(rangeReportTotals.totalAdvance)}</td>
-                      <td>{formatMoney(rangeReportTotals.finalSalary)}</td>
-                    </tr>
+                    <tr className="report-total-row"><td colSpan={3}><strong>TOTAL</strong></td><td><strong>{reportTotals.totalDays}</strong></td><td><strong>{reportTotals.presentDays}</strong></td><td><strong>{reportTotals.absentDays}</strong></td><td><strong>{formatMoney(reportTotals.grossSalary)}</strong></td><td><strong>{formatMoney(reportTotals.absentDeduction)}</strong></td><td><strong>{formatMoney(reportTotals.totalAdvance)}</strong></td><td><strong>{formatMoney(reportTotals.finalSalary)}</strong></td></tr>
                   </tbody>
                 </table>
               </div>
 
               <div className="report-actions">
-                <button type="button" className="button" onClick={printWholeEmployeeReport}>
-                  Print / Save as PDF
-                </button>
-                <button
-                  type="button"
-                  className="button whatsapp-button"
-                  onClick={shareAllEmployeesToWhatsApp}
-                  disabled={!selectedPartner}
-                >
-                  📱 Share Whole Report to Partner
-                </button>
+                <button type="button" className="button" onClick={printWholeEmployeeReport} disabled={allEmployeeSalaryLoading || !reportRows.length}>Print / Save as PDF</button>
+                <button type="button" className="button whatsapp-button" onClick={shareWholeReportToPartner} disabled={allEmployeeSalaryLoading || !reportRows.length || !partner}>📱 Share to Partner</button>
               </div>
-              <div className="whatsapp-note">
-                The WhatsApp report uses the selected partner and the selected date range.
-              </div>
-            </div>
-          ) : (
-            <div className="individual-bill-empty">
-              Select a valid date range to prepare the whole employee report.
             </div>
           )}
         </div>
+
+        {reportPeriodValid && reportRows.length > 0 && (
+          <div className="print-report">
+            <div style={{ textAlign: 'center', fontSize: '13px', fontWeight: 700, marginBottom: '8px' }}>Thalacauvery Borewell</div>
+            <h1 className="report-print-title">Employee Salary Report</h1>
+            <div className="report-print-period">Period: {getReportPeriodLabel()} • {currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}</div>
+            <div className="print-summary">
+              <div className="print-summary-box"><div className="print-summary-label">Employees</div><div className="print-summary-value">{reportRows.length}</div></div>
+              <div className="print-summary-box"><div className="print-summary-label">Present Days</div><div className="print-summary-value">{reportTotals.presentDays}</div></div>
+              <div className="print-summary-box"><div className="print-summary-label">Absent Days</div><div className="print-summary-value">{reportTotals.absentDays}</div></div>
+              <div className="print-summary-box"><div className="print-summary-label">Final Payable</div><div className="print-summary-value">{formatMoney(reportTotals.finalSalary)}</div></div>
+            </div>
+            <table><thead><tr><th>S.No</th><th>Employee</th><th>Joining Date</th><th>Working Days</th><th>Present</th><th>Absent</th><th>Gross Salary</th><th>Absent Deduction</th><th>Advance</th><th>Final Salary</th></tr></thead><tbody>
+              {reportRows.map((row,index)=>{const item=row.employee;const salary=row.reportSalary||{};return <tr key={item?._id||index}><td>{index+1}</td><td>{item?.name||'Unnamed Employee'}</td><td>{item?.date?formatDate(new Date(item.date)):'-'}</td><td>{salary.totalDays}</td><td>{salary.presentDays}</td><td>{salary.absentDays}</td><td>{formatMoney(salary.grossSalary)}</td><td>{formatMoney(salary.absentDeduction)}</td><td>{formatMoney(salary.totalAdvance)}</td><td>{formatMoney(salary.finalSalary)}</td></tr>})}
+              <tr className="print-total"><td colSpan={3}>TOTAL</td><td>{reportTotals.totalDays}</td><td>{reportTotals.presentDays}</td><td>{reportTotals.absentDays}</td><td>{formatMoney(reportTotals.grossSalary)}</td><td>{formatMoney(reportTotals.absentDeduction)}</td><td>{formatMoney(reportTotals.totalAdvance)}</td><td>{formatMoney(reportTotals.finalSalary)}</td></tr>
+            </tbody></table>
+          </div>
+        )}
 
         {!employee ? (
           <div className="card empty-state">
