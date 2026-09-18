@@ -106,15 +106,31 @@ const getDefaultValues = () => ({
 // MATERIAL TYPES
 // ============================================================
 
-const MATERIAL_TYPES = [
-  'Diesel',
-  'Pipe Outer',
-  'Pipe Inner',
-  'Pipe Small',
-  'Bit',
-  'Hammer',
-  'Others',
-];
+// Material dropdown list from the handwritten paper.
+// Big Machine: Diesel, Pipe Outer, Pipe J1, Bit, Petrol, Hammer, Others
+// Small Machine: Diesel, Pipe Outer, Pipe Inner, Pipe Small, Bit, Hammer, Others
+
+const MATERIAL_TYPES_BY_MACHINE = {
+  big: [
+    'Diesel',
+    'Pipe Outer',
+    'Pipe J1',
+    'Bit',
+    'Petrol',
+    'Hammer',
+    'Others',
+  ],
+
+  small: [
+    'Diesel',
+    'Pipe Outer',
+    'Pipe Inner',
+    'Pipe Small',
+    'Bit',
+    'Hammer',
+    'Others',
+  ],
+};
 
 
 // ============================================================
@@ -1070,7 +1086,7 @@ const Materials = () => {
                         size="small"
                       >
 
-                        {MATERIAL_TYPES.map(
+                        {(MATERIAL_TYPES_BY_MACHINE[currentMachine] || []).map(
                           (type) => (
 
                             <MenuItem
