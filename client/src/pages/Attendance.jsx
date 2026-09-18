@@ -650,11 +650,6 @@ export default function Attendance() {
   ] = useState('');
 
   const [
-    shareCard,
-    setShareCard,
-  ] = useState(null);
-
-  const [
     optimisticAbsent,
     setOptimisticAbsent,
   ] = useState({});
@@ -894,6 +889,7 @@ export default function Attendance() {
     const loadAllEmployeeSalary = async () => {
       if (!employees.length) {
         setAllEmployeeSalaryRows([]);
+        setAllEmployeeSalaryLoading(false);
         return;
       }
 
@@ -985,7 +981,6 @@ export default function Attendance() {
   }, [employees, currentMachine, reportStartDate, reportEndDate]);
 
   useEffect(() => {
-    setShareCard(null);
     setOptimisticAbsent({});
     setOptimisticRemoved({});
   }, [selectedEmployee]);
@@ -1457,23 +1452,6 @@ export default function Attendance() {
 
       setSuccess(skippedCount > 0 ? `${rangeMessage} ${skippedCount} existing day(s) skipped.` : rangeMessage);
 
-      const shareDateLabel = dateKeys.length === 1
-        ? formatDate(selectedDate)
-        : `${formatDate(startDate)} to ${formatDate(endDate)}`;
-
-      if (savedCount > 0) {
-        setShareCard({
-          label: shareDateLabel,
-          text: buildAbsenceShareText({
-            employeeName: employee?.name,
-            unitLabel: currentMachine === 'big' ? 'Big Machine' : 'Small Machine',
-            dateLabel: shareDateLabel,
-            reason: absentReason,
-          }),
-          phone: getEmployeePhone(employee),
-        });
-      }
-
       await loadAttendance();
 
       // Real data now includes these dates — safe to drop the overlay.
@@ -1784,7 +1762,7 @@ export default function Attendance() {
 
     shareOnWhatsApp(
       lines.join('\n'),
-      getEmployeePhone(employee)
+      phone
     );
 
     setSuccess(
@@ -1858,6 +1836,9 @@ export default function Attendance() {
     if (!reportPeriodValid) { setError('Please select a valid From Date and To Date.'); return; }
     if (!individualSalary) { setError('Salary details are not available.'); return; }
 
+    const phone = getEmployeePhone(employee);
+    if (!phone) { setError('Employee WhatsApp/mobile number is not available.'); return; }
+
     const lines = [
       '*EMPLOYEE SALARY BILL*', '',
       `Employee: ${employee?.name || '-'}`,
@@ -1873,13 +1854,15 @@ export default function Attendance() {
       `Salary Advance: ${formatMoney(individualSalary.totalAdvance)}`, '',
       `*FINAL SALARY: ${formatMoney(individualSalary.finalSalary)}*`,
     ];
-    shareOnWhatsApp(lines.join('\n'), getEmployeePhone(employee));
+    shareOnWhatsApp(lines.join('\n'), phone);
     setSuccess(`Salary bill opened in WhatsApp for ${employee?.name || 'employee'}.`);
   };
 
   const shareWholeReportToPartner = () => {
     if (!partner) { setError('Please select a partner first.'); return; }
     if (!reportPeriodValid) { setError('Please select a valid From Date and To Date.'); return; }
+    const phone = getEmployeePhone(partner);
+    if (!phone) { setError('Partner WhatsApp/mobile number is not available.'); return; }
     if (!reportRows.length) { setError('No employee salary data is available for this report.'); return; }
 
     const lines = [
@@ -1902,7 +1885,7 @@ export default function Attendance() {
       `Salary Advance: ${formatMoney(reportTotals.totalAdvance)}`,
       `*FINAL PAYABLE: ${formatMoney(reportTotals.finalSalary)}*`
     );
-    shareOnWhatsApp(lines.join('\n'), getEmployeePhone(partner));
+    shareOnWhatsApp(lines.join('\n'), phone);
     setSuccess(`Whole employee report opened in WhatsApp for ${partner?.name || 'partner'}.`);
   };
 
@@ -2446,46 +2429,6 @@ export default function Attendance() {
           background: #0f9d75;
         }
 
-        /* ---------------- Share card ---------------- */
-
-        .share-card {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 14px;
-          padding: 14px 18px;
-          margin-bottom: 20px;
-          background: #e8fbf1;
-          border-color: #a8e6cc;
-          flex-wrap: wrap;
-        }
-
-        .share-card-text {
-          font-size: 14px;
-          color: #0f3d2c;
-        }
-
-        .share-card-actions {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .whatsapp-button {
-          height: 38px;
-          padding: 0 16px;
-          border: 0;
-          border-radius: 9px;
-          background: #1fb15a;
-          color: white;
-          font-weight: 750;
-          font-size: 13px;
-          cursor: pointer;
-        }
-
-        .whatsapp-button:hover {
-          background: #189a4d;
-        }
 
         /* ---------------- Modals ---------------- */
 
@@ -3019,49 +2962,7 @@ export default function Attendance() {
           </div>
         )}
 
-        {/* Share via WhatsApp */}
-        {shareCard && (
-          <div className="card share-card">
-            <div className="share-card-text">
-              <strong>
-                {shareCard.label}
-              </strong>{' '}
-              is ready to share.
-            </div>
-
-            <div className="share-card-actions">
-              <button
-                type="button"
-                className="whatsapp-button"
-                onClick={() =>
-                  shareOnWhatsApp(
-                    shareCard.text,
-                    shareCard.phone
-                  )
-                }
-              >
-                Share via WhatsApp
-              </button>
-
-              <button
-                type="button"
-                className="close-button"
-                onClick={() =>
-                  setShareCard(null)
-                }
-                aria-label="Dismiss"
-              >
-                ×
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Employee section intentionally kept in code but disabled.
-            It can be re-enabled later by changing false to true. */}
-        {false && (
-          <>
-        {/* Employee section temporarily disabled */}
+        {/* Employee selection */}
         <div className="card employee-card">
 
           <label className="field-label">
@@ -3140,9 +3041,6 @@ export default function Attendance() {
             </div>
           )}
         </div>
-
-          </>
-        )}
 
         {/* ==========================================================
             INDIVIDUAL SALARY WHATSAPP BILL
