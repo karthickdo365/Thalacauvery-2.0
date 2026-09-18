@@ -810,7 +810,7 @@ const StatCard = ({
     elevation={0}
     sx={{
       height: '100%',
-      cursor: onClick ? 'pointer' : 'default',
+      cursor: 'pointer',
 
       border:
         '1px solid #dbe3ec',
@@ -2475,71 +2475,36 @@ const Dashboard = () => {
     0;
 
   /* =======================================================
-     MACHINE QUANTITY SUMMARY
-
-     Pipe conversion:
-     20 feet = 1 quantity
+     MACHINE SUMMARY
   ======================================================= */
 
-  const feetToQuantity = (feet) =>
-    safeNum(feet) / 20;
-
-  const getPipeQuantity = (field) =>
-    feetToQuantity(
-      pointRows.reduce(
-        (sum, point) =>
-          sum + safeNum(point?.[field]),
-        0
-      )
+  const sumPointField = (field) =>
+    pointRows.reduce(
+      (sum, point) =>
+        sum + safeNum(point?.[field]),
+      0
     );
-
-  const getMaterialQuantity = (type) =>
-    materialRows
-      .filter((material) =>
-        isMaterialType(material, type)
-      )
-      .reduce(
-        (sum, material) =>
-          sum + safeNum(material?.quantity),
-        0
-      );
-
-  const formatQuantity = (value) => {
-    const number = safeNum(value);
-
-    if (Number.isInteger(number)) {
-      return `${number} Qty`;
-    }
-
-    return `${Number(number.toFixed(2))} Qty`;
-  };
 
   const pipeCards = isBig
     ? [
         {
           key: 'bigOuter',
           title: 'Outer',
-          value: formatQuantity(
-            getPipeQuantity('plasticOuterFeet')
-          ),
+          value: `${sumPointField('plasticOuterFeet')} ft`,
           icon: <WaterDropIcon />,
           color: NAVY,
         },
         {
           key: 'bigInner',
           title: 'Inner',
-          value: formatQuantity(
-            getPipeQuantity('plasticInnerFeet')
-          ),
+          value: `${sumPointField('plasticInnerFeet')} ft`,
           icon: <WaterDropIcon />,
           color: TEAL,
         },
         {
           key: 'bigJI',
           title: 'JI',
-          value: formatQuantity(
-            getPipeQuantity('jiInnerFeet')
-          ),
+          value: `${sumPointField('jiInnerFeet')} ft`,
           icon: <WaterDropIcon />,
           color: '#0891b2',
         },
@@ -2548,52 +2513,25 @@ const Dashboard = () => {
         {
           key: 'smallOuter',
           title: 'Outer',
-          value: formatQuantity(
-            getPipeQuantity('outerPipeFeet')
-          ),
+          value: `${sumPointField('outerPipeFeet')} ft`,
           icon: <WaterDropIcon />,
           color: NAVY,
         },
         {
           key: 'smallInner',
           title: 'Inner',
-          value: formatQuantity(
-            getPipeQuantity('innerPipeFeet')
-          ),
+          value: `${sumPointField('innerPipeFeet')} ft`,
           icon: <WaterDropIcon />,
           color: TEAL,
         },
         {
-          key: 'smallInnerPipe',
+          key: 'smallInner',
           title: 'Small Inner',
-          value: formatQuantity(
-            getPipeQuantity('smallPipeFeet')
-          ),
+          value: `${sumPointField('smallPipeFeet')} ft`,
           icon: <WaterDropIcon />,
           color: '#0891b2',
         },
       ];
-
-  const bitQuantity = getMaterialQuantity('bit');
-  const hammerQuantity = getMaterialQuantity('hammer');
-
-  const quantityCards = [
-    ...pipeCards,
-    {
-      key: 'bitQuantity',
-      title: 'Bit',
-      value: formatQuantity(bitQuantity),
-      icon: <ConstructionIcon />,
-      color: '#0891b2',
-    },
-    {
-      key: 'hammerQuantity',
-      title: 'Hammer',
-      value: formatQuantity(hammerQuantity),
-      icon: <BuildIcon />,
-      color: '#92400e',
-    },
-  ];
 
   /* =======================================================
      CHART DATA
@@ -2870,7 +2808,7 @@ const Dashboard = () => {
         'Hammer',
 
       value:
-        formatQuantity(hammerQuantity),
+        fmt(hammer),
 
       icon:
         <BuildIcon />,
@@ -3024,7 +2962,7 @@ const Dashboard = () => {
         </Grid>
 
         {/* =================================================
-            MACHINE QUANTITY SUMMARY
+            MACHINE PIPE SUMMARY
         ================================================= */}
 
         <Grid
@@ -3034,12 +2972,12 @@ const Dashboard = () => {
             mb: 1.5,
           }}
         >
-          {quantityCards.map((card) => (
+          {pipeCards.map((card) => (
             <Grid
               item
               xs={12}
               sm={6}
-              md={2.4}
+              md={3}
               key={card.key}
             >
               <StatCard
@@ -3050,23 +2988,12 @@ const Dashboard = () => {
               />
             </Grid>
           ))}
-        </Grid>
 
-        {/* =================================================
-            PAYMENT SUMMARY
-        ================================================= */}
-
-        <Grid
-          container
-          spacing={1.25}
-          sx={{
-            mb: 1.5,
-          }}
-        >
           <Grid
             item
             xs={12}
-            md={4}
+            sm={6}
+            md={3}
           >
             <Card
               elevation={0}
@@ -3102,32 +3029,81 @@ const Dashboard = () => {
                   }}
                 >
                   <Box>
-                    <Typography sx={{ color: '#64748b', fontSize: '0.6rem' }}>
+                    <Typography
+                      sx={{
+                        color: '#64748b',
+                        fontSize: '0.6rem',
+                      }}
+                    >
                       Total Sale
                     </Typography>
-                    <Typography sx={{ fontWeight: 800, fontSize: '0.78rem' }}>
-                      {fmt(pointRows.reduce((sum, point) => sum + safeNum(point?.totalAmount), 0))}
+                    <Typography
+                      sx={{
+                        fontWeight: 800,
+                        fontSize: '0.78rem',
+                      }}
+                    >
+                      {fmt(
+                        pointRows.reduce(
+                          (sum, point) =>
+                            sum + safeNum(point?.totalAmount),
+                          0
+                        )
+                      )}
                     </Typography>
                   </Box>
 
                   <Box>
-                    <Typography sx={{ color: '#64748b', fontSize: '0.6rem' }}>
+                    <Typography
+                      sx={{
+                        color: '#64748b',
+                        fontSize: '0.6rem',
+                      }}
+                    >
                       Advance
                     </Typography>
-                    <Typography sx={{ color: '#0f766e', fontWeight: 800, fontSize: '0.78rem' }}>
-                      {fmt(pointRows.reduce((sum, point) =>
-                        point?.paymentStatus === 'Partial'
-                          ? sum + safeNum(point?.paidAmount)
-                          : sum, 0))}
+                    <Typography
+                      sx={{
+                        color: '#0f766e',
+                        fontWeight: 800,
+                        fontSize: '0.78rem',
+                      }}
+                    >
+                      {fmt(
+                        pointRows.reduce(
+                          (sum, point) =>
+                            point?.paymentStatus === 'Partial'
+                              ? sum + safeNum(point?.paidAmount)
+                              : sum,
+                          0
+                        )
+                      )}
                     </Typography>
                   </Box>
 
                   <Box>
-                    <Typography sx={{ color: '#64748b', fontSize: '0.6rem' }}>
+                    <Typography
+                      sx={{
+                        color: '#64748b',
+                        fontSize: '0.6rem',
+                      }}
+                    >
                       Pending
                     </Typography>
-                    <Typography sx={{ color: '#b91c1c', fontWeight: 800, fontSize: '0.78rem' }}>
-                      {fmt(pointRows.reduce((sum, point) => sum + getPendingAmount(point), 0))}
+                    <Typography
+                      sx={{
+                        color: '#b91c1c',
+                        fontWeight: 800,
+                        fontSize: '0.78rem',
+                      }}
+                    >
+                      {fmt(
+                        pointRows.reduce(
+                          (sum, point) =>
+                            sum + getPendingAmount(point),
+                          0
+                        )
+                      )}
                     </Typography>
                   </Box>
                 </Box>
