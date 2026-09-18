@@ -1410,6 +1410,9 @@ export default function Attendance() {
       await apiRequest(`/users/${employee._id}`, {
         method: 'PUT',
         body: JSON.stringify({
+          // The users API uses machine separation on updates.
+          // Send the current machine together with the end date.
+          machineType: currentMachine,
           endDate: employeeEndDate || null,
         }),
       });
@@ -2359,21 +2362,25 @@ export default function Attendance() {
         }
         .advance-button:hover { background: #1f4463; }
         .advance-section { margin-top: 22px; }
-        .advance-title-row { display: flex; justify-content: space-between; align-items: baseline; }
-        .advance-count { color: #75899b; font-size: 12px; font-weight: 600; }
-        .advance-list { margin-top: 10px; }
-        .advance-item { display: flex; justify-content: space-between; align-items: center; gap: 15px; padding: 12px 0; border-bottom: 1px solid #eef2f6; font-size: 14px; }
+        .advance-title-row { display: flex; justify-content: space-between; align-items: center; min-height: 32px; }
+        .advance-count { min-width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: #f1f5f9; color: #64748b; font-size: 12px; font-weight: 800; }
+        .advance-list { margin-top: 8px; }
+        .advance-item { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; column-gap: 18px; min-height: 68px; padding: 10px 0; border-bottom: 1px solid #eef2f6; font-size: 14px; }
         .advance-item:last-child { border-bottom: 0; }
-        .advance-date { color: #75889a; font-size: 12px; margin-top: 2px; }
-        .advance-item-right { display: flex; align-items: center; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
-        .advance-amount { color: #b96a0f; font-weight: 800; white-space: nowrap; }
-        .advance-actions { display: flex; align-items: center; gap: 6px; }
-        .advance-edit-button, .advance-delete-button { border: 0; background: transparent; cursor: pointer; font-size: 12px; font-weight: 700; padding: 5px 7px; border-radius: 6px; }
+        .advance-item-main { min-width: 0; }
+        .advance-note { color: #243b53; font-size: 14px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .advance-date { color: #8798a8; font-size: 12px; margin-top: 4px; line-height: 1.2; }
+        .advance-item-right { display: contents; }
+        .advance-amount { color: #b96a0f; font-weight: 850; white-space: nowrap; text-align: right; min-width: 108px; }
+        .advance-actions { display: flex; align-items: center; justify-content: center; gap: 7px; min-width: 76px; }
+        .advance-action-button { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #e2e8f0; background: #fff; cursor: pointer; border-radius: 8px; padding: 0; transition: background .15s ease, border-color .15s ease, transform .15s ease; }
+        .advance-action-button:hover:not(:disabled) { transform: translateY(-1px); }
+        .advance-action-button svg { width: 16px; height: 16px; }
         .advance-edit-button { color: #2563eb; }
-        .advance-edit-button:hover:not(:disabled) { background: #eff6ff; }
+        .advance-edit-button:hover:not(:disabled) { background: #eff6ff; border-color: #bfdbfe; }
         .advance-delete-button { color: #dc2626; }
-        .advance-delete-button:hover:not(:disabled) { background: #fef2f2; }
-        .advance-edit-button:disabled, .advance-delete-button:disabled { opacity: .5; cursor: not-allowed; }
+        .advance-delete-button:hover:not(:disabled) { background: #fef2f2; border-color: #fecaca; }
+        .advance-action-button:disabled { opacity: .5; cursor: not-allowed; }
         .delete-advance-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 14px; }
         .delete-advance-label { color: #64748b; font-size: 11px; font-weight: 800; letter-spacing: .05em; margin-bottom: 5px; }
         .delete-advance-amount { color: #b91c1c; font-size: 25px; font-weight: 900; }
@@ -2789,12 +2796,23 @@ export default function Attendance() {
             grid-template-columns: 1fr;
           }
           .advance-item {
-            align-items: flex-start;
+            grid-template-columns: minmax(0, 1fr) auto;
+            row-gap: 7px;
+            min-height: 64px;
           }
           .advance-item-right {
-            flex-direction: column;
-            align-items: flex-end;
-            gap: 5px;
+            display: contents;
+          }
+          .advance-amount {
+            grid-column: 2;
+            grid-row: 1;
+            min-width: auto;
+          }
+          .advance-actions {
+            grid-column: 2;
+            grid-row: 2;
+            justify-content: flex-end;
+            min-width: auto;
           }
 
           .alert {
@@ -3317,30 +3335,50 @@ export default function Attendance() {
                       <div className="empty-advance">No salary advances recorded.</div>
                     ) : advances.map((item) => (
                       <div className="advance-item" key={item._id || `${item.date}-${item.advanceAmount}`}>
-                        <div>
-                          <div>{item.notes || item.paymentMode || 'Salary Advance'}</div>
+                        <div className="advance-item-main">
+                          <div className="advance-note">
+                            {item.notes || item.paymentMode || 'Salary Advance'}
+                          </div>
                           <div className="advance-date">
                             {formatAdvanceDate(item)}
                           </div>
                         </div>
+
                         <div className="advance-item-right">
-                          <div className="advance-amount">- {formatMoney(item.advanceAmount)}</div>
+                          <div className="advance-amount">
+                            - {formatMoney(item.advanceAmount)}
+                          </div>
+
                           <div className="advance-actions">
                             <button
                               type="button"
-                              className="advance-edit-button"
+                              className="advance-action-button advance-edit-button"
                               onClick={() => openEditAdvance(item)}
                               disabled={savingAdvance || deletingAdvance}
+                              title="Edit salary advance"
+                              aria-label="Edit salary advance"
                             >
-                              Edit
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <path d="M12 20h9" />
+                                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                              </svg>
                             </button>
+
                             <button
                               type="button"
-                              className="advance-delete-button"
+                              className="advance-action-button advance-delete-button"
                               onClick={() => setDeleteAdvanceDialog(item)}
                               disabled={savingAdvance || deletingAdvance}
+                              title="Delete salary advance"
+                              aria-label="Delete salary advance"
                             >
-                              Delete
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <path d="M3 6h18" />
+                                <path d="M8 6V4h8v2" />
+                                <path d="M19 6l-1 14H6L5 6" />
+                                <path d="M10 11v5" />
+                                <path d="M14 11v5" />
+                              </svg>
                             </button>
                           </div>
                         </div>
