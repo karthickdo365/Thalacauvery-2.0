@@ -1709,66 +1709,6 @@ export default function Attendance() {
     }
   };
 
-  const shareIndividualSalaryOnWhatsApp = () => {
-    if (!employee) {
-      setError('Please select an employee first.');
-      return;
-    }
-
-    if (!reportStartDate || !reportEndDate) {
-      setError('Please select both From Date and To Date.');
-      return;
-    }
-
-    if (reportEndDate < reportStartDate) {
-      setError('To Date cannot be before From Date.');
-      return;
-    }
-
-    if (!individualSalary) {
-      setError('Salary details are not available.');
-      return;
-    }
-
-    const startLabel = formatDate(parseDateKey(reportStartDate));
-    const endLabel = formatDate(parseDateKey(reportEndDate));
-    const periodLabel =
-      reportStartDate === reportEndDate
-        ? startLabel
-        : `${startLabel} to ${endLabel}`;
-
-    const lines = [
-      '*Salary Bill*',
-      '',
-      `Employee: ${employee?.name || '-'}`,
-      `Machine: ${currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}`,
-      `Period: ${periodLabel}`,
-      '',
-      `Joining Date: ${
-        employee?.date
-          ? formatDate(new Date(employee.date))
-          : '-'
-      }`,
-      `Monthly Salary: ${formatMoney(Number(employee?.salary) || 0)}`,
-      `Working Days: ${individualSalary.totalDays || 0}`,
-      `Present Days: ${individualSalary.presentDays || 0}`,
-      `Absent Days: ${individualSalary.absentDays || 0}`,
-      `Gross Salary: ${formatMoney(individualSalary.grossSalary)}`,
-      `Absent Deduction: ${formatMoney(individualSalary.absentDeduction)}`,
-      `Salary Advance: ${formatMoney(individualSalary.totalAdvance)}`,
-      '',
-      `*Final Salary: ${formatMoney(individualSalary.finalSalary)}*`,
-    ];
-
-    shareOnWhatsApp(
-      lines.join('\n'),
-      phone
-    );
-
-    setSuccess(
-      `Salary bill opened in WhatsApp for ${employee?.name || 'employee'}.`
-    );
-  };
 
   /*
    |--------------------------------------------------------------------------
