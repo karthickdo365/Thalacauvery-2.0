@@ -1737,27 +1737,83 @@ export default function Attendance() {
         ? startLabel
         : `${startLabel} to ${endLabel}`;
 
+    const absentDates = Array.from(
+      new Set(
+        (attendanceRecords || [])
+          .filter((record) => normalizeStatus(record?.status) === 'absent')
+          .map((record) => {
+            const rawDate =
+              record?.date ||
+              record?.attendanceDate ||
+              record?.absenceDate;
+            return rawDate ? toDateKey(rawDate) : '';
+          })
+          .filter((key) =>
+            key &&
+            key >= reportStartDate &&
+            key <= reportEndDate
+          )
+      )
+    ).sort();
+
+    const rangeAdvances = (advances || []).filter((item) => {
+      const rawDate = getAdvanceDateValue(item);
+      const key = rawDate
+        ? toDateKey(new Date(rawDate))
+        : item?.month
+          ? `${item.month}-01`
+          : '';
+      return key && key >= reportStartDate && key <= reportEndDate;
+    });
+
     const lines = [
-      '*Salary Bill*',
-      '',
+      '*SALARY BILL*',
+      '━━━━━━━━━━━━━━━━━━━━',
       `Employee: ${employee?.name || '-'}`,
+      `Employee Type: ${employee?.type || employee?.userType || 'Employee'}`,
       `Machine: ${currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}`,
       `Period: ${periodLabel}`,
       '',
+      '*EMPLOYEE DETAILS*',
       `Joining Date: ${
         employee?.date
           ? formatDate(new Date(employee.date))
           : '-'
       }`,
       `Monthly Salary: ${formatMoney(Number(employee?.salary) || 0)}`,
+      '',
+      '*ATTENDANCE SUMMARY*',
       `Working Days: ${individualSalary.totalDays || 0}`,
       `Present Days: ${individualSalary.presentDays || 0}`,
       `Absent Days: ${individualSalary.absentDays || 0}`,
+      ...(absentDates.length
+        ? [
+            `Absent Dates: ${absentDates
+              .map((key) => formatDateShort(parseDateKey(key)))
+              .join(', ')}`,
+          ]
+        : []),
+      '',
+      '*SALARY CALCULATION*',
       `Gross Salary: ${formatMoney(individualSalary.grossSalary)}`,
       `Absent Deduction: ${formatMoney(individualSalary.absentDeduction)}`,
       `Salary Advance: ${formatMoney(individualSalary.totalAdvance)}`,
       '',
-      `*Final Salary: ${formatMoney(individualSalary.finalSalary)}*`,
+      '*ADVANCE DETAILS*',
+      ...(rangeAdvances.length
+        ? rangeAdvances.map(
+            (item) =>
+              `• ${formatAdvanceDate(item)}: ${formatMoney(Number(item?.advanceAmount) || 0)}${
+                item?.paymentMode ? ` (${item.paymentMode})` : ''
+              }${item?.notes ? ` - ${item.notes}` : ''}`
+          )
+        : ['No salary advance in this period.']),
+      '',
+      '━━━━━━━━━━━━━━━━━━━━',
+      `*FINAL SALARY: ${formatMoney(individualSalary.finalSalary)}*`,
+      '━━━━━━━━━━━━━━━━━━━━',
+      '',
+      'This salary bill was generated from the attendance and salary records for the selected period.',
     ];
 
     shareOnWhatsApp(
@@ -3215,12 +3271,12 @@ export default function Attendance() {
                   className="button whatsapp-button"
                   onClick={shareIndividualSalaryOnWhatsApp}
                 >
-                  WhatsApp
+                  📱 Share Full Report on WhatsApp
                 </button>
               </div>
 
               <div className="whatsapp-note">
-                The bill is shared as a WhatsApp message. The employee's saved phone number is used when available.
+                The complete salary report is shared as a WhatsApp message, including attendance, absent dates, salary calculation and advance details. The employee's saved phone number is used when available.
               </div>
             </div>
           )}
