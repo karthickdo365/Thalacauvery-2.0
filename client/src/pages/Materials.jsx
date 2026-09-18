@@ -106,31 +106,25 @@ const getDefaultValues = () => ({
 // MATERIAL TYPES
 // ============================================================
 
-// Material dropdown list from the handwritten paper.
-// Big Machine: Diesel, Pipe Outer, Pipe J1, Bit, Petrol, Hammer, Others
-// Small Machine: Diesel, Pipe Outer, Pipe Inner, Pipe Small, Bit, Hammer, Others
+const BIG_MATERIAL_TYPES = [
+  'Diesel',
+  'Pipe Outer',
+  'Pipe J1',
+  'Bit',
+  'Petrol',
+  'Hammer',
+  'Others',
+];
 
-const MATERIAL_TYPES_BY_MACHINE = {
-  big: [
-    'Diesel',
-    'Pipe Outer',
-    'Pipe J1',
-    'Bit',
-    'Petrol',
-    'Hammer',
-    'Others',
-  ],
-
-  small: [
-    'Diesel',
-    'Pipe Outer',
-    'Pipe Inner',
-    'Pipe Small',
-    'Bit',
-    'Hammer',
-    'Others',
-  ],
-};
+const SMALL_MATERIAL_TYPES = [
+  'Diesel',
+  'Pipe Outer',
+  'Pipe Inner',
+  'Pipe Small',
+  'Bit',
+  'Hammer',
+  'Others',
+];
 
 
 // ============================================================
@@ -157,6 +151,11 @@ const Materials = () => {
     currentMachine === 'big'
       ? 'Big Machine'
       : 'Small Machine';
+
+  const materialTypes =
+    currentMachine === 'big'
+      ? BIG_MATERIAL_TYPES
+      : SMALL_MATERIAL_TYPES;
 
 
   // ==========================================================
@@ -390,6 +389,35 @@ const Materials = () => {
     currentMachine,
     reset,
   ]);
+
+
+  // ==========================================================
+  // CLEAN UP PREVIEW URL ON UNMOUNT
+  // ==========================================================
+
+  useEffect(() => {
+
+    return () => {
+
+      if (
+        billPreview.url
+      ) {
+
+        try {
+
+          URL.revokeObjectURL(
+            billPreview.url
+          );
+
+        } catch {
+          // Ignore cleanup errors.
+        }
+
+      }
+
+    };
+
+  }, [billPreview.url]);
 
 
   // ==========================================================
@@ -649,6 +677,16 @@ const Materials = () => {
   // ==========================================================
   // VIEW BILL
   // ==========================================================
+  //
+  // IMPORTANT:
+  // The project's api.js response interceptor returns
+  // response.data directly. Therefore api.get(..., {
+  // responseType: 'blob'
+  // }) returns the Blob itself, NOT the Axios response object.
+  //
+  // The old code tried to use response.data again, which produced
+  // an empty/invalid Blob and caused the preview to fail.
+  // ==========================================================
 
   const handleViewBill =
     async (material) => {
@@ -663,8 +701,11 @@ const Materials = () => {
       }
 
       const filename =
-        material.billFile
+        String(
+          material.billFile
+        )
           .split('/')
+          .filter(Boolean)
           .pop();
 
       if (!filename) {
@@ -676,14 +717,28 @@ const Materials = () => {
         return;
       }
 
-      // Open the popup immediately inside the page.
-      // No window.open(), no new tab, no browser popup blocker.
+      // Revoke any previous preview URL before creating another one.
+      if (billPreview.url) {
+
+        try {
+
+          URL.revokeObjectURL(
+            billPreview.url
+          );
+
+        } catch {
+          // Ignore cleanup errors.
+        }
+
+      }
+
       setBillPreview({
         open: true,
         url: '',
         type: '',
         name: filename,
         loading: true,
+        error: '',
       });
 
       try {
@@ -696,29 +751,136 @@ const Materials = () => {
             }
           );
 
-        const contentType =
-          response.headers?.[
-            'content-type'
-          ] ||
-          'application/octet-stream';
+        // ------------------------------------------------------
+        // api.js returns response.data directly.
+        // In this request, response is therefore already a Blob.
+        // ------------------------------------------------------
 
-        const blob =
-          new Blob(
-            [response.data],
-            {
-              type: contentType,
-            }
-          );
+        let blob;
+
+        if (
+          response instanceof Blob
+        ) {
+
+          blob = response;
+
+        }
+        else if (
+          response?.data instanceof Blob
+        ) {
+
+          // Defensive support if the Axios interceptor changes later.
+          blob = response.data;
+
+        }
+        else {
+
+          // Defensive support for ArrayBuffer-like responses.
+          blob =
+            new Blob(
+              [response],
+              {
+                type:
+                  response?.type ||
+                  'application/octet-stream',
+              }
+            );
+
+        }
+
+        // ------------------------------------------------------
+        // CONTENT TYPE
+        // ------------------------------------------------------
+
+        let contentType =
+          blob.type ||
+          '';
+
+        // Some servers/proxies can return an empty Blob MIME type.
+        // Fall back to the filename extension.
+        if (
+          !contentType ||
+          contentType ===
+            'application/octet-stream'
+        ) {
+
+          const lowerName =
+            filename.toLowerCase();
+
+          if (
+            lowerName.endsWith('.pdf')
+          ) {
+
+            contentType =
+              'application/pdf';
+
+          }
+          else if (
+            lowerName.endsWith('.jpg') ||
+            lowerName.endsWith('.jpeg')
+          ) {
+
+            contentType =
+              'image/jpeg';
+
+          }
+          else if (
+            lowerName.endsWith('.png')
+          ) {
+
+            contentType =
+              'image/png';
+
+          }
+          else if (
+            lowerName.endsWith('.gif')
+          ) {
+
+            contentType =
+              'image/gif';
+
+          }
+          else if (
+            lowerName.endsWith('.webp')
+          ) {
+
+            contentType =
+              'image/webp';
+
+          }
+
+        }
+
+        // Re-wrap the Blob with the correct MIME type if necessary.
+        if (
+          contentType &&
+          blob.type !== contentType
+        ) {
+
+          blob =
+            new Blob(
+              [blob],
+              {
+                type: contentType,
+              }
+            );
+
+        }
 
         const blobUrl =
-          URL.createObjectURL(blob);
+          URL.createObjectURL(
+            blob
+          );
 
         setBillPreview({
           open: true,
           url: blobUrl,
-          type: contentType,
+          type:
+            contentType ||
+            'application/octet-stream',
           name: filename,
           loading: false,
+          error: '',
         });
 
       } catch (error) {
@@ -731,14 +893,16 @@ const Materials = () => {
         let message =
           'The bill file could not be loaded.';
 
+        // api.js converts Axios errors into:
+        // { message, status, data }
         if (
-          error.response?.data instanceof Blob
+          error?.data instanceof Blob
         ) {
 
           try {
 
             const text =
-              await error.response.data.text();
+              await error.data.text();
 
             if (text) {
 
@@ -753,28 +917,28 @@ const Materials = () => {
 
               } catch {
 
-                if (text.length < 300) {
+                if (
+                  text.length < 300
+                ) {
+
                   message = text;
+
                 }
 
               }
 
             }
 
-          } catch (parseError) {
-
-            console.error(
-              'Could not parse bill error:',
-              parseError
-            );
-
+          } catch {
+            // Keep default message.
           }
 
-        } else {
+        }
+        else {
 
           message =
-            error.response?.data?.message ||
-            error.message ||
+            error?.message ||
+            error?.response?.data?.message ||
             message;
 
         }
@@ -791,7 +955,9 @@ const Materials = () => {
         toast.error(
           message
         );
+
       }
+
     };
 
 
@@ -806,9 +972,16 @@ const Materials = () => {
         billPreview.url
       ) {
 
-        URL.revokeObjectURL(
-          billPreview.url
-        );
+        try {
+
+          URL.revokeObjectURL(
+            billPreview.url
+          );
+
+        } catch {
+          // Ignore cleanup errors.
+        }
+
       }
 
       setBillPreview({
@@ -817,7 +990,9 @@ const Materials = () => {
         type: '',
         name: '',
         loading: false,
+        error: '',
       });
+
     };
 
 
@@ -1086,7 +1261,7 @@ const Materials = () => {
                         size="small"
                       >
 
-                        {(MATERIAL_TYPES_BY_MACHINE[currentMachine] || []).map(
+                        {materialTypes.map(
                           (type) => (
 
                             <MenuItem
@@ -1932,6 +2107,9 @@ const Materials = () => {
             }}
           >
             Bill Preview
+            {billPreview.name
+              ? ` - ${billPreview.name}`
+              : ''}
           </Typography>
 
           <IconButton
@@ -2067,7 +2245,10 @@ const Materials = () => {
 
           {!billPreview.loading &&
             billPreview.url &&
-            billPreview.type === 'application/pdf' && (
+            (
+              billPreview.type === 'application/pdf' ||
+              billPreview.type === 'application/pdf;charset=utf-8'
+            ) && (
 
             <Box
               component="iframe"
@@ -2088,7 +2269,8 @@ const Materials = () => {
           {!billPreview.loading &&
             billPreview.url &&
             !billPreview.type.startsWith('image/') &&
-            billPreview.type !== 'application/pdf' && (
+            billPreview.type !== 'application/pdf' &&
+            billPreview.type !== 'application/pdf;charset=utf-8' && (
 
             <Box
               sx={{
