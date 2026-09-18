@@ -21,10 +21,6 @@ import {
   IconButton,
   TablePagination,
   InputAdornment,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
   Chip,
   Tooltip,
   Popover,
@@ -2122,368 +2118,300 @@ const BorewellBills = () => {
             component={Paper}
             variant="outlined"
             sx={{
-              borderRadius:
-                '10px',
+              borderRadius: '10px',
+              overflowX: 'auto',
             }}
           >
-
             <Table
               size="small"
+              sx={{
+                minWidth: isBig ? 1250 : 1150,
+              }}
             >
-
               <TableHead>
-
                 <TableRow>
-
                   {[
                     'S.No',
                     'Date',
                     'Broker',
+                    ...(isBig
+                      ? [
+                          'Plastic Outer',
+                          'Plastic Inner',
+                          'JI Inner',
+                        ]
+                      : [
+                          'Outer Pipe',
+                          'Inner Pipe',
+                          'Small Inner Pipe',
+                        ]),
                     'Depth',
                     'Type',
                     'Total (₹)',
                     'Status',
                     'Actions',
-                  ].map(
-                    (header) => (
-
-                      <TableCell
-                        key={
-                          header
-                        }
-                      >
-                        {header}
-                      </TableCell>
-
-                    )
-                  )}
-
+                  ].map((header) => (
+                    <TableCell
+                      key={header}
+                      sx={{
+                        whiteSpace: 'nowrap',
+                        fontWeight: 700,
+                      }}
+                    >
+                      {header}
+                    </TableCell>
+                  ))}
                 </TableRow>
-
               </TableHead>
 
-
               <TableBody>
-
-                {/* EMPTY */}
-
-                {points.length ===
-                  0 && (
-
+                {points.length === 0 && (
                   <TableRow>
-
                     <TableCell
-                      colSpan={8}
+                      colSpan={12}
                       align="center"
                       sx={{
-                        color:
-                          'text.secondary',
-
+                        color: 'text.secondary',
                         py: 3,
                       }}
                     >
+                      No {machineLabel.toLowerCase()} entries found.
+                    </TableCell>
+                  </TableRow>
+                )}
 
-                      No {machineLabel.toLowerCase()}
-                      entries found.
-
+                {points.map((point, index) => (
+                  <TableRow
+                    key={point._id}
+                    hover
+                  >
+                    {/* S.NO */}
+                    <TableCell
+                      sx={{
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {page * rowsPerPage + index + 1}
                     </TableCell>
 
-                  </TableRow>
-
-                )}
-
-
-                {/* ROWS */}
-
-                {points.map(
-                  (point, index) => (
-
-                    <TableRow
-                      key={
-                        point._id
-                      }
-                      hover
+                    {/* DATE */}
+                    <TableCell
+                      sx={{
+                        fontSize: '0.82rem',
+                        whiteSpace: 'nowrap',
+                      }}
                     >
+                      {dayjs(point.date).format('DD/MM/YYYY')}
+                    </TableCell>
 
-                      {/* S.NO */}
+                    {/* BROKER */}
+                    <TableCell
+                      sx={{
+                        fontSize: '0.82rem',
+                        fontWeight: 500,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {point.brokerId?.name ||
+                        point.brokerName ||
+                        point.broker?.name ||
+                        '—'}
+                    </TableCell>
 
-                      <TableCell
-                        sx={{
-                          fontSize:
-                            '0.82rem',
-                          fontWeight: 600,
-                          width: 70,
-                        }}
-                      >
-                        {page * rowsPerPage + index + 1}
-                      </TableCell>
-
-                      {/* DATE */}
-
-                      <TableCell
-                        sx={{
-                          fontSize:
-                            '0.82rem',
-                        }}
-                      >
-
-                        {dayjs(
-                          point.date
-                        ).format(
-                          'DD/MM/YYYY'
-                        )}
-
-                      </TableCell>
-
-
-
-                      {/* BROKER */}
-
-                      <TableCell
-                        sx={{
-                          fontSize:
-                            '0.82rem',
-
-                          fontWeight:
-                            500,
-                        }}
-                      >
-
-                        {
-                          point
-                            .brokerId
-                            ?.name ||
-                          '—'
-                        }
-
-                      </TableCell>
-
-
-
-                      {/* DEPTH */}
-
-                      <TableCell
-                        sx={{
-                          fontSize:
-                            '0.82rem',
-                        }}
-                      >
-
-                        {
-                          point.depthFeet ||
-                          '—'
-                        }
-
-                      </TableCell>
-
-
-                      {/* TYPE */}
-
-                      <TableCell
-                        sx={{
-                          fontSize:
-                            '0.82rem',
-                        }}
-                      >
-
-                        {
-                          point.serviceType ||
-                          '—'
-                        }
-
-                      </TableCell>
-
-
-                      {/* TOTAL */}
-
-                      <TableCell
-                        sx={{
-                          fontSize:
-                            '0.82rem',
-
-                          fontWeight:
-                            600,
-
-                          color:
-                            TEAL_DARK,
-                        }}
-                      >
-
-                        {fmtINR(
-                          point.totalAmount
-                        )}
-
-                      </TableCell>
-
-
-                      {/* STATUS */}
-
-                      <TableCell>
-
-                        {canWrite &&
-                        [
-                          'Unpaid',
-                          'Partial',
-                        ].includes(
-                          point.paymentStatus
-                        ) ? (
-
-                          <Tooltip
-                            title="Click to update payment"
-                            placement="top"
-                            arrow
-                          >
-
-                            <Chip
-                              label={
-                                point.paymentStatus
-                              }
-                              size="small"
-                              onClick={(e) => {
-
-                                setPayAnchor({
-                                  el:
-                                    e.currentTarget,
-
-                                  pointId:
-                                    point._id,
-
-                                  totalAmount:
-                                    point.totalAmount,
-                                });
-
-
-                                setPopoverMode(
-                                  'choose'
-                                );
-
-
-                                setPopoverPartialAmt(
-                                  point.paymentStatus ===
-                                    'Partial'
-                                    ? String(
-                                        point.paidAmount ||
-                                          ''
-                                      )
-                                    : ''
-                                );
-
-                              }}
-                              sx={{
-                                ...statusColor(
-                                  point.paymentStatus
-                                ),
-
-                                fontSize:
-                                  '0.72rem',
-
-                                height:
-                                  22,
-
-                                cursor:
-                                  'pointer',
-                              }}
-                            />
-
-                          </Tooltip>
-
-                        ) : (
-
-                          <Chip
-                            label={
-                              point.paymentStatus ||
-                              'Unpaid'
-                            }
-                            size="small"
-                            sx={{
-                              ...statusColor(
-                                point.paymentStatus
-                              ),
-
-                              fontSize:
-                                '0.72rem',
-
-                              height:
-                                22,
-                            }}
-                          />
-
-                        )}
-
-                      </TableCell>
-
-
-                      {/* ACTIONS */}
-
-                      <TableCell>
-
-                        <Box
+                    {/* MACHINE-SPECIFIC PIPE COLUMNS */}
+                    {isBig ? (
+                      <>
+                        <TableCell
                           sx={{
-                            display:
-                              'flex',
-
-                            gap:
-                              0.5,
+                            fontSize: '0.82rem',
+                            whiteSpace: 'nowrap',
                           }}
                         >
+                          {toNum(point.plasticOuterFeet) > 0
+                            ? `${point.plasticOuterFeet} ft`
+                            : '—'}
+                        </TableCell>
 
-                          {canWrite && (
+                        <TableCell
+                          sx={{
+                            fontSize: '0.82rem',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {toNum(point.plasticInnerFeet) > 0
+                            ? `${point.plasticInnerFeet} ft`
+                            : '—'}
+                        </TableCell>
 
-                            <>
+                        <TableCell
+                          sx={{
+                            fontSize: '0.82rem',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {toNum(point.jiInnerFeet) > 0
+                            ? `${point.jiInnerFeet} ft`
+                            : '—'}
+                        </TableCell>
+                      </>
+                    ) : (
+                      <>
+                        <TableCell
+                          sx={{
+                            fontSize: '0.82rem',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {toNum(point.outerPipeFeet) > 0
+                            ? `${point.outerPipeFeet} ft`
+                            : '—'}
+                        </TableCell>
 
-                              <IconButton
-                                size="small"
-                                color="primary"
-                                onClick={() =>
-                                  handleEdit(
-                                    point
-                                  )
-                                }
-                              >
+                        <TableCell
+                          sx={{
+                            fontSize: '0.82rem',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {toNum(point.innerPipeFeet) > 0
+                            ? `${point.innerPipeFeet} ft`
+                            : '—'}
+                        </TableCell>
 
-                                <EditIcon
-                                  fontSize="small"
-                                />
+                        <TableCell
+                          sx={{
+                            fontSize: '0.82rem',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {toNum(point.smallPipeFeet) > 0
+                            ? `${point.smallPipeFeet} ft`
+                            : '—'}
+                        </TableCell>
+                      </>
+                    )}
 
-                              </IconButton>
+                    {/* DEPTH */}
+                    <TableCell
+                      sx={{
+                        fontSize: '0.82rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {toNum(point.depthFeet) > 0
+                        ? `${point.depthFeet} ft`
+                        : '—'}
+                    </TableCell>
 
+                    {/* TYPE */}
+                    <TableCell
+                      sx={{
+                        fontSize: '0.82rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {point.serviceType || '—'}
+                    </TableCell>
 
-                              <IconButton
-                                size="small"
-                                color="error"
-                                onClick={() =>
-                                  setDeleteDialog(
-                                    point._id
-                                  )
-                                }
-                              >
+                    {/* TOTAL */}
+                    <TableCell
+                      sx={{
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                        color: TEAL_DARK,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {fmtINR(point.totalAmount)}
+                    </TableCell>
 
-                                <DeleteIcon
-                                  fontSize="small"
-                                />
+                    {/* STATUS */}
+                    <TableCell>
+                      {canWrite &&
+                      ['Unpaid', 'Partial'].includes(
+                        point.paymentStatus
+                      ) ? (
+                        <Tooltip
+                          title="Click to update payment"
+                          placement="top"
+                          arrow
+                        >
+                          <Chip
+                            label={point.paymentStatus}
+                            size="small"
+                            onClick={(e) => {
+                              setPayAnchor({
+                                el: e.currentTarget,
+                                pointId: point._id,
+                                totalAmount: point.totalAmount,
+                              });
 
-                              </IconButton>
+                              setPopoverMode('choose');
 
-                            </>
+                              setPopoverPartialAmt(
+                                point.paymentStatus === 'Partial'
+                                  ? String(point.paidAmount || '')
+                                  : ''
+                              );
+                            }}
+                            sx={{
+                              ...statusColor(point.paymentStatus),
+                              fontSize: '0.72rem',
+                              height: 22,
+                              cursor: 'pointer',
+                            }}
+                          />
+                        </Tooltip>
+                      ) : (
+                        <Chip
+                          label={point.paymentStatus || 'Unpaid'}
+                          size="small"
+                          sx={{
+                            ...statusColor(point.paymentStatus),
+                            fontSize: '0.72rem',
+                            height: 22,
+                          }}
+                        />
+                      )}
+                    </TableCell>
 
-                          )}
+                    {/* ACTIONS */}
+                    <TableCell>
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          gap: 0.5,
+                        }}
+                      >
+                        {canWrite && (
+                          <>
+                            <IconButton
+                              size="small"
+                              color="primary"
+                              onClick={() => handleEdit(point)}
+                            >
+                              <EditIcon fontSize="small" />
+                            </IconButton>
 
-
-                          
-
-                        </Box>
-
-                      </TableCell>
-
-                    </TableRow>
-
-                  )
-                )}
-
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() =>
+                                setDeleteDialog(point._id)
+                              }
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </>
+                        )}
+                      </Box>
+                    </TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
-
             </Table>
-
           </TableContainer>
 
 
