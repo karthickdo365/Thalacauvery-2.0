@@ -106,10 +106,23 @@ const getDefaultValues = () => ({
 // MATERIAL TYPES
 // ============================================================
 
-const MATERIAL_TYPES = [
+// Material dropdown for each machine.
+
+const BIG_MATERIAL_TYPES = [
   'Diesel',
+  'Pipe Outer',
+  'Pipe JI',
+  'Bit',
   'Petrol',
-  'Pipe',
+  'Hammer',
+  'Others',
+];
+
+const SMALL_MATERIAL_TYPES = [
+  'Diesel',
+  'Pipe Outer',
+  'Pipe Inner',
+  'Pipe Small',
   'Bit',
   'Hammer',
   'Others',
@@ -140,6 +153,11 @@ const Materials = () => {
     currentMachine === 'big'
       ? 'Big Machine'
       : 'Small Machine';
+
+  const materialTypes =
+    currentMachine === 'big'
+      ? BIG_MATERIAL_TYPES
+      : SMALL_MATERIAL_TYPES;
 
 
   // ==========================================================
@@ -361,9 +379,10 @@ const Materials = () => {
 
   useEffect(() => {
 
-    reset(
-      getDefaultValues()
-    );
+    reset({
+      ...getDefaultValues(),
+      type: 'Diesel',
+    });
 
     setEditId(null);
     setBillFile(null);
@@ -1069,7 +1088,7 @@ const Materials = () => {
                         size="small"
                       >
 
-                        {MATERIAL_TYPES.map(
+                        {materialTypes.map(
                           (type) => (
 
                             <MenuItem
