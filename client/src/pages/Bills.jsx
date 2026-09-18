@@ -251,6 +251,29 @@ const computeBreakdown = (
 // FORM DEFAULTS
 // ============================================================
 
+const getDisplayPipeLabel = (label, machineType) => {
+  if (!label) return '';
+
+  if (machineType === 'small') {
+    return String(label)
+      .replace(/\s*Pipe\s*/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  if (machineType === 'big') {
+    const cleaned = String(label)
+      .replace(/\bPlastic\b/gi, '')
+      .replace(/\bInner\b/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    return cleaned || 'Pipe';
+  }
+
+  return label;
+};
+
 const getDefaultValues = (
   machineType
 ) => ({
@@ -1621,7 +1644,7 @@ const BorewellBills = () => {
                         fullWidth
                         size="small"
                         type="number"
-                        label={`${label} (Feet)`}
+                        label={`${getDisplayPipeLabel(label, currentMachine)} (Feet)`}
                         InputLabelProps={{
                           shrink: true,
                         }}
@@ -2136,14 +2159,14 @@ const BorewellBills = () => {
                     'Broker',
                     ...(isBig
                       ? [
-                          'Plastic Outer',
-                          'Plastic Inner',
-                          'JI Inner',
+                          'Outer',
+                          'Pipe',
+                          'JI',
                         ]
                       : [
-                          'Outer Pipe',
-                          'Inner Pipe',
-                          'Small Inner Pipe',
+                          'Outer',
+                          'Inner',
+                          'Small Inner',
                         ]),
                     'Depth',
                     'Type',
