@@ -1744,6 +1744,66 @@ export default function Attendance() {
     Boolean(reportEndDate) &&
     reportEndDate >= reportStartDate;
 
+  /*
+   |--------------------------------------------------------------------------
+   | Whole-employee report rows / totals for the selected date range
+   |--------------------------------------------------------------------------
+   | BUGFIX: these were referenced (in shareWholeEmployeeReportToPartner
+   | and in the "Whole Employee Report" card JSX) but never defined
+   | anywhere, which threw "reportRows is not defined" / "reportTotals is
+   | not defined" and crashed the whole page on render. They're derived
+   | here from allEmployeeSalaryRows, recalculated for reportStartDate ->
+   | reportEndDate using the existing calculateEmployeeRangeSalary helper.
+   */
+  const reportRows = useMemo(() => {
+    if (!reportPeriodValid) return [];
+
+    return allEmployeeSalaryRows.map((row) => ({
+      ...row,
+      reportSalary: calculateEmployeeRangeSalary(
+        row.employee,
+        row.attendance,
+        row.advances,
+        reportStartDate,
+        reportEndDate
+      ),
+    }));
+  }, [
+    allEmployeeSalaryRows,
+    reportStartDate,
+    reportEndDate,
+    reportPeriodValid,
+  ]);
+
+  const reportTotals = useMemo(() => {
+    return reportRows.reduce(
+      (acc, row) => {
+        const salary = row.reportSalary || {};
+
+        acc.employees += 1;
+        acc.totalDays += salary.totalDays || 0;
+        acc.presentDays += salary.presentDays || 0;
+        acc.absentDays += salary.absentDays || 0;
+        acc.grossSalary += salary.grossSalary || 0;
+        acc.absentDeduction += salary.absentDeduction || 0;
+        acc.totalAdvance += salary.totalAdvance || 0;
+        acc.finalSalary += salary.finalSalary || 0;
+
+        return acc;
+      },
+      {
+        employees: 0,
+        totalDays: 0,
+        presentDays: 0,
+        absentDays: 0,
+        grossSalary: 0,
+        absentDeduction: 0,
+        totalAdvance: 0,
+        finalSalary: 0,
+      }
+    );
+  }, [reportRows]);
+
   const setQuickReportRange = (type) => {
     const now = new Date();
     const today = toDateKey(now);
