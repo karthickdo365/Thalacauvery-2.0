@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useMachine } from '../context/MachineContext';
-import { useForm, Controller } from 'react-hook-form' ;
+import { useForm, Controller } from 'react-hook-form';
 
 import {
   Box,
@@ -189,6 +189,7 @@ const Materials = () => {
       type: '',
       name: '',
       loading: false,
+      error: '',
     });
 
 
@@ -1066,6 +1067,29 @@ const Materials = () => {
 
 
   // ==========================================================
+  // TABLE PAGINATION HANDLERS
+  // ==========================================================
+
+  const handleChangePage =
+    (_event, newPage) => {
+
+      setPage(newPage);
+
+    };
+
+  const handleChangeRowsPerPage =
+    (event) => {
+
+      setRowsPerPage(
+        parseInt(event.target.value, 10)
+      );
+
+      setPage(0);
+
+    };
+
+
+  // ==========================================================
   // UI
   // ==========================================================
 
@@ -1506,7 +1530,410 @@ const Materials = () => {
       ====================================================== */}
 
       <Card>
-                      }}
+
+        <CardContent>
+
+          {/* ==================================================
+              TOOLBAR: SEARCH + DATE FILTERS + EXPORT
+          ================================================== */}
+
+          <Grid
+            container
+            spacing={2}
+            alignItems="center"
+            sx={{
+              mb: 2,
+            }}
+          >
+
+            <Grid
+              item
+              xs={12}
+              sm={6}
+              md={4}
+            >
+
+              <TextField
+                fullWidth
+                size="small"
+                placeholder="Search materials..."
+                value={search}
+                onChange={(e) => {
+
+                  setSearch(
+                    e.target.value
+                  );
+
+                  setPage(0);
+
+                }}
+                InputProps={{
+                  startAdornment: (
+
+                    <InputAdornment
+                      position="start"
+                    >
+                      <SearchIcon
+                        fontSize="small"
+                      />
+                    </InputAdornment>
+
+                  ),
+                }}
+              />
+
+            </Grid>
+
+
+            <Grid
+              item
+              xs={12}
+              sm={6}
+              md={3}
+            >
+
+              <DatePicker
+                label="Start Date"
+                value={startDate}
+                onChange={(value) => {
+
+                  setStartDate(value);
+                  setPage(0);
+
+                }}
+                slotProps={{
+                  textField: {
+                    fullWidth: true,
+                    size: 'small',
+                  },
+                }}
+              />
+
+            </Grid>
+
+
+            <Grid
+              item
+              xs={12}
+              sm={6}
+              md={3}
+            >
+
+              <DatePicker
+                label="End Date"
+                value={endDate}
+                onChange={(value) => {
+
+                  setEndDate(value);
+                  setPage(0);
+
+                }}
+                slotProps={{
+                  textField: {
+                    fullWidth: true,
+                    size: 'small',
+                  },
+                }}
+              />
+
+            </Grid>
+
+
+            <Grid
+              item
+              xs={12}
+              sm={6}
+              md={2}
+              sx={{
+                display: 'flex',
+                justifyContent: {
+                  xs: 'flex-start',
+                  md: 'flex-end',
+                },
+              }}
+            >
+
+              <ExportButton
+                data={materials}
+                columns={exportColumns}
+                filename={`materials-${currentMachine}`}
+              />
+
+            </Grid>
+
+          </Grid>
+
+
+          {/* ==================================================
+              TABLE
+          ================================================== */}
+
+          <TableContainer
+            component={Paper}
+            variant="outlined"
+          >
+
+            <Table size="small">
+
+              <TableHead>
+
+                <TableRow>
+
+                  <TableCell>Date</TableCell>
+                  <TableCell>Type</TableCell>
+                  <TableCell>Description</TableCell>
+                  <TableCell align="right">Quantity</TableCell>
+                  <TableCell align="right">Cost/L</TableCell>
+                  <TableCell align="right">Total</TableCell>
+                  <TableCell align="center">Bill</TableCell>
+                  {canWrite && (
+                    <TableCell align="center">Actions</TableCell>
+                  )}
+
+                </TableRow>
+
+              </TableHead>
+
+
+              <TableBody>
+
+                {materials.length === 0 && (
+
+                  <TableRow>
+
+                    <TableCell
+                      colSpan={
+                        canWrite ? 8 : 7
+                      }
+                      align="center"
+                    >
+
+                      <Typography
+                        color="text.secondary"
+                        sx={{
+                          py: 3,
+                        }}
+                      >
+                        No materials found
+                      </Typography>
+
+                    </TableCell>
+
+                  </TableRow>
+
+                )}
+
+
+                {materials.map(
+                  (material) => (
+
+                    <TableRow
+                      key={material._id}
+                      hover
+                    >
+
+                      <TableCell>
+                        {dayjs(material.date).format('DD/MM/YYYY')}
+                      </TableCell>
+
+                      <TableCell>
+                        <Chip
+                          label={material.type}
+                          size="small"
+                        />
+                      </TableCell>
+
+                      <TableCell>
+                        {material.description || '-'}
+                      </TableCell>
+
+                      <TableCell align="right">
+                        {material.type === 'Others'
+                          ? '-'
+                          : material.quantity ?? '-'}
+                      </TableCell>
+
+                      <TableCell align="right">
+                        {material.type === 'Others'
+                          ? '-'
+                          : fmtINR(material.costPerLiter)}
+                      </TableCell>
+
+                      <TableCell align="right">
+                        {fmtINR(
+                          material.type === 'Others'
+                            ? material.amount
+                            : material.totalPrice
+                        )}
+                      </TableCell>
+
+                      <TableCell align="center">
+
+                        {material.billFile ? (
+
+                          <IconButton
+                            size="small"
+                            color="secondary"
+                            onClick={() =>
+                              handleViewBill(material)
+                            }
+                          >
+                            <VisibilityIcon fontSize="small" />
+                          </IconButton>
+
+                        ) : (
+
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                          >
+                            -
+                          </Typography>
+
+                        )}
+
+                      </TableCell>
+
+
+                      {canWrite && (
+
+                        <TableCell align="center">
+
+                          <IconButton
+                            size="small"
+                            onClick={() =>
+                              handleEdit(material)
+                            }
+                          >
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+
+                          <IconButton
+                            size="small"
+                            color="error"
+                            onClick={() =>
+                              setDeleteDialog(material._id)
+                            }
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+
+                        </TableCell>
+
+                      )}
+
+                    </TableRow>
+
+                  )
+                )}
+
+              </TableBody>
+
+            </Table>
+
+          </TableContainer>
+
+
+          {/* ==================================================
+              PAGINATION
+          ================================================== */}
+
+          <TablePagination
+            component="div"
+            count={total}
+            page={page}
+            onPageChange={handleChangePage}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={handleChangeRowsPerPage}
+            rowsPerPageOptions={[5, 10, 25, 50]}
+          />
+
+        </CardContent>
+
+      </Card>
+
+
+      {/* ======================================================
+          BILL PREVIEW DIALOG
+      ====================================================== */}
+
+      <Dialog
+        open={billPreview.open}
+        onClose={handleCloseBill}
+        maxWidth="md"
+        fullWidth
+      >
+
+        <DialogTitle
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+
+          <Typography
+            variant="subtitle1"
+            noWrap
+            sx={{
+              mr: 2,
+            }}
+          >
+            {billPreview.name || 'Bill Preview'}
+          </Typography>
+
+          <IconButton
+            size="small"
+            onClick={handleCloseBill}
+          >
+            <CloseIcon fontSize="small" />
+          </IconButton>
+
+        </DialogTitle>
+
+
+        <DialogContent
+          dividers
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minHeight: '40vh',
+          }}
+        >
+
+          {billPreview.loading && (
+
+            <Box
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 1,
+              }}
+            >
+
+              <Typography color="text.secondary">
+                Loading bill...
+              </Typography>
+
+            </Box>
+
+          )}
+
+
+          {!billPreview.loading &&
+            billPreview.type === 'error' && (
+
+            <Box
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 1,
+                textAlign: 'center',
+                px: 2,
+              }}
             >
 
               <Typography
