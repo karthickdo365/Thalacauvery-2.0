@@ -106,23 +106,10 @@ const getDefaultValues = () => ({
 // MATERIAL TYPES
 // ============================================================
 
-// Material dropdown for each machine.
-
-const BIG_MATERIAL_TYPES = [
+const MATERIAL_TYPES = [
   'Diesel',
-  'Pipe Outer',
-  'Pipe JI',
-  'Bit',
   'Petrol',
-  'Hammer',
-  'Others',
-];
-
-const SMALL_MATERIAL_TYPES = [
-  'Diesel',
-  'Pipe Outer',
-  'Pipe Inner',
-  'Pipe Small',
+  'Pipe',
   'Bit',
   'Hammer',
   'Others',
@@ -153,11 +140,6 @@ const Materials = () => {
     currentMachine === 'big'
       ? 'Big Machine'
       : 'Small Machine';
-
-  const materialTypes =
-    currentMachine === 'big'
-      ? BIG_MATERIAL_TYPES
-      : SMALL_MATERIAL_TYPES;
 
 
   // ==========================================================
@@ -379,10 +361,9 @@ const Materials = () => {
 
   useEffect(() => {
 
-    reset({
-      ...getDefaultValues(),
-      type: 'Diesel',
-    });
+    reset(
+      getDefaultValues()
+    );
 
     setEditId(null);
     setBillFile(null);
@@ -1088,7 +1069,7 @@ const Materials = () => {
                         size="small"
                       >
 
-                        {materialTypes.map(
+                        {MATERIAL_TYPES.map(
                           (type) => (
 
                             <MenuItem
@@ -1596,9 +1577,6 @@ const Materials = () => {
 
             <Table
               size="small"
-              sx={{
-                minWidth: 760,
-              }}
             >
 
               <TableHead>
@@ -1606,15 +1584,15 @@ const Materials = () => {
                 <TableRow>
 
                   {[
-                    'S.No',
                     'Date',
                     'Type',
+                    'Description',
                     'Quantity',
-                    'Cost',
-                    'Total',
+                    'Cost/L',
+                    'Total / Amount',
                     'Bill',
                     ...(canWrite
-                      ? ['Action']
+                      ? ['Actions']
                       : []),
                   ].map(
                     (header) => (
@@ -1680,17 +1658,6 @@ const Materials = () => {
                       hover
                     >
 
-                      {/* S.NO */}
-
-                      <TableCell>
-
-                        {page * rowsPerPage +
-                          materials.indexOf(material) +
-                          1}
-
-                      </TableCell>
-
-
                       {/* DATE */}
 
                       <TableCell>
@@ -1713,6 +1680,21 @@ const Materials = () => {
                       </TableCell>
 
 
+                      {/* DESCRIPTION */}
+
+                      <TableCell>
+
+                        {material.type ===
+                        'Others'
+                          ? (
+                            material.description ||
+                            '—'
+                          )
+                          : '—'}
+
+                      </TableCell>
+
+
                       {/* QUANTITY */}
 
                       <TableCell>
@@ -1725,7 +1707,7 @@ const Materials = () => {
                       </TableCell>
 
 
-                      {/* COST */}
+                      {/* RATE */}
 
                       <TableCell>
 
