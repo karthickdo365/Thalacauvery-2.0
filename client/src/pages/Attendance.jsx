@@ -185,6 +185,20 @@ const monthKey = (date) => {
   )}`;
 };
 
+const getEmployeeEndDateKey = (employee) => {
+  if (!employee) return '';
+
+  const raw =
+    employee.endDate ||
+    employee.terminationDate ||
+    employee.lastWorkingDate ||
+    employee.exitDate ||
+    employee.terminatedOn ||
+    '';
+
+  return raw ? toDateKey(new Date(raw)) : '';
+};
+
 const formatDate = (date) => {
   if (!date) return '';
 
@@ -269,117 +283,6 @@ const formatAdvanceDate = (item) => {
 |--------------------------------------------------------------------------
 */
 
-const calculateEmployeeListSalary = (
-  employee,
-  attendanceRecords = [],
-  advances = []
-) => {
-  const today = new Date();
-  const todayOnly = new Date(
-    today.getFullYear(),
-    today.getMonth(),
-    today.getDate()
-  );
-
-  const joiningDate = employee?.date
-    ? new Date(employee.date)
-    : todayOnly;
-
-  const start =
-    joiningDate > todayOnly
-      ? todayOnly
-      : new Date(
-          joiningDate.getFullYear(),
-          joiningDate.getMonth(),
-          joiningDate.getDate()
-        );
-
-  const millisecondsPerDay =
-    24 * 60 * 60 * 1000;
-
-  const totalDays = Math.max(
-    Math.floor(
-      (todayOnly - start) /
-        millisecondsPerDay
-    ) + 1,
-    0
-  );
-
-  const absentKeys = new Set();
-
-  for (const record of attendanceRecords) {
-    if (
-      normalizeStatus(record?.status) !==
-      'absent'
-    ) {
-      continue;
-    }
-
-    const rawDate =
-      record?.date ||
-      record?.attendanceDate ||
-      record?.absenceDate;
-
-    if (!rawDate) continue;
-
-    const key = toDateKey(rawDate);
-    if (!key) continue;
-
-    const date = parseDateKey(key);
-    if (
-      date &&
-      date >= start &&
-      date <= todayOnly
-    ) {
-      absentKeys.add(key);
-    }
-  }
-
-  const absentDays = absentKeys.size;
-  const presentDays = Math.max(
-    totalDays - absentDays,
-    0
-  );
-
-  const monthlySalary =
-    Number(employee?.salary) || 0;
-
-  const dailySalary =
-    monthlySalary / 30;
-
-  const grossSalary =
-    dailySalary * totalDays;
-
-  const absentDeduction =
-    dailySalary * absentDays;
-
-  const totalAdvance = advances.reduce(
-    (sum, item) =>
-      sum +
-      (Number(item?.advanceAmount) || 0),
-    0
-  );
-
-  const salaryBeforeAdvance = Math.max(
-    grossSalary - absentDeduction,
-    0
-  );
-
-  const finalSalary =
-    salaryBeforeAdvance - totalAdvance;
-
-  return {
-    totalDays,
-    presentDays,
-    absentDays,
-    grossSalary,
-    absentDeduction,
-    totalAdvance,
-    finalSalary,
-  };
-};
-
-
 /*
 |--------------------------------------------------------------------------
 | Date-range salary report helper
@@ -401,8 +304,13 @@ const calculateEmployeeRangeSalary = (
   }
 
   const joiningKey = employee?.date ? toDateKey(new Date(employee.date)) : requestedStart;
+  const employeeEndKey = getEmployeeEndDateKey(employee);
   const effectiveStart = joiningKey && joiningKey > requestedStart ? joiningKey : requestedStart;
-  const effectiveEnd = requestedEnd > todayKey ? todayKey : requestedEnd;
+
+  let effectiveEnd = requestedEnd > todayKey ? todayKey : requestedEnd;
+  if (employeeEndKey && employeeEndKey < effectiveEnd) {
+    effectiveEnd = employeeEndKey;
+  }
 
   if (effectiveEnd < effectiveStart) {
     return { totalDays: 0, presentDays: 0, absentDays: 0, grossSalary: 0, absentDeduction: 0, totalAdvance: 0, finalSalary: 0 };
@@ -587,8 +495,8 @@ export default function Attendance() {
     setSelectedEmployee,
   ] = useState('');
 
-  const [partners, setPartners] = useState([]);
-  const [selectedPartner, setSelectedPartner] = useState('');
+  const [employeeEndDate, setEmployeeEndDate] = useState('');
+  const [savingEmployeeEndDate, setSavingEmployeeEndDate] = useState(false);
 
   /*
    * Current calendar month
@@ -635,7 +543,7 @@ export default function Attendance() {
   });
   const [reportEndDate, setReportEndDate] = useState(() => toDateKey(new Date()));
 
-  // Employee salary data used to build the whole-employee partner report.
+  // Employee salary data used to build the whole-employee report.
   const [allEmployeeSalaryRows, setAllEmployeeSalaryRows] = useState([]);
   const [allEmployeeSalaryLoading, setAllEmployeeSalaryLoading] = useState(false);
 
@@ -765,22 +673,7 @@ export default function Attendance() {
         return type !== 'broker' && type !== 'partner';
       });
 
-      const partnerList = allUsers.filter((item) => {
-        const type = String(
-          item?.type ||
-          item?.userType ||
-          item?.role ||
-          ''
-        ).trim().toLowerCase();
-        return type === 'partner';
-      });
-
       setEmployees(list);
-      setPartners(partnerList);
-
-      if (selectedPartner && !partnerList.some((item) => String(item?._id) === String(selectedPartner))) {
-        setSelectedPartner('');
-      }
 
       /*
        * Keep currently selected employee
@@ -985,6 +878,10 @@ export default function Attendance() {
     setOptimisticRemoved({});
   }, [selectedEmployee]);
 
+  useEffect(() => {
+    setEmployeeEndDate(getEmployeeEndDateKey(employee));
+  }, [employee]);
+
   /*
    |--------------------------------------------------------------------------
    | Build absent date map
@@ -1076,160 +973,116 @@ export default function Attendance() {
         absentDeduction: 0,
         advance: 0,
         finalSalary: 0,
+        endDate: '',
       };
     }
 
-    const joiningDate =
-      employee.date
-        ? new Date(employee.date)
-        : new Date();
+    const todayKey = toDateKey(new Date());
+    const joiningKey = employee.date
+      ? toDateKey(new Date(employee.date))
+      : todayKey;
 
-    const today =
-      new Date();
+    const employeeEndKey = getEmployeeEndDateKey(employee);
 
-    /*
-     * If joining date is future,
-     * don't calculate negative days.
-     */
-    const start =
-      joiningDate > today
-        ? today
-        : joiningDate;
+    let endKey = todayKey;
+    if (employeeEndKey && employeeEndKey < endKey) {
+      endKey = employeeEndKey;
+    }
 
-    /*
-     * Total calendar days from
-     * joining date through today.
-     */
-    const millisecondsPerDay =
-      24 *
-      60 *
-      60 *
-      1000;
+    const startKey =
+      joiningKey && joiningKey > todayKey
+        ? todayKey
+        : joiningKey || todayKey;
 
-    const totalDays =
-      Math.floor(
-        (
-          new Date(
-            today.getFullYear(),
-            today.getMonth(),
-            today.getDate()
-          ) -
-          new Date(
-            start.getFullYear(),
-            start.getMonth(),
-            start.getDate()
-          )
-        ) /
-          millisecondsPerDay
-      ) + 1;
+    if (endKey < startKey) {
+      return {
+        monthsWorked: 0,
+        totalDays: 0,
+        presentDays: 0,
+        absentDays: 0,
+        grossSalary: 0,
+        absentDeduction: 0,
+        advance: 0,
+        finalSalary: 0,
+        endDate: employeeEndKey || '',
+      };
+    }
 
-    const safeTotalDays =
-      Math.max(totalDays, 0);
+    const rangeDates = getDateRange(startKey, endKey);
+    const rangeSet = new Set(rangeDates);
 
-    /*
-     * Months worked.
-     */
-    const monthsWorked =
-      Math.max(
-        1,
-        (
-          (
-            today.getFullYear() -
-            start.getFullYear()
-          ) *
-            12
-        ) +
-          (
-            today.getMonth() -
-            start.getMonth()
-          ) +
-          1
-      );
+    const absentDates = Object.keys(absentMap).filter((key) =>
+      rangeSet.has(key)
+    );
 
-    /*
-     * Count all unique absent dates
-     * between joining date and today.
-     */
-    const absentDates =
-      Object.keys(absentMap)
-        .filter((key) => {
-          const date =
-            parseDateKey(key);
+    const totalDays = rangeDates.length;
+    const absentDays = absentDates.length;
+    const presentDays = Math.max(totalDays - absentDays, 0);
 
-          return (
-            date >=
-              new Date(
-                start.getFullYear(),
-                start.getMonth(),
-                start.getDate()
-              ) &&
-            date <= today
-          );
-        });
-
-    const absentDays =
-      absentDates.length;
-
-    const presentDays =
-      Math.max(
-        safeTotalDays -
-          absentDays,
-        0
-      );
-
-    const monthlySalary =
-      Number(
-        employee.salary
-      ) || 0;
-
-    /*
-     * Daily salary uses 30 days.
-     *
-     * Change 30 to 26 if your business
-     * specifically pays based on 26 working
-     * days.
-     */
-    const dailySalary =
-      monthlySalary / 30;
-
-    const grossSalary =
-      dailySalary *
-      safeTotalDays;
-
-    const absentDeduction =
-      dailySalary *
-      absentDays;
+    const monthlySalary = Number(employee.salary) || 0;
+    const dailySalary = monthlySalary / 30;
+    const grossSalary = dailySalary * totalDays;
+    const absentDeduction = dailySalary * absentDays;
 
     const totalAdvance = advances.reduce(
-      (sum, item) => sum + (Number(item?.advanceAmount) || 0),
+      (sum, item) => {
+        const rawDate = getAdvanceDateValue(item);
+        const advanceKey = rawDate
+          ? toDateKey(new Date(rawDate))
+          : item?.month
+            ? `${item.month}-01`
+            : '';
+
+        if (
+          advanceKey &&
+          advanceKey >= startKey &&
+          advanceKey <= endKey
+        ) {
+          return sum + (Number(item?.advanceAmount) || 0);
+        }
+
+        return sum;
+      },
       0
     );
 
-    const salaryBeforeAdvance =
-      Math.max(
-        grossSalary - absentDeduction,
-        0
-      );
+    const salaryBeforeAdvance = Math.max(
+      grossSalary - absentDeduction,
+      0
+    );
 
     const finalSalary =
       salaryBeforeAdvance - totalAdvance;
 
+    const startDate = parseDateKey(startKey);
+    const endDate = parseDateKey(endKey);
+
+    const monthsWorked = Math.max(
+      1,
+      (
+        (endDate.getFullYear() - startDate.getFullYear()) * 12
+      ) +
+        (endDate.getMonth() - startDate.getMonth()) +
+        1
+    );
+
     return {
       monthsWorked,
-      totalDays:
-        safeTotalDays,
+      totalDays,
       presentDays,
       absentDays,
       grossSalary,
       absentDeduction,
       advance: totalAdvance,
       finalSalary,
+      endDate: employeeEndKey || '',
     };
   }, [
     employee,
     absentMap,
     advances,
   ]);
+
 
   /*
    |--------------------------------------------------------------------------
@@ -1528,6 +1381,66 @@ export default function Attendance() {
 
 
 
+  const saveEmployeeEndDate = async () => {
+    if (!employee?._id) {
+      setError('Please select an employee.');
+      return;
+    }
+
+    const joiningKey = employee.date
+      ? toDateKey(new Date(employee.date))
+      : '';
+
+    if (employeeEndDate && joiningKey && employeeEndDate < joiningKey) {
+      setError('End date cannot be before the employee joining date.');
+      return;
+    }
+
+    const todayKey = toDateKey(new Date());
+
+    if (employeeEndDate && employeeEndDate > todayKey) {
+      setError('End date cannot be in the future.');
+      return;
+    }
+
+    try {
+      setSavingEmployeeEndDate(true);
+      setError('');
+
+      await apiRequest(`/users/${employee._id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          endDate: employeeEndDate || null,
+        }),
+      });
+
+      setEmployees((current) =>
+        current.map((item) =>
+          String(item?._id) === String(employee._id)
+            ? {
+                ...item,
+                endDate: employeeEndDate || null,
+              }
+            : item
+        )
+      );
+
+      setSuccess(
+        employeeEndDate
+          ? `End date saved for ${employee.name}. Employee is treated as terminated from ${formatDate(parseDateKey(employeeEndDate))}.`
+          : `End date removed for ${employee.name}.`
+      );
+    } catch (err) {
+      console.error('Employee end date save error:', err);
+      setError(
+        err?.message ||
+          'Unable to save employee end date. Make sure the Users update API accepts endDate.'
+      );
+    } finally {
+      setSavingEmployeeEndDate(false);
+    }
+  };
+
   const openAddAdvance = () => {
     setEditingAdvance(null);
     setAdvanceAmount('');
@@ -1712,12 +1625,9 @@ export default function Attendance() {
 
   /*
    |--------------------------------------------------------------------------
-   | Whole employee report for partner
+   | Whole employee report
    |--------------------------------------------------------------------------
    */
-  const partner = useMemo(() => {
-    return partners.find((item) => String(item?._id) === String(selectedPartner));
-  }, [partners, selectedPartner]);
 
   const reportRows = useMemo(() => {
     return allEmployeeSalaryRows.map((row) => ({
@@ -1752,51 +1662,6 @@ export default function Attendance() {
     const start = formatDate(parseDateKey(reportStartDate));
     const end = formatDate(parseDateKey(reportEndDate));
     return reportStartDate === reportEndDate ? start : `${start} to ${end}`;
-  };
-
-  const buildEmployeeSalaryLines = (row, index) => {
-    const item = row?.employee;
-    const salary = row?.reportSalary || {};
-    const prefix = typeof index === 'number' ? `${index + 1}. ` : '';
-    return [
-      `${prefix}${item?.name || 'Unnamed Employee'}`,
-      `   Joining Date: ${item?.date ? formatDate(new Date(item.date)) : '-'}`,
-      `   Monthly Salary: ${formatMoney(Number(item?.salary) || 0)}`,
-      `   Working Days: ${salary.totalDays || 0}`,
-      `   Present Days: ${salary.presentDays || 0}`,
-      `   Absent Days: ${salary.absentDays || 0}`,
-      `   Gross Salary: ${formatMoney(salary.grossSalary)}`,
-      `   Absent Deduction: ${formatMoney(salary.absentDeduction)}`,
-      `   Salary Advance: ${formatMoney(salary.totalAdvance)}`,
-      `   Final Salary: ${formatMoney(salary.finalSalary)}`,
-    ];
-  };
-
-  const shareIndividualSalaryOnWhatsApp = () => {
-    if (!employee) { setError('Please select an employee first.'); return; }
-    if (!reportPeriodValid) { setError('Please select a valid From Date and To Date.'); return; }
-    if (!individualSalary) { setError('Salary details are not available.'); return; }
-
-    const phone = getEmployeePhone(employee);
-    if (!phone) { setError('Employee WhatsApp/mobile number is not available.'); return; }
-
-    const lines = [
-      '*EMPLOYEE SALARY BILL*', '',
-      `Employee: ${employee?.name || '-'}`,
-      `Machine: ${currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}`,
-      `Period: ${getReportPeriodLabel()}`,
-      `Joining Date: ${employee?.date ? formatDate(new Date(employee.date)) : '-'}`, '',
-      `Monthly Salary: ${formatMoney(Number(employee?.salary) || 0)}`,
-      `Working Days: ${individualSalary.totalDays || 0}`,
-      `Present Days: ${individualSalary.presentDays || 0}`,
-      `Absent Days: ${individualSalary.absentDays || 0}`,
-      `Gross Salary: ${formatMoney(individualSalary.grossSalary)}`,
-      `Absent Deduction: ${formatMoney(individualSalary.absentDeduction)}`,
-      `Salary Advance: ${formatMoney(individualSalary.totalAdvance)}`, '',
-      `*FINAL SALARY: ${formatMoney(individualSalary.finalSalary)}*`,
-    ];
-    shareOnWhatsApp(lines.join('\n'), phone);
-    setSuccess(`Salary bill opened in WhatsApp for ${employee?.name || 'employee'}.`);
   };
 
   const printWholeEmployeeReport = () => {
@@ -2750,7 +2615,6 @@ export default function Attendance() {
         .partner-report-title-row { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; padding-bottom:16px; border-bottom:1px solid #e8eef2; }
         .partner-report-title-row h3 { margin:0; font-size:24px; font-weight:850; color:#17324d; }
         .partner-report-title-row div { margin-top:5px; color:#718397; font-size:13px; }
-        .partner-badge { margin-top:0 !important; padding:7px 11px; border-radius:999px; background:#eef8f5; color:#087d73 !important; font-size:11px !important; font-weight:800; white-space:nowrap; }
         .report-summary-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:16px; }
         .report-summary-box { padding:13px 14px; border:1px solid #dce4ea; background:#fff; }
         .report-summary-label { color:#718397; font-size:11px; font-weight:700; }
@@ -2788,6 +2652,113 @@ export default function Attendance() {
           color:#17324d;
           font-size:15px;
           font-weight:700;
+        }
+
+
+        .salary-action-row {
+          display: flex;
+          align-items: flex-end;
+          gap: 10px;
+          flex-wrap: wrap;
+          margin-top: 16px;
+        }
+
+        .compact-attendance {
+          display: flex;
+          gap: 8px;
+          flex: 1 1 180px;
+        }
+
+        .compact-attendance-item {
+          min-width: 72px;
+          padding: 8px 11px;
+          border: 1px solid #e6edf2;
+          border-radius: 10px;
+          background: #f8fafc;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+        }
+
+        .compact-attendance-item span {
+          font-size: 11px;
+          font-weight: 700;
+          color: #718397;
+        }
+
+        .compact-attendance-item strong {
+          font-size: 15px;
+        }
+
+        .compact-attendance-item.present strong {
+          color: #0a9b68;
+        }
+
+        .compact-attendance-item.absent strong {
+          color: #d63b3b;
+        }
+
+        .end-date-control {
+          display: flex;
+          align-items: flex-end;
+          gap: 6px;
+        }
+
+        .end-date-control label {
+          position: absolute;
+          margin-bottom: 34px;
+          font-size: 10px;
+          font-weight: 800;
+          color: #718397;
+          text-transform: uppercase;
+          letter-spacing: .04em;
+        }
+
+        .compact-date-input {
+          width: 145px;
+          min-width: 145px;
+          height: 40px;
+        }
+
+        .end-date-save-button,
+        .advance-icon-button {
+          width: 40px;
+          height: 40px;
+          border: 0;
+          border-radius: 10px;
+          cursor: pointer;
+          font-size: 20px;
+          font-weight: 800;
+        }
+
+        .end-date-save-button {
+          background: #e8f8f3;
+          color: #087d73;
+        }
+
+        .end-date-save-button:disabled,
+        .advance-icon-button:disabled {
+          opacity: .55;
+          cursor: not-allowed;
+        }
+
+        .advance-icon-button {
+          background: #17344f;
+          color: #fff;
+          font-size: 24px;
+          line-height: 1;
+        }
+
+        .advance-icon-button:hover:not(:disabled) {
+          background: #0f2940;
+        }
+
+        .after-end-date {
+          background: #f1f3f5 !important;
+          border-color: #e1e5e8 !important;
+          color: #aab4bd !important;
+          cursor: not-allowed !important;
         }
 
         /* ---------------- Responsive ---------------- */
@@ -2885,8 +2856,16 @@ export default function Attendance() {
               selectedEmployee
             }
             onChange={(event) => {
-              setSelectedEmployee(
-                event.target.value
+              const nextId = event.target.value;
+              setSelectedEmployee(nextId);
+
+              const nextEmployee = employees.find(
+                (item) => String(item?._id) === String(nextId)
+              );
+              const nextEndDate = getEmployeeEndDateKey(nextEmployee);
+
+              setReportEndDate(
+                nextEndDate || toDateKey(new Date())
               );
             }}
           >
@@ -2948,6 +2927,22 @@ export default function Attendance() {
                 </div>
               </div>
 
+              <div>
+                <div className="info-label">
+                  End Date
+                </div>
+
+                <div className="info-value">
+                  {getEmployeeEndDateKey(employee)
+                    ? formatDate(
+                        parseDateKey(
+                          getEmployeeEndDateKey(employee)
+                        )
+                      )
+                    : 'Active'}
+                </div>
+              </div>
+
             </div>
           )}
         </div>
@@ -2958,9 +2953,9 @@ export default function Attendance() {
         <div className="card report-card">
           <div className="report-header">
             <div>
-              <h2 className="section-title">Individual Salary Bill</h2>
+              <h2 className="section-title">Salary Bill</h2>
               <div className="section-subtitle">
-                Select one employee and a date range, then share the salary bill directly on WhatsApp.
+                Salary bill for the selected employee and period.
               </div>
             </div>
           </div>
@@ -2991,7 +2986,7 @@ export default function Attendance() {
                 className="text-input"
                 value={reportEndDate}
                 min={reportStartDate || undefined}
-                max={toDateKey(new Date())}
+                max={getEmployeeEndDateKey(employee) || toDateKey(new Date())}
                 onChange={(event) => setReportEndDate(event.target.value)}
               />
             </div>
@@ -3016,11 +3011,21 @@ export default function Attendance() {
             <div className="individual-bill-preview">
               <div className="individual-bill-heading">
                 <div>
-                  <h3>{employee?.name || 'Employee'}</h3>
+                  <h3>Salary Bill</h3>
                   <div>
-                    {formatDate(parseDateKey(reportStartDate))} to{' '}
-                    {formatDate(parseDateKey(reportEndDate))}
+                    Period: {formatDate(parseDateKey(individualSalary.startDate || reportStartDate))} to{' '}
+                    {formatDate(parseDateKey(individualSalary.endDate || reportEndDate))}
                   </div>
+                  <div>
+                    Joining Date: {employee?.date
+                      ? formatDate(new Date(employee.date))
+                      : '-'}
+                  </div>
+                  {getEmployeeEndDateKey(employee) && (
+                    <div>
+                      End Date: {formatDate(parseDateKey(getEmployeeEndDateKey(employee)))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="individual-bill-machine">
@@ -3030,7 +3035,7 @@ export default function Attendance() {
 
               <div className="individual-summary-grid">
                 <div className="individual-summary-box">
-                  <span>Working Days</span>
+                  <span>Total Days</span>
                   <strong>{individualSalary.totalDays}</strong>
                 </div>
                 <div className="individual-summary-box">
@@ -3053,16 +3058,6 @@ export default function Attendance() {
                   <strong>{formatMoney(Number(employee?.salary) || 0)}</strong>
                 </div>
                 <div>
-                  <span>Gross Salary</span>
-                  <strong>{formatMoney(individualSalary.grossSalary)}</strong>
-                </div>
-                <div>
-                  <span>Absent Deduction</span>
-                  <strong className="negative-value">
-                    {formatMoney(individualSalary.absentDeduction)}
-                  </strong>
-                </div>
-                <div>
                   <span>Salary Advance</span>
                   <strong className="negative-value">
                     {formatMoney(individualSalary.totalAdvance)}
@@ -3070,19 +3065,6 @@ export default function Attendance() {
                 </div>
               </div>
 
-              <div className="report-actions">
-                <button
-                  type="button"
-                  className="button whatsapp-button"
-                  onClick={shareIndividualSalaryOnWhatsApp}
-                >
-                  WhatsApp
-                </button>
-              </div>
-
-              <div className="whatsapp-note">
-                The bill is shared as a WhatsApp message. The employee's saved phone number is used when available.
-              </div>
             </div>
           )}
 
@@ -3100,8 +3082,8 @@ export default function Attendance() {
         <div className="card report-card partner-report-card">
           <div className="report-header">
             <div>
-              <h2 className="section-title">Whole Employee Report</h2>
-              <div className="section-subtitle">Select a date range to view the complete employee report.</div>
+              <h2 className="section-title">Employee Salary Report</h2>
+              <div className="section-subtitle">Select a date range to view the complete salary report.</div>
             </div>
           </div>
 
@@ -3130,7 +3112,6 @@ export default function Attendance() {
                   <h3>Employee Salary Report</h3>
                   <div>Period: {getReportPeriodLabel()} • {currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}</div>
                 </div>
-                {partner && <div className="partner-badge">To: {partner?.name}</div>}
               </div>
 
               <div className="report-summary-grid">
@@ -3236,64 +3217,25 @@ export default function Attendance() {
                     </div>
                   </div>
 
-                  <div className="summary-box green">
-                    <div className="summary-label">
-                      Present
-                    </div>
-
-                    <div className="summary-value">
-                      {
-                        salarySummary.presentDays
-                      }
-                    </div>
-                  </div>
-
-                  <div className="summary-box red">
-                    <div className="summary-label">
-                      Absent
-                    </div>
-
-                    <div className="summary-value">
-                      {
-                        salarySummary.absentDays
-                      }
-                    </div>
-                  </div>
-
                 </div>
 
                 <div className="salary-lines">
 
                   <div className="salary-line">
-                    <span>
-                      Gross Salary
-                    </span>
-
+                    <span>Monthly Salary</span>
                     <strong>
-                      {formatMoney(
-                        salarySummary.grossSalary
-                      )}
+                      {formatMoney(Number(employee?.salary) || 0)}
                     </strong>
                   </div>
-
-                  <div className="salary-line deduction">
-                    <span>
-                      Absent Deduction
-                    </span>
-
-                    <strong>
-                      -{' '}
-                      {formatMoney(
-                        salarySummary.absentDeduction
-                      )}
-                    </strong>
-                  </div>
-
 
                   <div className="salary-line deduction">
                     <span>Total Advance</span>
-                    <strong>-{' '}{formatMoney(salarySummary.advance)}</strong>
+                    <strong>
+                      -{' '}
+                      {formatMoney(salarySummary.advance)}
+                    </strong>
                   </div>
+
                 </div>
 
                 <div className="salary-final">
@@ -3311,19 +3253,64 @@ export default function Attendance() {
                 </div>
 
 
-                <button
-                  type="button"
-                  className="advance-button"
-                  onClick={openAddAdvance}
-                  disabled={savingAdvance}
-                >
-                  + Add Salary Advance
-                </button>
+                <div className="salary-action-row">
+                  <div className="compact-attendance">
+                    <div className="compact-attendance-item present">
+                      <span>Present</span>
+                      <strong>{salarySummary.presentDays}</strong>
+                    </div>
+                    <div className="compact-attendance-item absent">
+                      <span>Absent</span>
+                      <strong>{salarySummary.absentDays}</strong>
+                    </div>
+                  </div>
+
+                  <div className="end-date-control">
+                    <label htmlFor="employee-end-date">End Date</label>
+                    <input
+                      id="employee-end-date"
+                      type="date"
+                      className="text-input compact-date-input"
+                      value={employeeEndDate}
+                      min={
+                        employee?.date
+                          ? toDateKey(new Date(employee.date))
+                          : undefined
+                      }
+                      max={toDateKey(new Date())}
+                      onChange={(event) =>
+                        setEmployeeEndDate(event.target.value)
+                      }
+                      disabled={savingEmployeeEndDate}
+                    />
+                    <button
+                      type="button"
+                      className="end-date-save-button"
+                      onClick={saveEmployeeEndDate}
+                      disabled={savingEmployeeEndDate}
+                      title="Save employee end date"
+                      aria-label="Save employee end date"
+                    >
+                      {savingEmployeeEndDate ? '…' : '✓'}
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="advance-icon-button"
+                    onClick={openAddAdvance}
+                    disabled={savingAdvance}
+                    title="Add Salary Advance"
+                    aria-label="Add Salary Advance"
+                  >
+                    ＋
+                  </button>
+                </div>
 
                 <div className="advance-section">
                   <div className="advance-title-row">
-                    <h3 className="section-title">Salary Advances</h3>
-                    <span className="advance-count">{advances.length} records</span>
+                    <h3 className="section-title">Advances</h3>
+                    <span className="advance-count">{advances.length}</span>
                   </div>
                   <div className="advance-list">
                     {advances.length === 0 ? (
@@ -3507,6 +3494,13 @@ export default function Attendance() {
                         key <
                           joining;
 
+                      const employeeEndKey =
+                        getEmployeeEndDateKey(employee);
+
+                      const afterEmployeeEnd =
+                        employeeEndKey &&
+                        key > employeeEndKey;
+
                       return (
                         <button
                           key={key}
@@ -3525,6 +3519,9 @@ export default function Attendance() {
                             beforeJoining
                               ? 'before-joining'
                               : '',
+                            afterEmployeeEnd
+                              ? 'after-end-date'
+                              : '',
                           ]
                             .filter(Boolean)
                             .join(
@@ -3532,12 +3529,15 @@ export default function Attendance() {
                             )}
                           disabled={
                             future ||
-                            beforeJoining
+                            beforeJoining ||
+                            Boolean(afterEmployeeEnd)
                           }
                           title={
-                            isAbsent
-                              ? 'Absent — click for details'
-                              : 'Present — click to mark absent'
+                            afterEmployeeEnd
+                              ? 'Employee terminated — no attendance after end date'
+                              : isAbsent
+                                ? 'Absent — click for details'
+                                : 'Present — click to mark absent'
                           }
                           onClick={() =>
                             handleDateClick(
