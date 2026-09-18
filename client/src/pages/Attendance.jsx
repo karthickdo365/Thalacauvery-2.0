@@ -587,6 +587,10 @@ export default function Attendance() {
     setSelectedEmployee,
   ] = useState('');
 
+  /* Partners used as recipients for the whole employee salary report */
+  const [partners, setPartners] = useState([]);
+  const [selectedPartner, setSelectedPartner] = useState('');
+
   /*
    * Current calendar month
    */
@@ -765,7 +769,7 @@ export default function Attendance() {
           .trim()
           .toLowerCase();
 
-        return type !== 'broker';
+        return type !== 'broker' && type !== 'partner';
       });
 
       setEmployees(list);
@@ -795,6 +799,57 @@ export default function Attendance() {
         err.message ||
           'Unable to load employees'
       );
+    }
+  };
+
+
+  /*
+   |--------------------------------------------------------------------------
+   | Load partners
+   |--------------------------------------------------------------------------
+   */
+
+  const loadPartners = async () => {
+    try {
+      const data = await apiRequest(
+        `/users?machineType=${currentMachine}`
+      );
+
+      const allUsers = extractList(data, [
+        'users',
+        'records',
+        'personalUsers',
+        'employees',
+        'data',
+      ]);
+
+      const list = allUsers.filter((item) => {
+        const type = String(
+          item?.type ||
+          item?.userType ||
+          item?.role ||
+          item?.category ||
+          ''
+        ).trim().toLowerCase();
+
+        return type === 'partner';
+      });
+
+      setPartners(list);
+
+      if (
+        selectedPartner &&
+        list.some(
+          (item) => String(item?._id) === String(selectedPartner)
+        )
+      ) {
+        return;
+      }
+
+      setSelectedPartner('');
+    } catch (err) {
+      console.warn('Partner loading error:', err?.message || err);
+      setPartners([]);
     }
   };
 
@@ -860,6 +915,10 @@ export default function Attendance() {
 
   useEffect(() => {
     loadEmployees();
+  }, [currentMachine]);
+
+  useEffect(() => {
+    loadPartners();
   }, [currentMachine]);
 
   useEffect(() => {
@@ -1737,83 +1796,27 @@ export default function Attendance() {
         ? startLabel
         : `${startLabel} to ${endLabel}`;
 
-    const absentDates = Array.from(
-      new Set(
-        (attendanceRecords || [])
-          .filter((record) => normalizeStatus(record?.status) === 'absent')
-          .map((record) => {
-            const rawDate =
-              record?.date ||
-              record?.attendanceDate ||
-              record?.absenceDate;
-            return rawDate ? toDateKey(rawDate) : '';
-          })
-          .filter((key) =>
-            key &&
-            key >= reportStartDate &&
-            key <= reportEndDate
-          )
-      )
-    ).sort();
-
-    const rangeAdvances = (advances || []).filter((item) => {
-      const rawDate = getAdvanceDateValue(item);
-      const key = rawDate
-        ? toDateKey(new Date(rawDate))
-        : item?.month
-          ? `${item.month}-01`
-          : '';
-      return key && key >= reportStartDate && key <= reportEndDate;
-    });
-
     const lines = [
-      '*SALARY BILL*',
-      '━━━━━━━━━━━━━━━━━━━━',
+      '*Salary Bill*',
+      '',
       `Employee: ${employee?.name || '-'}`,
-      `Employee Type: ${employee?.type || employee?.userType || 'Employee'}`,
       `Machine: ${currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}`,
       `Period: ${periodLabel}`,
       '',
-      '*EMPLOYEE DETAILS*',
       `Joining Date: ${
         employee?.date
           ? formatDate(new Date(employee.date))
           : '-'
       }`,
       `Monthly Salary: ${formatMoney(Number(employee?.salary) || 0)}`,
-      '',
-      '*ATTENDANCE SUMMARY*',
       `Working Days: ${individualSalary.totalDays || 0}`,
       `Present Days: ${individualSalary.presentDays || 0}`,
       `Absent Days: ${individualSalary.absentDays || 0}`,
-      ...(absentDates.length
-        ? [
-            `Absent Dates: ${absentDates
-              .map((key) => formatDateShort(parseDateKey(key)))
-              .join(', ')}`,
-          ]
-        : []),
-      '',
-      '*SALARY CALCULATION*',
       `Gross Salary: ${formatMoney(individualSalary.grossSalary)}`,
       `Absent Deduction: ${formatMoney(individualSalary.absentDeduction)}`,
       `Salary Advance: ${formatMoney(individualSalary.totalAdvance)}`,
       '',
-      '*ADVANCE DETAILS*',
-      ...(rangeAdvances.length
-        ? rangeAdvances.map(
-            (item) =>
-              `• ${formatAdvanceDate(item)}: ${formatMoney(Number(item?.advanceAmount) || 0)}${
-                item?.paymentMode ? ` (${item.paymentMode})` : ''
-              }${item?.notes ? ` - ${item.notes}` : ''}`
-          )
-        : ['No salary advance in this period.']),
-      '',
-      '━━━━━━━━━━━━━━━━━━━━',
-      `*FINAL SALARY: ${formatMoney(individualSalary.finalSalary)}*`,
-      '━━━━━━━━━━━━━━━━━━━━',
-      '',
-      'This salary bill was generated from the attendance and salary records for the selected period.',
+      `*Final Salary: ${formatMoney(individualSalary.finalSalary)}*`,
     ];
 
     shareOnWhatsApp(
@@ -1823,6 +1826,95 @@ export default function Attendance() {
 
     setSuccess(
       `Salary bill opened in WhatsApp for ${employee?.name || 'employee'}.`
+    );
+  };
+
+  /*
+   |--------------------------------------------------------------------------
+   | Share whole employee salary report with a partner
+   |--------------------------------------------------------------------------
+   */
+  const shareWholeEmployeeReportToPartner = () => {
+    if (!selectedPartner) {
+      setError('Please select a partner first.');
+      return;
+    }
+
+    if (!reportStartDate || !reportEndDate) {
+      setError('Please select both From Date and To Date.');
+      return;
+    }
+
+    if (reportEndDate < reportStartDate) {
+      setError('To Date cannot be before From Date.');
+      return;
+    }
+
+    if (!reportRows.length) {
+      setError('No employee salary data is available.');
+      return;
+    }
+
+    const partner = partners.find(
+      (item) => String(item?._id) === String(selectedPartner)
+    );
+
+    const startLabel = formatDate(parseDateKey(reportStartDate));
+    const endLabel = formatDate(parseDateKey(reportEndDate));
+    const periodLabel =
+      reportStartDate === reportEndDate
+        ? startLabel
+        : `${startLabel} to ${endLabel}`;
+
+    const lines = [
+      '*WHOLE EMPLOYEE SALARY REPORT*',
+      '',
+      `Machine: ${currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}`,
+      `Period: ${periodLabel}`,
+      `Total Employees: ${reportTotals.employees}`,
+      '',
+      '*Employee Details*',
+      '',
+    ];
+
+    reportRows.forEach((row, index) => {
+      const item = row.employee;
+      const salary = row.reportSalary || {};
+
+      lines.push(
+        `${index + 1}. ${item?.name || 'Unnamed Employee'}`,
+        `   Joining Date: ${item?.date ? formatDate(new Date(item.date)) : '-'}`,
+        `   Monthly Salary: ${formatMoney(Number(item?.salary) || 0)}`,
+        `   Working Days: ${salary.totalDays || 0}`,
+        `   Present Days: ${salary.presentDays || 0}`,
+        `   Absent Days: ${salary.absentDays || 0}`,
+        `   Gross Salary: ${formatMoney(salary.grossSalary)}`,
+        `   Absent Deduction: ${formatMoney(salary.absentDeduction)}`,
+        `   Salary Advance: ${formatMoney(salary.totalAdvance)}`,
+        `   Final Salary: ${formatMoney(salary.finalSalary)}`,
+        ''
+      );
+    });
+
+    lines.push(
+      '*TOTAL SUMMARY*',
+      `Employees: ${reportTotals.employees}`,
+      `Working Days: ${reportTotals.totalDays}`,
+      `Present Days: ${reportTotals.presentDays}`,
+      `Absent Days: ${reportTotals.absentDays}`,
+      `Gross Salary: ${formatMoney(reportTotals.grossSalary)}`,
+      `Absent Deduction: ${formatMoney(reportTotals.absentDeduction)}`,
+      `Salary Advance: ${formatMoney(reportTotals.totalAdvance)}`,
+      `*Final Payable: ${formatMoney(reportTotals.finalSalary)}*`
+    );
+
+    shareOnWhatsApp(
+      lines.join('\n'),
+      getEmployeePhone(partner)
+    );
+
+    setSuccess(
+      `Whole employee salary report opened in WhatsApp for ${partner?.name || 'partner'}.`
     );
   };
 
@@ -2750,6 +2842,42 @@ export default function Attendance() {
           font-size: 13px;
         }
 
+        /* ---------------- Whole employee report to partner ---------------- */
+
+        .partner-report-card {
+          margin-bottom: 20px;
+        }
+
+        .partner-share-summary {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 10px;
+          margin-top: 18px;
+        }
+
+        .partner-share-summary > div {
+          padding: 13px 14px;
+          background: #f7fafc;
+          border: 1px solid #e5ebf1;
+          border-radius: 11px;
+        }
+
+        .partner-share-summary span {
+          display: block;
+          color: #718397;
+          font-size: 11px;
+          font-weight: 800;
+          text-transform: uppercase;
+        }
+
+        .partner-share-summary strong {
+          display: block;
+          margin-top: 5px;
+          color: #17324d;
+          font-size: 18px;
+          font-weight: 850;
+        }
+
         /* ---------------- Individual WhatsApp salary bill ---------------- */
 
         .report-card {
@@ -2972,6 +3100,18 @@ export default function Attendance() {
             left: 16px;
             right: 16px;
             max-width: none;
+          }
+        }
+
+        @media (max-width: 800px) {
+          .partner-share-summary {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+
+        @media (max-width: 560px) {
+          .partner-share-summary {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>
@@ -3271,12 +3411,12 @@ export default function Attendance() {
                   className="button whatsapp-button"
                   onClick={shareIndividualSalaryOnWhatsApp}
                 >
-                  📱 Share Full Report on WhatsApp
+                  WhatsApp
                 </button>
               </div>
 
               <div className="whatsapp-note">
-                The complete salary report is shared as a WhatsApp message, including attendance, absent dates, salary calculation and advance details. The employee's saved phone number is used when available.
+                The bill is shared as a WhatsApp message. The employee's saved phone number is used when available.
               </div>
             </div>
           )}
@@ -3286,6 +3426,111 @@ export default function Attendance() {
               Select one employee to prepare the salary bill.
             </div>
           )}
+        </div>
+
+
+        {/* ==========================================================
+            WHOLE EMPLOYEE REPORT TO PARTNER
+            ========================================================== */}
+        <div className="card report-card partner-report-card">
+          <div className="report-header">
+            <div>
+              <h2 className="section-title">Whole Employee Report</h2>
+              <div className="section-subtitle">
+                Share the complete employee salary report for the selected period with a partner.
+              </div>
+            </div>
+          </div>
+
+          <div className="report-controls partner-report-controls">
+            <div className="report-field">
+              <label className="text-label">Partner</label>
+              <select
+                className="select-input"
+                value={selectedPartner}
+                onChange={(event) => setSelectedPartner(event.target.value)}
+              >
+                <option value="">Select Partner</option>
+                {partners.map((item) => (
+                  <option key={item?._id} value={item?._id}>
+                    {item?.name || 'Unnamed Partner'}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="report-field">
+              <label className="text-label">From Date</label>
+              <input
+                type="date"
+                className="text-input"
+                value={reportStartDate}
+                max={reportEndDate || toDateKey(new Date())}
+                onChange={(event) => setReportStartDate(event.target.value)}
+              />
+            </div>
+
+            <div className="report-field">
+              <label className="text-label">To Date</label>
+              <input
+                type="date"
+                className="text-input"
+                value={reportEndDate}
+                min={reportStartDate || undefined}
+                max={toDateKey(new Date())}
+                onChange={(event) => setReportEndDate(event.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="report-quick-buttons">
+            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('month')}>
+              This Month
+            </button>
+            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('2months')}>
+              Last 2 Months
+            </button>
+            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('6months')}>
+              Last 6 Months
+            </button>
+            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('year')}>
+              Last 12 Months
+            </button>
+          </div>
+
+          <div className="partner-share-summary">
+            <div>
+              <span>Employees</span>
+              <strong>{reportTotals.employees}</strong>
+            </div>
+            <div>
+              <span>Present</span>
+              <strong>{reportTotals.presentDays}</strong>
+            </div>
+            <div>
+              <span>Absent</span>
+              <strong>{reportTotals.absentDays}</strong>
+            </div>
+            <div>
+              <span>Final Payable</span>
+              <strong>{formatMoney(reportTotals.finalSalary)}</strong>
+            </div>
+          </div>
+
+          <div className="report-actions">
+            <button
+              type="button"
+              className="button whatsapp-button"
+              onClick={shareWholeEmployeeReportToPartner}
+              disabled={!selectedPartner || !reportPeriodValid || allEmployeeSalaryLoading}
+            >
+              📱 Share Whole Report to Partner
+            </button>
+          </div>
+
+          <div className="whatsapp-note">
+            The complete employee salary report is shared as a WhatsApp message to the selected partner.
+          </div>
         </div>
 
         {/* ==========================================================
