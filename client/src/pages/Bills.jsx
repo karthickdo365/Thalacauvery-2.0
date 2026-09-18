@@ -262,13 +262,13 @@ const getDisplayPipeLabel = (label, machineType) => {
   }
 
   if (machineType === 'big') {
-    const cleaned = String(label)
-      .replace(/\bPlastic\b/gi, '')
-      .replace(/\bInner\b/gi, '')
-      .replace(/\s+/g, ' ')
-      .trim();
+    const value = String(label).trim();
 
-    return cleaned || 'Pipe';
+    if (/Plastic\s+Outer/i.test(value)) return 'Outer';
+    if (/Plastic\s+Inner/i.test(value)) return 'Inner';
+    if (/JI\s+Inner/i.test(value)) return 'JI';
+
+    return value.replace(/\s+/g, ' ').trim();
   }
 
   return label;
