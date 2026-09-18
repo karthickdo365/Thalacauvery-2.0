@@ -108,8 +108,9 @@ const getDefaultValues = () => ({
 
 const MATERIAL_TYPES = [
   'Diesel',
-  'Petrol',
-  'Pipe',
+  'Pipe Outer',
+  'Pipe Inner',
+  'Pipe Small',
   'Bit',
   'Hammer',
   'Others',
