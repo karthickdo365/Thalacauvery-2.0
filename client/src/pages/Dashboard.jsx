@@ -810,7 +810,7 @@ const StatCard = ({
     elevation={0}
     sx={{
       height: '100%',
-      cursor: 'pointer',
+      cursor: onClick ? 'pointer' : 'default',
 
       border:
         '1px solid #dbe3ec',
@@ -2472,6 +2472,89 @@ const Dashboard = () => {
     0;
 
   /* =======================================================
+     MACHINE-SPECIFIC PIPE TOTALS
+  ======================================================= */
+
+  const sumPointField = (field) =>
+    pointRows.reduce(
+      (sum, point) =>
+        sum + safeNum(point?.[field]),
+      0
+    );
+
+  const pipeSummary = isBig
+    ? [
+        {
+          key: 'bigOuter',
+          title: 'Outer',
+          value: `${sumPointField('plasticOuterFeet')} ft`,
+          icon: <WaterDropIcon />,
+          color: NAVY,
+        },
+        {
+          key: 'bigInner',
+          title: 'Inner',
+          value: `${sumPointField('plasticInnerFeet')} ft`,
+          icon: <WaterDropIcon />,
+          color: TEAL,
+        },
+        {
+          key: 'bigJI',
+          title: 'JI',
+          value: `${sumPointField('jiInnerFeet')} ft`,
+          icon: <WaterDropIcon />,
+          color: '#0891b2',
+        },
+      ]
+    : [
+        {
+          key: 'smallOuter',
+          title: 'Outer',
+          value: `${sumPointField('outerPipeFeet')} ft`,
+          icon: <WaterDropIcon />,
+          color: NAVY,
+        },
+        {
+          key: 'smallInner',
+          title: 'Inner',
+          value: `${sumPointField('innerPipeFeet')} ft`,
+          icon: <WaterDropIcon />,
+          color: TEAL,
+        },
+        {
+          key: 'smallInnerPipe',
+          title: 'Small Inner',
+          value: `${sumPointField('smallPipeFeet')} ft`,
+          icon: <WaterDropIcon />,
+          color: '#0891b2',
+        },
+      ];
+
+  /* =======================================================
+     SALES / PAYMENT SUMMARY
+  ======================================================= */
+
+  const totalSale = pointRows.reduce(
+    (sum, point) =>
+      sum + safeNum(point?.totalAmount),
+    0
+  );
+
+  const advanceAmount = pointRows.reduce(
+    (sum, point) =>
+      point?.paymentStatus === 'Partial'
+        ? sum + safeNum(point?.paidAmount)
+        : sum,
+    0
+  );
+
+  const pointPendingAmount = pointRows.reduce(
+    (sum, point) =>
+      sum + getPendingAmount(point),
+    0
+  );
+
+  /* =======================================================
      CHART DATA
   ======================================================= */
 
@@ -2778,6 +2861,50 @@ const Dashboard = () => {
           width: '100%',
         }}
       >
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 2,
+            mb: 1.5,
+            px: 0.25,
+          }}
+        >
+          <Box>
+            <Typography
+              sx={{
+                color: '#0f172a',
+                fontSize: '1.25rem',
+                fontWeight: 800,
+                lineHeight: 1.2,
+              }}
+            >
+              Dashboard
+            </Typography>
+
+            <Typography
+              sx={{
+                color: '#64748b',
+                fontSize: '0.78rem',
+                mt: 0.35,
+              }}
+            >
+              {isBig ? 'Big Machine' : 'Small Machine'}
+            </Typography>
+          </Box>
+
+          <Chip
+            label={isBig ? 'BIG MACHINE' : 'SMALL MACHINE'}
+            size="small"
+            sx={{
+              bgcolor: `${TEAL}18`,
+              color: TEAL_D,
+              fontWeight: 800,
+              fontSize: '0.68rem',
+            }}
+          />
+        </Box>
         {/* =================================================
             ROW 1
         ================================================= */}
@@ -2872,6 +2999,144 @@ const Dashboard = () => {
 
         {/* =================================================
             ROW 3
+            MACHINE PIPE SUMMARY + PAYMENT SUMMARY
+        ================================================= */}
+
+        <Grid
+          container
+          spacing={1.25}
+          sx={{
+            mb: 1.5,
+          }}
+        >
+          {pipeSummary.map(
+            (card) => (
+              <Grid
+                item
+                xs={12}
+                sm={6}
+                md={3}
+                key={card.key}
+              >
+                <StatCard
+                  title={card.title}
+                  value={card.value}
+                  icon={card.icon}
+                  color={card.color}
+                />
+              </Grid>
+            )
+          )}
+
+          <Grid
+            item
+            xs={12}
+            sm={6}
+            md={3}
+          >
+            <Card
+              elevation={0}
+              sx={{
+                height: '100%',
+                border: '1px solid #dbe3ec',
+                borderRadius: '12px',
+                bgcolor: '#fff',
+              }}
+            >
+              <CardContent
+                sx={{
+                  p: '14px !important',
+                  minHeight: 74,
+                }}
+              >
+                <Typography
+                  sx={{
+                    color: '#64748b',
+                    fontSize: '0.72rem',
+                    fontWeight: 600,
+                    mb: 0.7,
+                  }}
+                >
+                  Payment Summary
+                </Typography>
+
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr 1fr',
+                    gap: 0.8,
+                  }}
+                >
+                  <Box>
+                    <Typography
+                      sx={{
+                        color: '#64748b',
+                        fontSize: '0.62rem',
+                      }}
+                    >
+                      Total Sale
+                    </Typography>
+                    <Typography
+                      sx={{
+                        color: '#0f172a',
+                        fontWeight: 800,
+                        fontSize: '0.82rem',
+                      }}
+                    >
+                      {fmt(totalSale)}
+                    </Typography>
+                  </Box>
+
+                  <Box>
+                    <Typography
+                      sx={{
+                        color: '#64748b',
+                        fontSize: '0.62rem',
+                      }}
+                    >
+                      Advance
+                    </Typography>
+                    <Typography
+                      sx={{
+                        color: '#0f766e',
+                        fontWeight: 800,
+                        fontSize: '0.82rem',
+                      }}
+                    >
+                      {fmt(advanceAmount)}
+                    </Typography>
+                  </Box>
+
+                  <Box>
+                    <Typography
+                      sx={{
+                        color: '#64748b',
+                        fontSize: '0.62rem',
+                      }}
+                    >
+                      Pending
+                    </Typography>
+                    <Typography
+                      sx={{
+                        color: '#b91c1c',
+                        fontWeight: 800,
+                        fontSize: '0.82rem',
+                      }}
+                    >
+                      {fmt(pointPendingAmount)}
+                    </Typography>
+                  </Box>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+
+        {/* =================================================
+            REMAINING DASHBOARD CONTENT
+        ================================================= */}
+
+        {/* =================================================
             EMPLOYEE CENTER
         ================================================= */}
 
