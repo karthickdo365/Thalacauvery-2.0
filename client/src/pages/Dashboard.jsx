@@ -1167,12 +1167,14 @@ const DetailDialog = ({
         setLoading(true);
 
         try {
-          const {
-            data,
-          } =
+          const response =
             await config.fetch(
               machineType
             );
+
+          const data =
+            response?.data ??
+            response;
 
           const rows =
             config.extract(
@@ -2117,6 +2119,11 @@ const Dashboard = () => {
     setEmployeeRows,
   ] = useState([]);
 
+  const [
+    salaryAdvanceRows,
+    setSalaryAdvanceRows,
+  ] = useState([]);
+
   const {
     currentMachine,
   } = useMachine();
@@ -2163,10 +2170,9 @@ const Dashboard = () => {
     const loadMaterials =
       async () => {
         try {
-          const {
-            data,
-          } = await api.get(
-            '/materials',
+          const response =
+            await api.get(
+              '/materials',
             {
               params: {
                 limit: 500,
@@ -2175,6 +2181,10 @@ const Dashboard = () => {
               },
             }
           );
+
+          const data =
+            response?.data ??
+            response;
 
           setMaterialRows(
             data?.materials ||
@@ -2216,10 +2226,9 @@ const Dashboard = () => {
     const loadPoints =
       async () => {
         try {
-          const {
-            data,
-          } = await api.get(
-            '/borewell-points',
+          const response =
+            await api.get(
+              '/borewell-points',
             {
               params: {
                 limit: 500,
@@ -2228,6 +2237,10 @@ const Dashboard = () => {
               },
             }
           );
+
+          const data =
+            response?.data ??
+            response;
 
           setPointRows(
             data?.points ||
@@ -2251,7 +2264,7 @@ const Dashboard = () => {
   ]);
 
   /* =======================================================
-     FETCH EMPLOYEES / SALARY
+     FETCH EMPLOYEES / SALARY ADVANCES
   ======================================================= */
 
   useEffect(() => {
@@ -2262,46 +2275,113 @@ const Dashboard = () => {
         'small'
     ) {
       setEmployeeRows([]);
+      setSalaryAdvanceRows([]);
       return;
     }
 
-    const loadEmployees =
+    const loadEmployeesAndAdvances =
       async () => {
         try {
-          const {
-            data,
-          } = await api.get(
-            '/users',
-            {
-              params: {
-                type: 'Employee',
-                limit: 500,
-                machineType:
-                  currentMachine,
-              },
-            }
-          );
+          const [
+            employeeResponse,
+            advanceResponse,
+          ] = await Promise.all([
+            api.get(
+              '/users',
+              {
+                params: {
+                  type: 'Employee',
+                  limit: 500,
+                  machineType:
+                    currentMachine,
+                },
+              }
+            ),
+
+            api.get(
+              '/salary-advances',
+              {
+                params: {
+                  machineType:
+                    currentMachine,
+                  limit: 500,
+                },
+              }
+            ),
+          ]);
+
+          /*
+           * api.js in this project returns response.data
+           * from the Axios interceptor. These fallbacks also
+           * support a normal Axios response, so the dashboard
+           * does not break if the interceptor changes.
+           */
+
+          const employeeData =
+            employeeResponse?.data ??
+            employeeResponse;
+
+          const advanceData =
+            advanceResponse?.data ??
+            advanceResponse;
+
+          const users =
+            Array.isArray(
+              employeeData?.users
+            )
+              ? employeeData.users
+              : Array.isArray(
+                  employeeData
+                )
+              ? employeeData
+              : [];
+
+          const advances =
+            Array.isArray(
+              advanceData?.records
+            )
+              ? advanceData.records
+              : Array.isArray(
+                  advanceData?.advances
+                )
+              ? advanceData.advances
+              : Array.isArray(
+                  advanceData?.data
+                )
+              ? advanceData.data
+              : Array.isArray(
+                  advanceData?.items
+                )
+              ? advanceData.items
+              : Array.isArray(
+                  advanceData
+                )
+              ? advanceData
+              : [];
 
           setEmployeeRows(
-            Array.isArray(
-              data?.users
-            )
-              ? data.users
-              : []
+            users
           );
+
+          setSalaryAdvanceRows(
+            advances
+          );
+
         } catch (
           error
         ) {
           console.error(
-            'Failed to load employees:',
+            'Failed to load employee/salary data:',
             error
           );
 
           setEmployeeRows([]);
+          setSalaryAdvanceRows([]);
         }
       };
 
-    loadEmployees();
+    loadEmployeesAndAdvances();
+
   }, [
     currentMachine,
   ]);
@@ -2571,11 +2651,29 @@ const Dashboard = () => {
       0
     );
 
+  /*
+   * Salary advances are separate from borewell customer
+   * payments. The old dashboard incorrectly displayed
+   * partial borewell payments as "Advance", which is why
+   * the Payment Summary showed 0 even when salary advances
+   * existed.
+   */
+  const salaryAdvanceTotal =
+    salaryAdvanceRows.reduce(
+      (
+        sum,
+        advance
+      ) =>
+        sum +
+        safeNum(
+          advance?.advanceAmount ??
+          advance?.amount
+        ),
+      0
+    );
+
   const employees =
     employeeRows.length;
-    stats?.totalEmployees ??
-    stats?.employee ??
-    0;
 
   /* =======================================================
      MACHINE SUMMARY
@@ -3164,83 +3262,110 @@ const Dashboard = () => {
                 <Box
                   sx={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    gridTemplateColumns:
+                      'repeat(4, minmax(0, 1fr))',
                     gap: 0.75,
                   }}
                 >
+                  {/* TOTAL EMPLOYEES */}
                   <Box>
                     <Typography
                       sx={{
                         color: '#64748b',
                         fontSize: '0.6rem',
+                        whiteSpace: 'nowrap',
                       }}
                     >
-                      Total Salary
+                      Employees
                     </Typography>
+
+                    <Typography
+                      sx={{
+                        color: '#059669',
+                        fontWeight: 800,
+                        fontSize: '0.82rem',
+                      }}
+                    >
+                      {employees}
+                    </Typography>
+                  </Box>
+
+                  {/* TOTAL SALARY */}
+                  <Box>
+                    <Typography
+                      sx={{
+                        color: '#64748b',
+                        fontSize: '0.6rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Salary
+                    </Typography>
+
                     <Typography
                       sx={{
                         fontWeight: 800,
-                        fontSize: '0.78rem',
+                        fontSize: '0.74rem',
+                        whiteSpace: 'nowrap',
                       }}
                     >
                       {fmt(totalSalary)}
                     </Typography>
                   </Box>
 
+                  {/* SALARY ADVANCE */}
                   <Box>
                     <Typography
                       sx={{
                         color: '#64748b',
                         fontSize: '0.6rem',
+                        whiteSpace: 'nowrap',
                       }}
                     >
                       Advance
                     </Typography>
+
                     <Typography
                       sx={{
-                        color: '#0f766e',
+                        color: '#b45309',
                         fontWeight: 800,
-                        fontSize: '0.78rem',
+                        fontSize: '0.74rem',
+                        whiteSpace: 'nowrap',
                       }}
                     >
                       {fmt(
-                        pointRows.reduce(
-                          (sum, point) =>
-                            point?.paymentStatus === 'Partial'
-                              ? sum + safeNum(point?.paidAmount)
-                              : sum,
-                          0
-                        )
+                        salaryAdvanceTotal
                       )}
                     </Typography>
                   </Box>
 
+                  {/* BOREWELL PAYMENT PENDING */}
                   <Box>
                     <Typography
                       sx={{
                         color: '#64748b',
                         fontSize: '0.6rem',
+                        whiteSpace: 'nowrap',
                       }}
                     >
                       Pending
                     </Typography>
+
                     <Typography
                       sx={{
                         color: '#b91c1c',
                         fontWeight: 800,
-                        fontSize: '0.78rem',
+                        fontSize: '0.74rem',
+                        whiteSpace: 'nowrap',
                       }}
                     >
                       {fmt(
-                        pointRows.reduce(
-                          (sum, point) =>
-                            sum + getPendingAmount(point),
-                          0
-                        )
+                        pendingAmount
                       )}
                     </Typography>
                   </Box>
                 </Box>
+
               </CardContent>
             </Card>
           </Grid>
@@ -3251,7 +3376,7 @@ const Dashboard = () => {
             EMPLOYEE CENTER
         ================================================= */}
 
-        {/* <Grid
+        <Grid
           container
           justifyContent="center"
           sx={{
@@ -3280,7 +3405,7 @@ const Dashboard = () => {
               }
             />
           </Grid>
-        </Grid> */}
+        </Grid>
 
         {/* =================================================
             ANALYTICS
