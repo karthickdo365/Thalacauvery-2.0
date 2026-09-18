@@ -2112,6 +2112,11 @@ const Dashboard = () => {
     setPointRows,
   ] = useState([]);
 
+  const [
+    employeeRows,
+    setEmployeeRows,
+  ] = useState([]);
+
   const {
     currentMachine,
   } = useMachine();
@@ -2241,6 +2246,58 @@ const Dashboard = () => {
       };
 
     loadPoints();
+  }, [
+    currentMachine,
+  ]);
+
+  /* =======================================================
+     FETCH EMPLOYEES FOR TOTAL SALARY
+  ======================================================= */
+
+  useEffect(() => {
+    if (
+      currentMachine !==
+        'big' &&
+      currentMachine !==
+        'small'
+    ) {
+      return;
+    }
+
+    const loadEmployees =
+      async () => {
+        try {
+          const {
+            data,
+          } = await api.get(
+            '/users',
+            {
+              params: {
+                type: 'Employee',
+                limit: 500,
+                machineType:
+                  currentMachine,
+              },
+            }
+          );
+
+          setEmployeeRows(
+            data?.users ||
+              []
+          );
+        } catch (
+          error
+        ) {
+          console.error(
+            'Failed to load employees:',
+            error
+          );
+
+          setEmployeeRows([]);
+        }
+      };
+
+    loadEmployees();
   }, [
     currentMachine,
   ]);
@@ -2429,6 +2486,46 @@ const Dashboard = () => {
           0
         );
 
+  const getMaterialQuantity =
+    (type) =>
+      materialRows
+        .filter(
+          (material) =>
+            isMaterialType(
+              material,
+              type
+            )
+        )
+        .reduce(
+          (
+            sum,
+            material
+          ) =>
+            sum +
+            safeNum(
+              material?.quantity
+            ),
+          0
+        );
+
+  const totalSalary =
+    stats?.totalSalary !=
+    null
+      ? safeNum(
+          stats.totalSalary
+        )
+      : employeeRows.reduce(
+          (
+            sum,
+            employee
+          ) =>
+            sum +
+            safeNum(
+              employee?.salary
+            ),
+          0
+        );
+
   const diesel =
     stats?.diesel !=
     null
@@ -2485,26 +2582,41 @@ const Dashboard = () => {
       0
     );
 
+  const sumPointFields = (...fields) =>
+    pointRows.reduce(
+      (sum, point) =>
+        sum +
+        safeNum(
+          fields.reduce(
+            (value, field) =>
+              value ??
+              point?.[field],
+            undefined
+          )
+        ),
+      0
+    );
+
   const pipeCards = isBig
     ? [
         {
           key: 'bigOuter',
           title: 'Outer',
-          value: `${sumPointField('plasticOuterFeet')} ft`,
+          value: `${sumPointField('plasticOuterFeet')} ft (${sumPointFields('plasticOuterQuantity', 'plasticOuterQty', 'outerPipeQuantity', 'outerPipeQty')})`,
           icon: <WaterDropIcon />,
           color: NAVY,
         },
         {
           key: 'bigInner',
           title: 'Inner',
-          value: `${sumPointField('plasticInnerFeet')} ft`,
+          value: `${sumPointField('plasticInnerFeet')} ft (${sumPointFields('plasticInnerQuantity', 'plasticInnerQty', 'innerPipeQuantity', 'innerPipeQty')})`,
           icon: <WaterDropIcon />,
           color: TEAL,
         },
         {
           key: 'bigJI',
           title: 'JI',
-          value: `${sumPointField('jiInnerFeet')} ft`,
+          value: `${sumPointField('jiInnerFeet')} ft (${sumPointFields('jiInnerQuantity', 'jiInnerQty', 'jiQuantity', 'jiQty')})`,
           icon: <WaterDropIcon />,
           color: '#0891b2',
         },
@@ -2513,21 +2625,21 @@ const Dashboard = () => {
         {
           key: 'smallOuter',
           title: 'Outer',
-          value: `${sumPointField('outerPipeFeet')} ft`,
+          value: `${sumPointField('outerPipeFeet')} ft (${sumPointFields('outerPipeQuantity', 'outerPipeQty')})`,
           icon: <WaterDropIcon />,
           color: NAVY,
         },
         {
           key: 'smallInner',
           title: 'Inner',
-          value: `${sumPointField('innerPipeFeet')} ft`,
+          value: `${sumPointField('innerPipeFeet')} ft (${sumPointFields('innerPipeQuantity', 'innerPipeQty')})`,
           icon: <WaterDropIcon />,
           color: TEAL,
         },
         {
           key: 'smallInner',
           title: 'Small Inner',
-          value: `${sumPointField('smallPipeFeet')} ft`,
+          value: `${sumPointField('smallPipeFeet')} ft (${sumPointFields('smallPipeQuantity', 'smallPipeQty')})`,
           icon: <WaterDropIcon />,
           color: '#0891b2',
         },
@@ -2793,7 +2905,7 @@ const Dashboard = () => {
       title: 'Bit',
 
       value:
-        fmt(bit),
+        `${fmt(bit)} (${getMaterialQuantity('bit')})`,
 
       icon:
         <ConstructionIcon />,
@@ -2808,7 +2920,7 @@ const Dashboard = () => {
         'Hammer',
 
       value:
-        fmt(hammer),
+        `${fmt(hammer)} (${getMaterialQuantity('hammer')})`,
 
       icon:
         <BuildIcon />,
@@ -3035,7 +3147,7 @@ const Dashboard = () => {
                         fontSize: '0.6rem',
                       }}
                     >
-                      Total Sale
+                      Total Salary
                     </Typography>
                     <Typography
                       sx={{
@@ -3044,11 +3156,7 @@ const Dashboard = () => {
                       }}
                     >
                       {fmt(
-                        pointRows.reduce(
-                          (sum, point) =>
-                            sum + safeNum(point?.totalAmount),
-                          0
-                        )
+                        totalSalary
                       )}
                     </Typography>
                   </Box>
