@@ -639,10 +639,9 @@ export default function Attendance() {
   });
   const [reportEndDate, setReportEndDate] = useState(() => toDateKey(new Date()));
 
-  // Extra employee salary list. Existing selected-employee
-  // attendance/salary flow remains unchanged.
+  // Data used only to build the whole-employee partner report.
+  // The old separate salary-list UI has been removed.
   const [allEmployeeSalaryRows, setAllEmployeeSalaryRows] = useState([]);
-  const [allEmployeeSalaryLoading, setAllEmployeeSalaryLoading] = useState(false);
 
   const [
     error,
@@ -653,11 +652,6 @@ export default function Attendance() {
     success,
     setSuccess,
   ] = useState('');
-
-  const [
-    shareCard,
-    setShareCard,
-  ] = useState(null);
 
   const [
     optimisticAbsent,
@@ -899,8 +893,6 @@ export default function Attendance() {
         return;
       }
 
-      setAllEmployeeSalaryLoading(true);
-
       const rows = await Promise.all(
         employees.map(async (item) => {
           const employeeId = item?._id;
@@ -971,7 +963,6 @@ export default function Attendance() {
 
       if (!cancelled) {
         setAllEmployeeSalaryRows(rows);
-        setAllEmployeeSalaryLoading(false);
       }
     };
 
@@ -982,8 +973,8 @@ export default function Attendance() {
     };
   }, [employees, currentMachine]);
 
+
   useEffect(() => {
-    setShareCard(null);
     setOptimisticAbsent({});
     setOptimisticRemoved({});
   }, [selectedEmployee]);
@@ -1455,23 +1446,6 @@ export default function Attendance() {
 
       setSuccess(skippedCount > 0 ? `${rangeMessage} ${skippedCount} existing day(s) skipped.` : rangeMessage);
 
-      const shareDateLabel = dateKeys.length === 1
-        ? formatDate(selectedDate)
-        : `${formatDate(startDate)} to ${formatDate(endDate)}`;
-
-      if (savedCount > 0) {
-        setShareCard({
-          label: shareDateLabel,
-          text: buildAbsenceShareText({
-            employeeName: employee?.name,
-            unitLabel: currentMachine === 'big' ? 'Big Machine' : 'Small Machine',
-            dateLabel: shareDateLabel,
-            reason: absentReason,
-          }),
-          phone: getEmployeePhone(employee),
-        });
-      }
-
       await loadAttendance();
 
       // Real data now includes these dates — safe to drop the overlay.
@@ -1854,7 +1828,6 @@ export default function Attendance() {
     );
   };
 
-  /*
    |--------------------------------------------------------------------------
    | Build one employee's salary line-item text (used by both the
    | per-employee share button and the all-employee combined report)
@@ -1881,35 +1854,6 @@ export default function Attendance() {
   };
 
   /*
-   |--------------------------------------------------------------------------
-   | Share a single employee's salary update from the All Employee table
-   |--------------------------------------------------------------------------
-   */
-  const shareEmployeeRowToWhatsApp = (row) => {
-    const item = row?.employee;
-
-    if (!item) {
-      setError('Unable to share — employee data is missing.');
-      return;
-    }
-
-    const lines = [
-      '*Salary Update*',
-      '',
-      ...buildEmployeeSalaryLines(row),
-      '',
-      `Machine: ${currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}`,
-    ];
-
-    shareOnWhatsApp(
-      lines.join('\n'),
-      getEmployeePhone(item)
-    );
-
-    setSuccess(
-      `Salary update opened in WhatsApp for ${item?.name || 'employee'}.`
-    );
-  };
 
   /*
    |--------------------------------------------------------------------------
@@ -1917,6 +1861,11 @@ export default function Attendance() {
    |--------------------------------------------------------------------------
    */
   const shareAllEmployeesToWhatsApp = () => {
+    if (!reportPeriodValid) {
+      setError('Select a valid From Date and To Date.');
+      return;
+    }
+
     if (!rangeEmployeeRows.length) {
       setError('No employee salary data is available for this date range.');
       return;
@@ -3448,131 +3397,6 @@ export default function Attendance() {
           </div>
         )}
 
-        {/* Share via WhatsApp */}
-        {shareCard && (
-          <div className="card share-card">
-            <div className="share-card-text">
-              <strong>
-                {shareCard.label}
-              </strong>{' '}
-              is ready to share.
-            </div>
-
-            <div className="share-card-actions">
-              <button
-                type="button"
-                className="whatsapp-button"
-                onClick={() =>
-                  shareOnWhatsApp(
-                    shareCard.text,
-                    shareCard.phone
-                  )
-                }
-              >
-                Share via WhatsApp
-              </button>
-
-              <button
-                type="button"
-                className="close-button"
-                onClick={() =>
-                  setShareCard(null)
-                }
-                aria-label="Dismiss"
-              >
-                ×
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Employee section intentionally kept in code but disabled.
-            It can be re-enabled later by changing false to true. */}
-        {false && (
-          <>
-        {/* Employee section temporarily disabled */}
-        <div className="card employee-card">
-
-          <label className="field-label">
-            Employee
-          </label>
-
-          <select
-            className="select-input"
-            value={
-              selectedEmployee
-            }
-            onChange={(event) => {
-              setSelectedEmployee(
-                event.target.value
-              );
-            }}
-          >
-            <option value="">
-              Select Employee
-            </option>
-
-            {employees.map(
-              (item) => (
-                <option
-                  key={item._id}
-                  value={item._id}
-                >
-                  {item.name}
-                </option>
-              )
-            )}
-          </select>
-
-          {employee && (
-            <div className="employee-info">
-
-              <div>
-                <div className="employee-name">
-                  {employee.name}
-                </div>
-
-                <div className="employee-type">
-                  {employee.type ||
-                    'Employee'}
-                </div>
-              </div>
-
-              <div>
-                <div className="info-label">
-                  Joining Date
-                </div>
-
-                <div className="info-value">
-                  {employee.date
-                    ? formatDate(
-                        new Date(
-                          employee.date
-                        )
-                      )
-                    : '-'}
-                </div>
-              </div>
-
-              <div>
-                <div className="info-label">
-                  Monthly Salary
-                </div>
-
-                <div className="info-value">
-                  {formatMoney(
-                    employee.salary
-                  )}
-                </div>
-              </div>
-
-            </div>
-          )}
-        </div>
-
-          </>
-        )}
-
         {/* ==========================================================
             INDIVIDUAL SALARY WHATSAPP BILL
             ========================================================== */}
@@ -3642,79 +3466,16 @@ export default function Attendance() {
             </button>
           </div>
 
-          {employee && individualSalary && reportPeriodValid && (
-            <div className="individual-bill-preview">
-              <div className="individual-bill-heading">
-                <div>
-                  <h3>{employee?.name || 'Employee'}</h3>
-                  <div>
-                    {formatDate(parseDateKey(reportStartDate))} to{' '}
-                    {formatDate(parseDateKey(reportEndDate))}
-                  </div>
-                </div>
-
-                <div className="individual-bill-machine">
-                  {currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}
-                </div>
-              </div>
-
-              <div className="individual-summary-grid">
-                <div className="individual-summary-box">
-                  <span>Working Days</span>
-                  <strong>{individualSalary.totalDays}</strong>
-                </div>
-                <div className="individual-summary-box">
-                  <span>Present</span>
-                  <strong>{individualSalary.presentDays}</strong>
-                </div>
-                <div className="individual-summary-box absent">
-                  <span>Absent</span>
-                  <strong>{individualSalary.absentDays}</strong>
-                </div>
-                <div className="individual-summary-box final">
-                  <span>Final Salary</span>
-                  <strong>{formatMoney(individualSalary.finalSalary)}</strong>
-                </div>
-              </div>
-
-              <div className="individual-salary-lines">
-                <div>
-                  <span>Monthly Salary</span>
-                  <strong>{formatMoney(Number(employee?.salary) || 0)}</strong>
-                </div>
-                <div>
-                  <span>Gross Salary</span>
-                  <strong>{formatMoney(individualSalary.grossSalary)}</strong>
-                </div>
-                <div>
-                  <span>Absent Deduction</span>
-                  <strong className="negative-value">
-                    {formatMoney(individualSalary.absentDeduction)}
-                  </strong>
-                </div>
-                <div>
-                  <span>Salary Advance</span>
-                  <strong className="negative-value">
-                    {formatMoney(individualSalary.totalAdvance)}
-                  </strong>
-                </div>
-              </div>
-
-              <div className="report-actions">
-                <button
-                  type="button"
-                  className="button whatsapp-button"
-                  onClick={shareIndividualSalaryOnWhatsApp}
-                >
-                  WhatsApp
-                </button>
-              </div>
-
-              <div className="whatsapp-note">
-                The bill is shared as a WhatsApp message. The employee's saved phone number is used when available.
-              </div>
-            </div>
-          )}
+          <div className="individual-share-actions">
+            <button
+              type="button"
+              className="button whatsapp-button"
+              onClick={shareIndividualSalaryOnWhatsApp}
+              disabled={!employee || !individualSalary || !reportPeriodValid}
+            >
+              📱 Share Individual Bill to Employee
+            </button>
+          </div>
 
           {!employee && (
             <div className="individual-bill-empty">
@@ -3929,119 +3690,6 @@ export default function Attendance() {
           ) : (
             <div className="individual-bill-empty">
               Select a valid date range to prepare the whole employee report.
-            </div>
-          )}
-        </div>
-
-        {/* ==========================================================
-            ALL EMPLOYEE SALARY LIST - EXTRA VIEW
-            ========================================================== */}
-        <div className="card all-salary-card">
-          <div className="all-salary-header">
-            <div>
-              <h2 className="section-title">
-                All Employee Salary
-              </h2>
-              <div className="all-salary-header-text">
-                Worked days, absent days, advances and current payable salary.
-              </div>
-            </div>
-            <div className="all-salary-header-actions">
-              <span className="all-salary-count">
-                {employees.length} employees
-              </span>
-              <span className="all-salary-period-note">Current salary list</span>
-            </div>
-          </div>
-
-          {allEmployeeSalaryLoading ? (
-            <div className="all-salary-loading">
-              Loading employee salary details...
-            </div>
-          ) : allEmployeeSalaryRows.length === 0 ? (
-            <div className="empty-advance">
-              No employee salary data available.
-            </div>
-          ) : (
-            <div className="all-salary-table-wrap">
-              <table className="all-salary-table">
-                <thead>
-                  <tr>
-                    <th>Employee</th>
-                    <th>Joining Date</th>
-                    <th>Monthly Salary</th>
-                    <th>Days Worked</th>
-                    <th>Absent</th>
-                    <th>Advance</th>
-                    <th>Final Salary</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {allEmployeeSalaryRows.map((row) => {
-                    const item = row.employee;
-                    const salary = row.salary;
-                    const isSelected =
-                      String(item?._id) ===
-                      String(selectedEmployee);
-
-                    return (
-                      <tr
-                        key={item?._id}
-                        className={
-                          isSelected ? 'selected' : ''
-                        }
-                        onClick={() =>
-                          setSelectedEmployee(item?._id || '')
-                        }
-                        title="Click to view this employee's attendance"
-                      >
-                        <td>
-                          <div className="all-salary-name">
-                            {item?.name || 'Unnamed Employee'}
-                          </div>
-                          <div className="all-salary-sub">
-                            {item?.type || item?.userType || 'Employee'}
-                          </div>
-                        </td>
-                        <td>
-                          {item?.date
-                            ? formatDate(new Date(item.date))
-                            : '-'}
-                        </td>
-                        <td className="all-salary-money">
-                          {formatMoney(item?.salary)}
-                        </td>
-                        <td className="all-salary-present">
-                          {salary.presentDays}
-                        </td>
-                        <td className="all-salary-absent">
-                          {salary.absentDays}
-                        </td>
-                        <td className="all-salary-advance">
-                          {formatMoney(salary.totalAdvance)}
-                        </td>
-                        <td className="all-salary-final">
-                          {formatMoney(salary.finalSalary)}
-                        </td>
-                        <td>
-                          <button
-                            type="button"
-                            className="row-whatsapp-button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              shareEmployeeRowToWhatsApp(row);
-                            }}
-                            title={`Share ${item?.name || 'employee'}'s salary update on WhatsApp`}
-                          >
-                            📱 WhatsApp
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
             </div>
           )}
         </div>
