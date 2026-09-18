@@ -1596,6 +1596,9 @@ const Materials = () => {
 
             <Table
               size="small"
+              sx={{
+                minWidth: 760,
+              }}
             >
 
               <TableHead>
@@ -1607,11 +1610,11 @@ const Materials = () => {
                     'Date',
                     'Type',
                     'Quantity',
-                    'Cost/L',
-                    'Total / Amount',
+                    'Cost',
+                    'Total',
                     'Bill',
                     ...(canWrite
-                      ? ['Actions']
+                      ? ['Action']
                       : []),
                   ].map(
                     (header) => (
@@ -1680,7 +1683,11 @@ const Materials = () => {
                       {/* S.NO */}
 
                       <TableCell>
-                        {page * rowsPerPage + materials.indexOf(material) + 1}
+
+                        {page * rowsPerPage +
+                          materials.indexOf(material) +
+                          1}
+
                       </TableCell>
 
 
@@ -1718,7 +1725,7 @@ const Materials = () => {
                       </TableCell>
 
 
-                      {/* RATE */}
+                      {/* COST */}
 
                       <TableCell>
 
