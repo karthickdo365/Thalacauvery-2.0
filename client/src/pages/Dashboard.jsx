@@ -2116,6 +2116,12 @@ const Dashboard = () => {
     currentMachine,
   } = useMachine();
 
+  const isBig =
+    currentMachine === 'big';
+
+  const isSmall =
+    currentMachine === 'small';
+
   /* =======================================================
      FETCH DASHBOARD STATS
   ======================================================= */
