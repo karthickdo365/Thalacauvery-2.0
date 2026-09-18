@@ -2160,7 +2160,7 @@ const BorewellBills = () => {
                     ...(isBig
                       ? [
                           'Outer',
-                          'Pipe',
+                          'Inner',
                           'JI',
                         ]
                       : [
