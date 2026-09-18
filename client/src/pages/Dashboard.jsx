@@ -3263,33 +3263,10 @@ const Dashboard = () => {
                   sx={{
                     display: 'grid',
                     gridTemplateColumns:
-                      'repeat(4, minmax(0, 1fr))',
+                      'repeat(3, minmax(0, 1fr))',
                     gap: 0.75,
                   }}
                 >
-                  {/* TOTAL EMPLOYEES */}
-                  <Box>
-                    <Typography
-                      sx={{
-                        color: '#64748b',
-                        fontSize: '0.6rem',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      Employees
-                    </Typography>
-
-                    <Typography
-                      sx={{
-                        color: '#059669',
-                        fontWeight: 800,
-                        fontSize: '0.82rem',
-                      }}
-                    >
-                      {employees}
-                    </Typography>
-                  </Box>
-
                   {/* TOTAL SALARY */}
                   <Box>
                     <Typography
@@ -3376,36 +3353,7 @@ const Dashboard = () => {
             EMPLOYEE CENTER
         ================================================= */}
 
-        <Grid
-          container
-          justifyContent="center"
-          sx={{
-            mb: 3,
-          }}
-        >
-          <Grid
-            item
-            xs={12}
-            sm={6}
-            md={3}
-          >
-            <StatCard
-              title="Employee"
-              value={
-                employees
-              }
-              icon={
-                <PeopleIcon />
-              }
-              color="#059669"
-              onClick={() =>
-                handleCardClick(
-                  'totalEmployees'
-                )
-              }
-            />
-          </Grid>
-        </Grid>
+
 
         {/* =================================================
             ANALYTICS
