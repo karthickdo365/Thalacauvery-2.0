@@ -523,6 +523,10 @@ const getEmployeePhone = (emp) => {
   );
 };
 
+const getUserPhone = (user) => {
+  return getEmployeePhone(user);
+};
+
 const shareOnWhatsApp = (
   text,
   phone
@@ -586,6 +590,9 @@ export default function Attendance() {
     selectedEmployee,
     setSelectedEmployee,
   ] = useState('');
+
+  const [partners, setPartners] = useState([]);
+  const [selectedPartner, setSelectedPartner] = useState('');
 
   /*
    * Current calendar month
@@ -755,8 +762,8 @@ export default function Attendance() {
       // Attendance & Salary is only for employees.
       // Brokers must not appear in this dropdown.
       // Keep the broker records in the database; only filter them here.
-      const list = allUsers.filter((item) => {
-        const type = String(
+      const getUserType = (item) =>
+        String(
           item?.type ||
           item?.userType ||
           item?.role ||
@@ -765,10 +772,22 @@ export default function Attendance() {
           .trim()
           .toLowerCase();
 
+      const list = allUsers.filter((item) => {
+        const type = getUserType(item);
         return type !== 'broker' && type !== 'partner';
       });
 
+      const partnerList = allUsers.filter((item) => {
+        const type = getUserType(item);
+        return type === 'partner';
+      });
+
       setEmployees(list);
+      setPartners(partnerList);
+
+      if (selectedPartner && !partnerList.some((item) => String(item?._id) === String(selectedPartner))) {
+        setSelectedPartner('');
+      }
 
       /*
        * Keep currently selected employee
@@ -1686,6 +1705,52 @@ export default function Attendance() {
     Boolean(reportEndDate) &&
     reportEndDate >= reportStartDate;
 
+  const rangeEmployeeRows = useMemo(() => {
+    if (!reportPeriodValid) return [];
+
+    return allEmployeeSalaryRows.map((row) => ({
+      ...row,
+      salary: calculateEmployeeRangeSalary(
+        row.employee,
+        row.attendance || [],
+        row.advances || [],
+        reportStartDate,
+        reportEndDate
+      ),
+    }));
+  }, [
+    allEmployeeSalaryRows,
+    reportStartDate,
+    reportEndDate,
+    reportPeriodValid,
+  ]);
+
+  const rangeReportTotals = useMemo(() => {
+    return rangeEmployeeRows.reduce(
+      (totals, row) => {
+        const salary = row.salary || {};
+        totals.totalDays += Number(salary.totalDays) || 0;
+        totals.presentDays += Number(salary.presentDays) || 0;
+        totals.absentDays += Number(salary.absentDays) || 0;
+        totals.grossSalary += Number(salary.grossSalary) || 0;
+        totals.absentDeduction += Number(salary.absentDeduction) || 0;
+        totals.totalAdvance += Number(salary.totalAdvance) || 0;
+        totals.finalSalary += Number(salary.finalSalary) || 0;
+        return totals;
+      },
+      { employees: 0, totalDays: 0, presentDays: 0, absentDays: 0, grossSalary: 0, absentDeduction: 0, totalAdvance: 0, finalSalary: 0 }
+    );
+  }, [rangeEmployeeRows]);
+
+  const printWholeEmployeeReport = () => {
+    if (!reportPeriodValid || !rangeEmployeeRows.length) {
+      setError('Select a valid date range with employee data before printing.');
+      return;
+    }
+
+    window.setTimeout(() => window.print(), 50);
+  };
+
   const setQuickReportRange = (type) => {
     const now = new Date();
     const today = toDateKey(now);
@@ -1738,18 +1803,22 @@ export default function Attendance() {
         ? startLabel
         : `${startLabel} to ${endLabel}`;
 
+    const rangeSet = new Set(getDateRange(reportStartDate, reportEndDate));
+    const absentDates = Object.keys(absentMap).filter((key) => rangeSet.has(key)).sort();
+    const rangeAdvances = advances.filter((item) => {
+      const rawDate = getAdvanceDateValue(item);
+      const key = rawDate ? toDateKey(new Date(rawDate)) : item?.month ? `${item.month}-01` : '';
+      return key && key >= reportStartDate && key <= reportEndDate;
+    });
+
     const lines = [
-      '*Salary Bill*',
+      '*SALARY BILL*',
       '',
       `Employee: ${employee?.name || '-'}`,
       `Machine: ${currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}`,
       `Period: ${periodLabel}`,
       '',
-      `Joining Date: ${
-        employee?.date
-          ? formatDate(new Date(employee.date))
-          : '-'
-      }`,
+      `Joining Date: ${employee?.date ? formatDate(new Date(employee.date)) : '-'}`,
       `Monthly Salary: ${formatMoney(Number(employee?.salary) || 0)}`,
       `Working Days: ${individualSalary.totalDays || 0}`,
       `Present Days: ${individualSalary.presentDays || 0}`,
@@ -1757,9 +1826,23 @@ export default function Attendance() {
       `Gross Salary: ${formatMoney(individualSalary.grossSalary)}`,
       `Absent Deduction: ${formatMoney(individualSalary.absentDeduction)}`,
       `Salary Advance: ${formatMoney(individualSalary.totalAdvance)}`,
-      '',
-      `*Final Salary: ${formatMoney(individualSalary.finalSalary)}*`,
     ];
+
+    if (absentDates.length) {
+      lines.push('', '*Absent Dates*');
+      absentDates.forEach((key, index) => {
+        lines.push(`${index + 1}. ${formatDate(parseDateKey(key))}`);
+      });
+    }
+
+    if (rangeAdvances.length) {
+      lines.push('', '*Advance Details*');
+      rangeAdvances.forEach((item, index) => {
+        lines.push(`${index + 1}. ${formatAdvanceDate(item)} - ${formatMoney(item?.advanceAmount)}`);
+      });
+    }
+
+    lines.push('', `*Final Salary: ${formatMoney(individualSalary.finalSalary)}*`);
 
     shareOnWhatsApp(
       lines.join('\n'),
@@ -1834,51 +1917,66 @@ export default function Attendance() {
    |--------------------------------------------------------------------------
    */
   const shareAllEmployeesToWhatsApp = () => {
-    if (!allEmployeeSalaryRows.length) {
-      setError('No employee salary data is available.');
+    if (!rangeEmployeeRows.length) {
+      setError('No employee salary data is available for this date range.');
       return;
     }
 
-    const totals = allEmployeeSalaryRows.reduce(
-      (acc, row) => {
-        const salary = row.salary || {};
+    if (!selectedPartner) {
+      setError('Please select a partner before sharing the whole employee report.');
+      return;
+    }
 
-        acc.presentDays += salary.presentDays || 0;
-        acc.absentDays += salary.absentDays || 0;
-        acc.grossSalary += salary.grossSalary || 0;
-        acc.absentDeduction += salary.absentDeduction || 0;
-        acc.totalAdvance += salary.totalAdvance || 0;
-        acc.finalSalary += salary.finalSalary || 0;
-
-        return acc;
-      },
-      {
-        presentDays: 0,
-        absentDays: 0,
-        grossSalary: 0,
-        absentDeduction: 0,
-        totalAdvance: 0,
-        finalSalary: 0,
-      }
+    const partner = partners.find(
+      (item) => String(item?._id) === String(selectedPartner)
     );
 
+    if (!partner) {
+      setError('Selected partner was not found.');
+      return;
+    }
+
+    const totals = rangeEmployeeRows.reduce(
+      (acc, row) => {
+        const salary = row.salary || {};
+        acc.totalDays += Number(salary.totalDays) || 0;
+        acc.presentDays += Number(salary.presentDays) || 0;
+        acc.absentDays += Number(salary.absentDays) || 0;
+        acc.grossSalary += Number(salary.grossSalary) || 0;
+        acc.absentDeduction += Number(salary.absentDeduction) || 0;
+        acc.totalAdvance += Number(salary.totalAdvance) || 0;
+        acc.finalSalary += Number(salary.finalSalary) || 0;
+        return acc;
+      },
+      { totalDays: 0, presentDays: 0, absentDays: 0, grossSalary: 0, absentDeduction: 0, totalAdvance: 0, finalSalary: 0 }
+    );
+
+    const startLabel = formatDate(parseDateKey(reportStartDate));
+    const endLabel = formatDate(parseDateKey(reportEndDate));
+    const periodLabel = reportStartDate === reportEndDate
+      ? startLabel
+      : `${startLabel} to ${endLabel}`;
+
     const lines = [
-      '*ALL EMPLOYEE SALARY REPORT*',
+      '*EMPLOYEE SALARY REPORT*',
       '',
+      `Partner: ${partner?.name || '-'}`,
       `Machine: ${currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}`,
-      `Total Employees: ${allEmployeeSalaryRows.length}`,
+      `Period: ${periodLabel}`,
+      `Total Employees: ${rangeEmployeeRows.length}`,
       '',
-      '*Employee Details*',
+      '*EMPLOYEE DETAILS*',
       '',
     ];
 
-    allEmployeeSalaryRows.forEach((row, index) => {
+    rangeEmployeeRows.forEach((row, index) => {
       lines.push(...buildEmployeeSalaryLines(row, index), '');
     });
 
     lines.push(
       '*TOTAL SUMMARY*',
-      `Employees: ${allEmployeeSalaryRows.length}`,
+      `Employees: ${rangeEmployeeRows.length}`,
+      `Working Days: ${totals.totalDays}`,
       `Present Days: ${totals.presentDays}`,
       `Absent Days: ${totals.absentDays}`,
       `Gross Salary: ${formatMoney(totals.grossSalary)}`,
@@ -1887,11 +1985,11 @@ export default function Attendance() {
       `*Final Payable: ${formatMoney(totals.finalSalary)}*`
     );
 
-    // No single recipient for the combined report — opens WhatsApp's
-    // contact/share picker so the user can choose who to send it to.
-    shareOnWhatsApp(lines.join('\n'), '');
+    shareOnWhatsApp(lines.join('\n'), getUserPhone(partner));
 
-    setSuccess('All employee salary report opened in WhatsApp.');
+    setSuccess(
+      `Whole employee salary report opened in WhatsApp for ${partner?.name || 'partner'}.`
+    );
   };
 
 /*
@@ -3031,6 +3129,237 @@ export default function Attendance() {
           font-size:13px;
         }
 
+        /* ---------------- Whole employee report ---------------- */
+
+        .partner-report-card {
+          margin-bottom: 20px;
+          padding: 22px 24px;
+        }
+
+        .whole-report-preview {
+          margin-top: 20px;
+          padding: 18px;
+          border: 1px solid #dfe5ea;
+          background: #fff;
+          border-radius: 10px;
+        }
+
+        .whole-report-title-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 20px;
+          margin-bottom: 18px;
+        }
+
+        .whole-report-company {
+          color: #17324d;
+          font-size: 13px;
+          font-weight: 700;
+          margin-bottom: 5px;
+        }
+
+        .whole-report-title-row h3 {
+          margin: 0;
+          color: #132e4a;
+          font-size: 28px;
+          font-weight: 850;
+        }
+
+        .whole-report-period {
+          margin-top: 8px;
+          color: #3f4b58;
+          font-size: 15px;
+        }
+
+        .whole-report-partner {
+          padding: 8px 12px;
+          border: 1px solid #d7e0e8;
+          border-radius: 7px;
+          color: #475569;
+          font-size: 12px;
+          white-space: nowrap;
+        }
+
+        .whole-report-summary {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 10px;
+          margin: 20px 0 22px;
+        }
+
+        .whole-report-summary > div {
+          min-height: 68px;
+          padding: 11px 12px;
+          border: 1px solid #cbd5e1;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+        }
+
+        .whole-report-summary span {
+          color: #5b6470;
+          font-size: 11px;
+        }
+
+        .whole-report-summary strong {
+          margin-top: 5px;
+          color: #20242a;
+          font-size: 16px;
+        }
+
+        .whole-report-summary .negative strong {
+          color: #c92c2c;
+        }
+
+        .whole-report-table-wrap {
+          overflow-x: auto;
+          border: 1px solid #aeb7c0;
+        }
+
+        .whole-report-table {
+          width: 100%;
+          min-width: 1050px;
+          border-collapse: collapse;
+          font-size: 12px;
+        }
+
+        .whole-report-table th,
+        .whole-report-table td {
+          padding: 8px 10px;
+          border: 1px solid #b6bec7;
+          text-align: left;
+          white-space: nowrap;
+        }
+
+        .whole-report-table th {
+          background: #fafafa;
+          color: #171a1e;
+          font-weight: 800;
+        }
+
+        .whole-report-table td {
+          color: #22272d;
+        }
+
+        .whole-report-total td {
+          font-weight: 850;
+          background: #fafafa;
+          color: #15191d;
+        }
+
+        .all-salary-period-note {
+          color: #718397;
+          font-size: 12px;
+        }
+
+        .print-report-page {
+          display: none;
+        }
+
+        @media print {
+          @page {
+            size: A4 landscape;
+            margin: 12mm;
+          }
+
+          body {
+            background: #fff !important;
+          }
+
+          .attendance-page {
+            padding: 0 !important;
+            background: #fff !important;
+          }
+
+          .attendance-page > .attendance-container > * {
+            display: none !important;
+          }
+
+          .attendance-page > .attendance-container > .print-report-page {
+            display: block !important;
+          }
+
+          .print-report-page {
+            width: 100%;
+            color: #20242a;
+            font-family: Arial, Helvetica, sans-serif;
+          }
+
+          .print-report-company {
+            text-align: center;
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 12px;
+          }
+
+          .print-report-page h1 {
+            margin: 0;
+            font-size: 25px;
+            font-weight: 800;
+            color: #142f4b;
+          }
+
+          .print-report-period {
+            margin-top: 8px;
+            font-size: 13px;
+            color: #35404c;
+          }
+
+          .print-report-summary {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin: 22px 0;
+          }
+
+          .print-report-summary-box {
+            border: 1px solid #b8bec4;
+            padding: 10px;
+            min-height: 54px;
+          }
+
+          .print-report-summary-box span {
+            display: block;
+            font-size: 10px;
+            color: #59616a;
+          }
+
+          .print-report-summary-box strong {
+            display: block;
+            margin-top: 5px;
+            font-size: 15px;
+          }
+
+          .print-report-summary-box.negative strong {
+            color: #c92c2c;
+          }
+
+          .print-report-page table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 10px;
+          }
+
+          .print-report-page th,
+          .print-report-page td {
+            border: 1px solid #aeb4ba;
+            padding: 7px 8px;
+            text-align: left;
+            white-space: nowrap;
+          }
+
+          .print-report-page th {
+            font-weight: 800;
+            background: #fafafa;
+          }
+
+          .print-report-page .print-total td {
+            font-weight: 800;
+            background: #fafafa;
+          }
+        }
+
         /* ---------------- Responsive ---------------- */
 
         @media (max-width: 1100px) {
@@ -3395,6 +3724,215 @@ export default function Attendance() {
         </div>
 
 
+        <div className="print-report-page">
+          <div className="print-report-company">Thalacauvery Borewell</div>
+          <h1>Employee Salary Report</h1>
+          <div className="print-report-period">
+            Period: {formatDate(parseDateKey(reportStartDate))} to {formatDate(parseDateKey(reportEndDate))} • {currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}
+          </div>
+
+          <div className="print-report-summary">
+            <div className="print-report-summary-box"><span>Employees</span><strong>{rangeEmployeeRows.length}</strong></div>
+            <div className="print-report-summary-box"><span>Present Days</span><strong>{rangeReportTotals.presentDays}</strong></div>
+            <div className="print-report-summary-box"><span>Absent Days</span><strong>{rangeReportTotals.absentDays}</strong></div>
+            <div className={`print-report-summary-box ${rangeReportTotals.finalSalary < 0 ? 'negative' : ''}`}><span>Final Payable</span><strong>{formatMoney(rangeReportTotals.finalSalary)}</strong></div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>S.No</th><th>Employee</th><th>Joining Date</th><th>Working Days</th><th>Present</th><th>Absent</th><th>Gross Salary</th><th>Absent Deduction</th><th>Advance</th><th>Final Salary</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rangeEmployeeRows.map((row, index) => {
+                const item = row.employee;
+                const salary = row.salary || {};
+                return (
+                  <tr key={item?._id || index}>
+                    <td>{index + 1}</td>
+                    <td>{item?.name || 'Unnamed Employee'}</td>
+                    <td>{item?.date ? formatDate(new Date(item.date)) : '-'}</td>
+                    <td>{salary.totalDays}</td>
+                    <td>{salary.presentDays}</td>
+                    <td>{salary.absentDays}</td>
+                    <td>{formatMoney(salary.grossSalary)}</td>
+                    <td>{formatMoney(salary.absentDeduction)}</td>
+                    <td>{formatMoney(salary.totalAdvance)}</td>
+                    <td>{formatMoney(salary.finalSalary)}</td>
+                  </tr>
+                );
+              })}
+              <tr className="print-total">
+                <td colSpan={3}>TOTAL</td>
+                <td>{rangeReportTotals.totalDays}</td>
+                <td>{rangeReportTotals.presentDays}</td>
+                <td>{rangeReportTotals.absentDays}</td>
+                <td>{formatMoney(rangeReportTotals.grossSalary)}</td>
+                <td>{formatMoney(rangeReportTotals.absentDeduction)}</td>
+                <td>{formatMoney(rangeReportTotals.totalAdvance)}</td>
+                <td>{formatMoney(rangeReportTotals.finalSalary)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* ==========================================================
+            WHOLE EMPLOYEE REPORT FOR PARTNER
+            ========================================================== */}
+        <div className="card partner-report-card">
+          <div className="report-header">
+            <div>
+              <h2 className="section-title">Employee Salary Report</h2>
+              <div className="section-subtitle">
+                Select a partner and date range. The complete employee report can be shared to that partner's WhatsApp.
+              </div>
+            </div>
+          </div>
+
+          <div className="report-controls partner-report-controls">
+            <div className="report-field">
+              <label className="text-label">Partner</label>
+              <select
+                className="select-input"
+                value={selectedPartner}
+                onChange={(event) => setSelectedPartner(event.target.value)}
+              >
+                <option value="">Select Partner</option>
+                {partners.map((item) => (
+                  <option key={item?._id} value={item?._id}>
+                    {item?.name || 'Unnamed Partner'}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="report-field">
+              <label className="text-label">From Date</label>
+              <input
+                type="date"
+                className="text-input"
+                value={reportStartDate}
+                max={reportEndDate || toDateKey(new Date())}
+                onChange={(event) => setReportStartDate(event.target.value)}
+              />
+            </div>
+
+            <div className="report-field">
+              <label className="text-label">To Date</label>
+              <input
+                type="date"
+                className="text-input"
+                value={reportEndDate}
+                min={reportStartDate || undefined}
+                max={toDateKey(new Date())}
+                onChange={(event) => setReportEndDate(event.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="report-quick-buttons">
+            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('month')}>This Month</button>
+            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('2months')}>Last 2 Months</button>
+            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('6months')}>Last 6 Months</button>
+            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('year')}>Last 12 Months</button>
+          </div>
+
+          {reportPeriodValid && rangeEmployeeRows.length > 0 ? (
+            <div className="whole-report-preview">
+              <div className="whole-report-title-row">
+                <div>
+                  <div className="whole-report-company">Thalacauvery Borewell</div>
+                  <h3>Employee Salary Report</h3>
+                  <div className="whole-report-period">
+                    Period: {formatDate(parseDateKey(reportStartDate))} to {formatDate(parseDateKey(reportEndDate))} • {currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}
+                  </div>
+                </div>
+                <div className="whole-report-partner">
+                  Partner: {partners.find((item) => String(item?._id) === String(selectedPartner))?.name || 'Not selected'}
+                </div>
+              </div>
+
+              <div className="whole-report-summary">
+                <div><span>Employees</span><strong>{rangeEmployeeRows.length}</strong></div>
+                <div><span>Present Days</span><strong>{rangeReportTotals.presentDays}</strong></div>
+                <div><span>Absent Days</span><strong>{rangeReportTotals.absentDays}</strong></div>
+                <div className={rangeReportTotals.finalSalary < 0 ? 'negative' : ''}><span>Final Payable</span><strong>{formatMoney(rangeReportTotals.finalSalary)}</strong></div>
+              </div>
+
+              <div className="whole-report-table-wrap">
+                <table className="whole-report-table">
+                  <thead>
+                    <tr>
+                      <th>S.No</th>
+                      <th>Employee</th>
+                      <th>Joining Date</th>
+                      <th>Working Days</th>
+                      <th>Present</th>
+                      <th>Absent</th>
+                      <th>Gross Salary</th>
+                      <th>Absent Deduction</th>
+                      <th>Advance</th>
+                      <th>Final Salary</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rangeEmployeeRows.map((row, index) => {
+                      const item = row.employee;
+                      const salary = row.salary || {};
+                      return (
+                        <tr key={item?._id || index}>
+                          <td>{index + 1}</td>
+                          <td>{item?.name || 'Unnamed Employee'}</td>
+                          <td>{item?.date ? formatDate(new Date(item.date)) : '-'}</td>
+                          <td>{salary.totalDays}</td>
+                          <td>{salary.presentDays}</td>
+                          <td>{salary.absentDays}</td>
+                          <td>{formatMoney(salary.grossSalary)}</td>
+                          <td>{formatMoney(salary.absentDeduction)}</td>
+                          <td>{formatMoney(salary.totalAdvance)}</td>
+                          <td>{formatMoney(salary.finalSalary)}</td>
+                        </tr>
+                      );
+                    })}
+                    <tr className="whole-report-total">
+                      <td colSpan={3}>TOTAL</td>
+                      <td>{rangeReportTotals.totalDays}</td>
+                      <td>{rangeReportTotals.presentDays}</td>
+                      <td>{rangeReportTotals.absentDays}</td>
+                      <td>{formatMoney(rangeReportTotals.grossSalary)}</td>
+                      <td>{formatMoney(rangeReportTotals.absentDeduction)}</td>
+                      <td>{formatMoney(rangeReportTotals.totalAdvance)}</td>
+                      <td>{formatMoney(rangeReportTotals.finalSalary)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="report-actions">
+                <button type="button" className="button" onClick={printWholeEmployeeReport}>
+                  Print / Save as PDF
+                </button>
+                <button
+                  type="button"
+                  className="button whatsapp-button"
+                  onClick={shareAllEmployeesToWhatsApp}
+                  disabled={!selectedPartner}
+                >
+                  📱 Share Whole Report to Partner
+                </button>
+              </div>
+              <div className="whatsapp-note">
+                The WhatsApp report uses the selected partner and the selected date range.
+              </div>
+            </div>
+          ) : (
+            <div className="individual-bill-empty">
+              Select a valid date range to prepare the whole employee report.
+            </div>
+          )}
+        </div>
+
         {/* ==========================================================
             ALL EMPLOYEE SALARY LIST - EXTRA VIEW
             ========================================================== */}
@@ -3412,14 +3950,7 @@ export default function Attendance() {
               <span className="all-salary-count">
                 {employees.length} employees
               </span>
-              <button
-                type="button"
-                className="button whatsapp-button all-salary-share-button"
-                onClick={shareAllEmployeesToWhatsApp}
-                disabled={allEmployeeSalaryLoading || !allEmployeeSalaryRows.length}
-              >
-                📱 Share All to WhatsApp
-              </button>
+              <span className="all-salary-period-note">Current salary list</span>
             </div>
           </div>
 
