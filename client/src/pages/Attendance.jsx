@@ -3048,6 +3048,138 @@ export default function Attendance() {
           </div>
         )}
 
+        {/* ==========================================================
+            EMPLOYEE SALARY BILL
+            ========================================================== */}
+        <div className="card report-card">
+          <div className="report-header">
+            <div>
+              <h2 className="section-title">Salary Bill</h2>
+              <div className="section-subtitle">
+                Salary bill for the selected employee and period.
+              </div>
+            </div>
+          </div>
+
+          <div className="report-controls individual-report-controls">
+            <div className="report-field">
+              <label className="text-label">Employee</label>
+              <div className="selected-report-person">
+                {employee?.name || 'Select an employee above'}
+              </div>
+            </div>
+
+            <div className="report-field">
+              <label className="text-label">From Date</label>
+              <input
+                type="date"
+                className="text-input"
+                value={reportStartDate}
+                max={reportEndDate || toDateKey(new Date())}
+                onChange={(event) => setReportStartDate(event.target.value)}
+              />
+            </div>
+
+            <div className="report-field">
+              <label className="text-label">To Date</label>
+              <input
+                type="date"
+                className="text-input"
+                value={reportEndDate}
+                min={reportStartDate || undefined}
+                max={getEmployeeEndDateKey(employee) || toDateKey(new Date())}
+                onChange={(event) => setReportEndDate(event.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="report-quick-buttons">
+            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('month')}>
+              This Month
+            </button>
+            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('2months')}>
+              Last 2 Months
+            </button>
+            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('6months')}>
+              Last 6 Months
+            </button>
+            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('year')}>
+              Last 12 Months
+            </button>
+          </div>
+
+          {employee && individualSalary && reportPeriodValid && (
+            <div className="individual-bill-preview">
+              <div className="individual-bill-heading">
+                <div>
+                  <h3>Salary Bill</h3>
+                  <div>
+                    Period: {formatDate(parseDateKey(individualSalary.startDate || reportStartDate))} to{' '}
+                    {formatDate(parseDateKey(individualSalary.endDate || reportEndDate))}
+                  </div>
+                  <div>
+                    Joining Date: {employee?.date
+                      ? formatDate(new Date(employee.date))
+                      : '-'}
+                  </div>
+                  {getEmployeeEndDateKey(employee) && (
+                    <div>
+                      End Date: {formatDate(parseDateKey(getEmployeeEndDateKey(employee)))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="individual-bill-machine">
+                  {currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}
+                </div>
+              </div>
+
+              <div className="individual-summary-grid">
+                <div className="individual-summary-box">
+                  <span>Total Days</span>
+                  <strong>{individualSalary.totalDays}</strong>
+                </div>
+                <div className="individual-summary-box">
+                  <span>Present</span>
+                  <strong>{individualSalary.presentDays}</strong>
+                </div>
+                <div className="individual-summary-box absent">
+                  <span>Absent</span>
+                  <strong>{individualSalary.absentDays}</strong>
+                </div>
+                <div className="individual-summary-box final">
+                  <span>Final Salary</span>
+                  <strong>{formatMoney(individualSalary.finalSalary)}</strong>
+                </div>
+              </div>
+
+              <div className="individual-salary-lines">
+                <div>
+                  <span>Monthly Salary</span>
+                  <strong>{formatMoney(Number(employee?.salary) || 0)}</strong>
+                </div>
+                <div>
+                  <span>Salary Advance</span>
+                  <strong className="negative-value">
+                    {formatMoney(individualSalary.totalAdvance)}
+                  </strong>
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {!employee && (
+            <div className="individual-bill-empty">
+              Select one employee to prepare the salary bill.
+            </div>
+          )}
+        </div>
+
+
+
+
+
         {!employee ? (
           <div className="card empty-state">
             <div className="empty-state-icon">
@@ -3114,6 +3246,14 @@ export default function Attendance() {
                     <span>Monthly Salary</span>
                     <strong>
                       {formatMoney(Number(employee?.salary) || 0)}
+                    </strong>
+                  </div>
+
+                  <div className="salary-line deduction">
+                    <span>Absent Deduction</span>
+                    <strong>
+                      -{' '}
+                      {formatMoney(salarySummary.absentDeduction)}
                     </strong>
                   </div>
 
@@ -3501,137 +3641,6 @@ export default function Attendance() {
         )}
 
       </div>
-
-        {/* ==========================================================
-            INDIVIDUAL SALARY WHATSAPP BILL
-            ========================================================== */}
-        <div className="card report-card">
-          <div className="report-header">
-            <div>
-              <h2 className="section-title">Salary Bill</h2>
-              <div className="section-subtitle">
-                Salary bill for the selected employee and period.
-              </div>
-            </div>
-          </div>
-
-          <div className="report-controls individual-report-controls">
-            <div className="report-field">
-              <label className="text-label">Employee</label>
-              <div className="selected-report-person">
-                {employee?.name || 'Select an employee above'}
-              </div>
-            </div>
-
-            <div className="report-field">
-              <label className="text-label">From Date</label>
-              <input
-                type="date"
-                className="text-input"
-                value={reportStartDate}
-                max={reportEndDate || toDateKey(new Date())}
-                onChange={(event) => setReportStartDate(event.target.value)}
-              />
-            </div>
-
-            <div className="report-field">
-              <label className="text-label">To Date</label>
-              <input
-                type="date"
-                className="text-input"
-                value={reportEndDate}
-                min={reportStartDate || undefined}
-                max={getEmployeeEndDateKey(employee) || toDateKey(new Date())}
-                onChange={(event) => setReportEndDate(event.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="report-quick-buttons">
-            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('month')}>
-              This Month
-            </button>
-            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('2months')}>
-              Last 2 Months
-            </button>
-            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('6months')}>
-              Last 6 Months
-            </button>
-            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('year')}>
-              Last 12 Months
-            </button>
-          </div>
-
-          {employee && individualSalary && reportPeriodValid && (
-            <div className="individual-bill-preview">
-              <div className="individual-bill-heading">
-                <div>
-                  <h3>Salary Bill</h3>
-                  <div>
-                    Period: {formatDate(parseDateKey(individualSalary.startDate || reportStartDate))} to{' '}
-                    {formatDate(parseDateKey(individualSalary.endDate || reportEndDate))}
-                  </div>
-                  <div>
-                    Joining Date: {employee?.date
-                      ? formatDate(new Date(employee.date))
-                      : '-'}
-                  </div>
-                  {getEmployeeEndDateKey(employee) && (
-                    <div>
-                      End Date: {formatDate(parseDateKey(getEmployeeEndDateKey(employee)))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="individual-bill-machine">
-                  {currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}
-                </div>
-              </div>
-
-              <div className="individual-summary-grid">
-                <div className="individual-summary-box">
-                  <span>Total Days</span>
-                  <strong>{individualSalary.totalDays}</strong>
-                </div>
-                <div className="individual-summary-box">
-                  <span>Present</span>
-                  <strong>{individualSalary.presentDays}</strong>
-                </div>
-                <div className="individual-summary-box absent">
-                  <span>Absent</span>
-                  <strong>{individualSalary.absentDays}</strong>
-                </div>
-                <div className="individual-summary-box final">
-                  <span>Final Salary</span>
-                  <strong>{formatMoney(individualSalary.finalSalary)}</strong>
-                </div>
-              </div>
-
-              <div className="individual-salary-lines">
-                <div>
-                  <span>Monthly Salary</span>
-                  <strong>{formatMoney(Number(employee?.salary) || 0)}</strong>
-                </div>
-                <div>
-                  <span>Salary Advance</span>
-                  <strong className="negative-value">
-                    {formatMoney(individualSalary.totalAdvance)}
-                  </strong>
-                </div>
-              </div>
-
-            </div>
-          )}
-
-          {!employee && (
-            <div className="individual-bill-empty">
-              Select one employee to prepare the salary bill.
-            </div>
-          )}
-        </div>
-
-
-
 
       {/* ============================================================
           MARK ABSENT MODAL (present day -> absent)
