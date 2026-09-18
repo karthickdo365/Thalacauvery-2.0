@@ -2442,7 +2442,16 @@ export default function Attendance() {
           padding: 22px 24px;
         }
 
-        .report-header {
+        .report-under-title {
+  margin-top: 4px;
+  margin-bottom: 3px;
+  font-size: 15px;
+  line-height: 1.3;
+  font-weight: 700;
+  color: #0f766e;
+}
+
+.report-header {
           display:flex;
           justify-content:space-between;
           align-items:flex-start;
@@ -2972,6 +2981,7 @@ export default function Attendance() {
           <div className="report-header">
             <div>
               <h2 className="section-title">Employee Salary Report</h2>
+              <div className="report-under-title">Attendance &amp; Salary</div>
               <div className="section-subtitle">Select a date range to view the complete salary report.</div>
             </div>
           </div>
