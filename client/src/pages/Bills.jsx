@@ -58,6 +58,15 @@ import {
 } from '../utils/constants';
 
 
+// ============================================================
+// SERVICE TYPES
+// ============================================================
+
+const SERVICE_TYPES = [
+  'Point',
+  'Flushing',
+  'Rod Flushing',
+];
 
 // Big Machine does NOT use JI Outer.
 const BIG_PIPES_NO_JI_OUTER = BIG_PIPES.filter(
@@ -177,7 +186,25 @@ const computeBreakdown = (
       slabs
     );
 
-  const serviceAmt = 0;
+  const flushingAmt =
+    values.serviceType ===
+    'Flushing'
+      ? toNum(
+          values.flushingAmount
+        )
+      : 0;
+
+  const rodFlushingAmt =
+    values.serviceType ===
+    'Rod Flushing'
+      ? toNum(
+          values.rodFlushingAmount
+        )
+      : 0;
+
+  const serviceAmt =
+    flushingAmt +
+    rodFlushingAmt;
 
   const subtotal =
     pipeAmt +
@@ -206,6 +233,8 @@ const computeBreakdown = (
     pipeAmt,
     depthAmt,
     slabBreakdown,
+    flushingAmt,
+    rodFlushingAmt,
     serviceAmt,
     subtotal,
     discountAmount,
@@ -269,6 +298,13 @@ const getDefaultValues = (
 
   depthFeet: '',
 
+  // Point is the normal service.
+  // Flushing and Rod Flushing can still be selected manually when needed.
+  serviceType: 'Point',
+
+  flushingAmount: '',
+
+  rodFlushingAmount: '',
 
   discountAmount: '',
   otherAmount: '',
@@ -827,6 +863,12 @@ const BorewellBills = () => {
 
           machineType:
             currentMachine,
+
+          serviceType:
+            currentMachine === 'small' &&
+            formData.serviceType === 'Rod Flushing'
+              ? 'Point'
+              : formData.serviceType,
         };
 
 
@@ -1057,6 +1099,19 @@ const BorewellBills = () => {
           point.depthFeet ||
           '',
 
+        serviceType:
+          currentMachine === 'small' &&
+          point.serviceType === 'Rod Flushing'
+            ? 'Point'
+            : point.serviceType || '',
+
+        flushingAmount:
+          point.flushingAmount ||
+          '',
+
+        rodFlushingAmount:
+          point.rodFlushingAmount ||
+          '',
 
         // Load saved bill adjustments when editing.
         // Support both current and older backend field names.
@@ -1469,6 +1524,63 @@ const BorewellBills = () => {
 
                 </Grid>
 {/* ==================================================
+                    SERVICE
+                ================================================== */}
+
+                <Grid
+                  item
+                  xs={12}
+                  sm={6}
+                  md={3}
+                >
+
+                  <Controller
+                    name="serviceType"
+                    control={control}
+                    render={({
+                      field,
+                    }) => (
+
+                      <TextField
+                        {...field}
+                        fullWidth
+                        select
+                        label="Service Type"
+                        size="small"
+                      >
+
+                        <MenuItem value="">
+                          — None —
+                        </MenuItem>
+
+                        {SERVICE_TYPES
+                          .filter(
+                            (type) =>
+                              isBig ||
+                              type !== 'Rod Flushing'
+                          )
+                          .map(
+                            (type) => (
+
+                              <MenuItem
+                                key={type}
+                                value={type}
+                              >
+                                {type}
+                              </MenuItem>
+
+                            )
+                          )}
+
+                      </TextField>
+
+                    )}
+                  />
+
+                </Grid>
+
+
+                {/* ==================================================
                     RATE MESSAGE
                 ================================================== */}
 
@@ -1602,6 +1714,82 @@ const BorewellBills = () => {
                   />
 
                 </Grid>
+
+
+                {/* ==================================================
+                    FLUSHING
+                ================================================== */}
+
+                {values.serviceType ===
+                  'Flushing' && (
+
+                  <Grid
+                    item
+                    xs={12}
+                    sm={6}
+                    md={3}
+                  >
+
+                    <TextField
+                      fullWidth
+                      size="small"
+                      type="number"
+                      label="Flushing Amount (₹)"
+                      InputLabelProps={{
+                        shrink: true,
+                      }}
+                      {...register(
+                        'flushingAmount'
+                      )}
+                      inputProps={{
+                        min: 0,
+                      }}
+                      onWheel={(e) =>
+                        e.target.blur()
+                      }
+                    />
+
+                  </Grid>
+
+                )}
+
+
+                {/* ==================================================
+                    ROD FLUSHING
+                ================================================== */}
+
+                {values.serviceType ===
+                  'Rod Flushing' && (
+
+                  <Grid
+                    item
+                    xs={12}
+                    sm={6}
+                    md={3}
+                  >
+
+                    <TextField
+                      fullWidth
+                      size="small"
+                      type="number"
+                      label="Rod Flushing Amount (₹)"
+                      InputLabelProps={{
+                        shrink: true,
+                      }}
+                      {...register(
+                        'rodFlushingAmount'
+                      )}
+                      inputProps={{
+                        min: 0,
+                      }}
+                      onWheel={(e) =>
+                        e.target.blur()
+                      }
+                    />
+
+                  </Grid>
+
+                )}
 
 
                 {/* ==================================================
@@ -2136,6 +2324,16 @@ const BorewellBills = () => {
                       {toNum(point.depthFeet) > 0
                         ? `${point.depthFeet} ft`
                         : '—'}
+                    </TableCell>
+
+                    {/* TYPE */}
+                    <TableCell
+                      sx={{
+                        fontSize: '0.82rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {point.serviceType || '—'}
                     </TableCell>
 
                     {/* TOTAL */}
