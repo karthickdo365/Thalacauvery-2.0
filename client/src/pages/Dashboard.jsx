@@ -3068,6 +3068,17 @@ const Dashboard = () => {
     );
 
   /*
+   * Pending salary comes from Attendance & Salary.
+   * currentSalary is already calculated after absent deduction
+   * and the employee's current-month salary advances.
+   */
+  const salaryPendingAmount =
+    Math.max(
+      totalSalary,
+      0
+    );
+
+  /*
    * Salary advances are separate from borewell customer
    * payments. The old dashboard incorrectly displayed
    * partial borewell payments as "Advance", which is why
@@ -3474,7 +3485,7 @@ const Dashboard = () => {
         'Pending Amount',
 
       value:
-        fmt(pendingAmount),
+        fmt(salaryPendingAmount),
 
       icon:
         <PendingActionsIcon />,
@@ -3882,7 +3893,7 @@ const Dashboard = () => {
                       }}
                     >
                       {fmt(
-                        pendingAmount
+                        salaryPendingAmount
                       )}
                     </Typography>
                   </Box>
@@ -4135,7 +4146,7 @@ const Dashboard = () => {
             : activeCard ===
               'pendingAmount'
             ? fmt(
-                pendingAmount
+                salaryPendingAmount
               )
             : activeCard ===
               'discount'
