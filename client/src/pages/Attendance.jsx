@@ -5,8 +5,6 @@ import React, {
 } from 'react';
 
 import { useMachine } from '../context/MachineContext';
-import WhatsAppIcon from '@mui/icons-material/WhatsApp';
-
 const API_URL =
   import.meta.env.VITE_API_URL ||
   'http://localhost:5000/api';
@@ -2008,6 +2006,16 @@ export default function Attendance() {
           color: #7b8792;
         }
 
+        .whatsapp-symbol {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 18px;
+          height: 18px;
+          font-size: 14px;
+          line-height: 1;
+        }
+
         .employee-row-whatsapp {
           height: 38px;
           display: inline-flex;
@@ -3350,7 +3358,7 @@ export default function Attendance() {
                       title={`Share ${item?.name || 'employee'} salary bill on WhatsApp`}
                       aria-label={`Share ${item?.name || 'employee'} salary bill on WhatsApp`}
                     >
-                      <WhatsAppIcon sx={{ fontSize: 19 }} />
+                      <span className="whatsapp-symbol" aria-hidden="true">◉</span>
                       <span>
                         {isSharing ? 'Opening...' : 'WhatsApp'}
                       </span>
