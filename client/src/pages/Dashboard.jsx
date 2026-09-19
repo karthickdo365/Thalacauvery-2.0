@@ -1093,7 +1093,7 @@ const StatCard = ({
 
       borderRadius: '12px',
 
-      bgcolor: '#0f172a',
+      bgcolor: '#fff',
 
       transition:
         'transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease',
@@ -1246,7 +1246,7 @@ const ChartCard = ({
       borderRadius:
         '14px',
 
-      bgcolor: '#0f172a',
+      bgcolor: '#fff',
     }}
   >
     <CardContent
@@ -1269,7 +1269,7 @@ const ChartCard = ({
             width: 3,
             height: 16,
 
-            bgcolor: '#0f172a',
+            bgcolor: TEAL,
 
             borderRadius: 1,
           }}
@@ -1703,7 +1703,7 @@ const DetailDialog = ({
 
       <DialogTitle
         sx={{
-          bgcolor: '#0f172a',
+          bgcolor: '#fff',
 
           color: '#0f172a',
 
