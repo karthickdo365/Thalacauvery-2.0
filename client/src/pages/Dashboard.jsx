@@ -1082,6 +1082,7 @@ const StatCard = ({
   icon,
   color,
   onClick,
+  multiline = false,
 }) => (
   <Card
     onClick={onClick}
@@ -1189,18 +1190,29 @@ const StatCard = ({
             fontWeight: 700,
 
             fontSize:
-              '1.05rem',
+              multiline
+                ? '0.78rem'
+                : '1.05rem',
 
-            lineHeight: 1.2,
+            lineHeight:
+              multiline
+                ? 1.35
+                : 1.2,
 
             whiteSpace:
-              'nowrap',
+              multiline
+                ? 'normal'
+                : 'nowrap',
 
             overflow:
-              'hidden',
+              multiline
+                ? 'visible'
+                : 'hidden',
 
             textOverflow:
-              'ellipsis',
+              multiline
+                ? 'clip'
+                : 'ellipsis',
           }}
         >
           {value}
@@ -3077,18 +3089,94 @@ const Dashboard = () => {
     );
 
   /*
-   * Pipe quantity is calculated from total feet.
-   * One pipe = 20 ft.
+   * MACHINE PIPE STOCK / USAGE
+   *
+   * Materials stores the number of pipes purchased/available.
+   * Points stores the actual feet used. One pipe = 20 ft.
    *
    * Example:
-   * 110 / 20 = 5.5 -> 6 pipes
-   * 112 / 20 = 5.6 -> 6 pipes
-   * 120 / 20 = 6   -> 6 pipes
+   *   Material stock = 17 pipes
+   *   Total feet used = 214 ft
+   *   Pipes used = ceil(214 / 20) = 11
+   *   Remaining = 17 - 11 = 6
+   *
+   * The dashboard intentionally shows the material stock in the
+   * card title and the remaining/used feet below it, matching the
+   * physical stock sheet used by the business.
    */
   const getPipeQuantity = (feet) =>
     feet > 0
       ? Math.ceil(feet / 20)
       : 0;
+
+  const getPipeStockQuantity = (kind) => {
+    const aliases = {
+      outer: [
+        'pipe outer',
+        'outer pipe',
+        'outer',
+      ],
+      inner: [
+        'pipe inner',
+        'inner pipe',
+        'inner',
+      ],
+      smallInner: [
+        'pipe small',
+        'small pipe',
+        'small inner',
+        'small inner pipe',
+      ],
+      ji: [
+        'pipe j1',
+        'pipe ji',
+        'ji pipe',
+        'ji inner',
+        'ji',
+      ],
+    };
+
+    const names = aliases[kind] || [];
+
+    return materialRows
+      .filter((material) => {
+        const type = getMaterialType(material);
+
+        if (kind === 'inner') {
+          // Do not count Small Inner as normal Inner.
+          if (
+            type.includes('small inner') ||
+            type.includes('pipe small')
+          ) {
+            return false;
+          }
+        }
+
+        return names.some((name) =>
+          type === name ||
+          type.includes(name)
+        );
+      })
+      .reduce(
+        (sum, material) =>
+          sum + safeNum(material?.quantity),
+        0
+      );
+  };
+
+  const getPipeSummary = (feet, stockQuantity) => {
+    const usedPipes = getPipeQuantity(feet);
+    const remaining = Math.max(
+      safeNum(stockQuantity) - usedPipes,
+      0
+    );
+
+    return {
+      stockQuantity: safeNum(stockQuantity),
+      usedPipes,
+      remaining,
+    };
+  };
 
   const outerFeet = isBig
     ? sumPointField('plasticOuterFeet')
@@ -3101,37 +3189,59 @@ const Dashboard = () => {
   const smallInnerFeet =
     sumPointField('smallPipeFeet');
 
-  const outerQuantity =
-    getPipeQuantity(outerFeet);
+  const jiFeet =
+    sumPointField('jiInnerFeet');
 
-  const innerQuantity =
-    getPipeQuantity(innerFeet);
+  const outerSummary =
+    getPipeSummary(
+      outerFeet,
+      getPipeStockQuantity('outer')
+    );
 
-  const smallInnerQuantity =
-    getPipeQuantity(smallInnerFeet);
+  const innerSummary =
+    getPipeSummary(
+      innerFeet,
+      getPipeStockQuantity('inner')
+    );
+
+  const smallInnerSummary =
+    getPipeSummary(
+      smallInnerFeet,
+      getPipeStockQuantity('smallInner')
+    );
+
+  const jiSummary =
+    getPipeSummary(
+      jiFeet,
+      getPipeStockQuantity('ji')
+    );
 
   const pipeCards = isBig
     ? [
         {
           key: 'bigOuter',
-          title: `Outer (${outerQuantity})`,
-          value: `${outerFeet} ft`,
+          title: `Outer (${outerSummary.stockQuantity})`,
+          usedPipes: outerSummary.usedPipes,
+          remaining: outerSummary.remaining,
+          totalFeet: outerFeet,
           icon: <WaterDropIcon />,
           color: NAVY,
         },
         {
           key: 'bigInner',
-          title: `Inner (${innerQuantity})`,
-          value: `${innerFeet} ft`,
+          title: `Inner (${innerSummary.stockQuantity})`,
+          usedPipes: innerSummary.usedPipes,
+          remaining: innerSummary.remaining,
+          totalFeet: innerFeet,
           icon: <WaterDropIcon />,
           color: TEAL,
         },
         {
           key: 'bigJI',
-          title: `JI (${getPipeQuantity(
-            sumPointField('jiInnerFeet')
-          )})`,
-          value: `${sumPointField('jiInnerFeet')} ft`,
+          title: `JI (${jiSummary.stockQuantity})`,
+          usedPipes: jiSummary.usedPipes,
+          remaining: jiSummary.remaining,
+          totalFeet: jiFeet,
           icon: <WaterDropIcon />,
           color: '#0891b2',
         },
@@ -3139,22 +3249,28 @@ const Dashboard = () => {
     : [
         {
           key: 'smallOuter',
-          title: `Outer (${outerQuantity})`,
-          value: `${outerFeet} ft`,
+          title: `Outer (${outerSummary.stockQuantity})`,
+          usedPipes: outerSummary.usedPipes,
+          remaining: outerSummary.remaining,
+          totalFeet: outerFeet,
           icon: <WaterDropIcon />,
           color: NAVY,
         },
         {
           key: 'smallInner',
-          title: `Inner (${innerQuantity})`,
-          value: `${innerFeet} ft`,
+          title: `Inner (${innerSummary.stockQuantity})`,
+          usedPipes: innerSummary.usedPipes,
+          remaining: innerSummary.remaining,
+          totalFeet: innerFeet,
           icon: <WaterDropIcon />,
           color: TEAL,
         },
         {
           key: 'smallInnerPipe',
-          title: `Small Inner (${smallInnerQuantity})`,
-          value: `${smallInnerFeet} ft`,
+          title: `Small Inner (${smallInnerSummary.stockQuantity})`,
+          usedPipes: smallInnerSummary.usedPipes,
+          remaining: smallInnerSummary.remaining,
+          totalFeet: smallInnerFeet,
           icon: <WaterDropIcon />,
           color: '#0891b2',
         },
@@ -3610,9 +3726,48 @@ const Dashboard = () => {
             >
               <StatCard
                 title={card.title}
-                value={card.value}
+                value={
+                  <Box>
+                    <Typography
+                      component="div"
+                      sx={{
+                        fontSize: '0.72rem',
+                        lineHeight: 1.35,
+                        fontWeight: 700,
+                        color: '#0f172a',
+                      }}
+                    >
+                      Done = {card.usedPipes}
+                    </Typography>
+
+                    <Typography
+                      component="div"
+                      sx={{
+                        fontSize: '0.72rem',
+                        lineHeight: 1.35,
+                        fontWeight: 700,
+                        color: '#0f172a',
+                      }}
+                    >
+                      Remaining = {card.remaining}
+                    </Typography>
+
+                    <Typography
+                      component="div"
+                      sx={{
+                        fontSize: '0.72rem',
+                        lineHeight: 1.35,
+                        fontWeight: 700,
+                        color: '#0f172a',
+                      }}
+                    >
+                      Total ft = {card.totalFeet}
+                    </Typography>
+                  </Box>
+                }
                 icon={card.icon}
                 color={card.color}
+                multiline
               />
             </Grid>
           ))}
