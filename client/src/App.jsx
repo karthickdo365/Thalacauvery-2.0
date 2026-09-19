@@ -1,9 +1,11 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
+
 import ProtectedRoute from './components/ProtectedRoute';
 import PartnerRoute from './components/PartnerRoute';
 import MachineProtectedRoute from './components/MachineProtectedRoute';
 import Layout from './components/Layout';
+
 import Login from './pages/Login';
 import Register from './pages/Register';
 import MachineSelection from './pages/MachineSelection';
@@ -24,10 +26,29 @@ function App() {
   return (
     <Routes>
       {/* Public */}
-      <Route path="/login" element={token ? <Navigate to="/machine-selection" replace /> : <Login />} />
-      <Route path="/register" element={token ? <Navigate to="/machine-selection" replace /> : <Register />} />
+      <Route
+        path="/login"
+        element={
+          token ? (
+            <Navigate to="/machine-selection" replace />
+          ) : (
+            <Login />
+          )
+        }
+      />
 
-      {/* After login – machine selection (no Layout) */}
+      <Route
+        path="/register"
+        element={
+          token ? (
+            <Navigate to="/machine-selection" replace />
+          ) : (
+            <Register />
+          )
+        }
+      />
+
+      {/* After login: machine selection */}
       <Route
         path="/machine-selection"
         element={
@@ -48,18 +69,72 @@ function App() {
         }
       >
         <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/personal-info" element={<PersonalInfo />} />
-        <Route path="/materials" element={<Materials />} />
-        <Route path="/borewell-points" element={<BorewellPoints />} />
-        <Route path="/bills" element={<Bills />} />
-        <Route path="/attendance" element={<Attendance />} />
-        <Route path="/salary-report"element={<Protected><SalaryReport /> </Protected>}/>
-        <Route path="/reports" element={<Reports />} />
-        <Route path="/activity-logs" element={<PartnerRoute><ActivityLogs /></PartnerRoute>} />
-        <Route path="/accounts" element={<PartnerRoute><Accounts /></PartnerRoute>} />
+
+        <Route
+          path="/personal-info"
+          element={<PersonalInfo />}
+        />
+
+        <Route
+          path="/materials"
+          element={<Materials />}
+        />
+
+        <Route
+          path="/borewell-points"
+          element={<BorewellPoints />}
+        />
+
+        <Route
+          path="/bills"
+          element={<Bills />}
+        />
+
+        <Route
+          path="/attendance"
+          element={<Attendance />}
+        />
+
+        {/* Salary Report */}
+        <Route
+          path="/salary-report"
+          element={<SalaryReport />}
+        />
+
+        <Route
+          path="/reports"
+          element={<Reports />}
+        />
+
+        <Route
+          path="/activity-logs"
+          element={
+            <PartnerRoute>
+              <ActivityLogs />
+            </PartnerRoute>
+          }
+        />
+
+        <Route
+          path="/accounts"
+          element={
+            <PartnerRoute>
+              <Accounts />
+            </PartnerRoute>
+          }
+        />
       </Route>
 
-      <Route path="*" element={<Navigate to={token ? '/machine-selection' : '/login'} replace />} />
+      {/* Unknown route */}
+      <Route
+        path="*"
+        element={
+          <Navigate
+            to={token ? '/machine-selection' : '/login'}
+            replace
+          />
+        }
+      />
     </Routes>
   );
 }
