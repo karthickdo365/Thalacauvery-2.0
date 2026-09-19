@@ -3001,19 +3001,26 @@ export default function Attendance() {
         }
 
         .end-date-control {
+          position: relative;
           display: flex;
           align-items: flex-end;
           gap: 6px;
+          padding-top: 15px;
         }
 
         .end-date-control label {
           position: absolute;
-          margin-bottom: 34px;
+          top: 0;
+          left: 0;
+          margin: 0;
           font-size: 10px;
+          line-height: 12px;
           font-weight: 800;
           color: #718397;
           text-transform: uppercase;
           letter-spacing: .04em;
+          white-space: nowrap;
+          pointer-events: none;
         }
 
         .compact-date-input {
@@ -3110,6 +3117,20 @@ export default function Attendance() {
 
           .employee-info {
             grid-template-columns: 1fr;
+          }
+
+          .salary-action-row {
+            align-items: flex-start;
+            gap: 12px;
+          }
+
+          .compact-attendance {
+            flex: 1 1 100%;
+            width: 100%;
+          }
+
+          .end-date-control {
+            flex: 0 0 auto;
           }
 
           .summary-grid {
