@@ -1,5 +1,9 @@
 import mongoose from 'mongoose';
 
+// ============================================================
+// MATERIAL MODEL
+// ============================================================
+
 const materialSchema = new mongoose.Schema(
   {
     // ============================================================
@@ -15,18 +19,25 @@ const materialSchema = new mongoose.Schema(
     // MATERIAL TYPE
     // ============================================================
 
-   type: {
-  type: String,
-  enum: [
-    'Diesel',
-    'Petrol',
-    'Pipe',
-    'Bit',
-    'Hammer',
-    'Others'
-  ],
-  required: true
-},
+    type: {
+      type: String,
+      enum: [
+        'Diesel',
+        'Petrol',
+
+        // Pipe types
+        'Pipe',
+        'Pipe Outer',
+        'Pipe Inner',
+        'Pipe J1',
+        'Pipe Small',
+
+        'Bit',
+        'Hammer',
+        'Others',
+      ],
+      required: true,
+    },
 
     // ============================================================
     // MACHINE TYPE
@@ -108,7 +119,6 @@ const materialSchema = new mongoose.Schema(
   }
 );
 
-
 // ============================================================
 // INDEXES
 // ============================================================
@@ -126,7 +136,6 @@ materialSchema.index({
   date: -1,
 });
 
-
 // ============================================================
 // AUTO CALCULATE TOTAL BEFORE SAVE
 // ============================================================
@@ -140,13 +149,13 @@ materialSchema.pre('save', function (next) {
       (Number(this.quantity) || 0) *
       (Number(this.costPerLiter) || 0);
 
+    // Normal material types do not use these fields
     this.amount = 0;
     this.description = '';
   }
 
   next();
 });
-
 
 // ============================================================
 // AUTO CALCULATE TOTAL BEFORE UPDATE
@@ -157,18 +166,46 @@ materialSchema.pre(
   function (next) {
     const update = this.getUpdate() || {};
 
-    const type = update.type;
+    // Support both:
+    // { type: 'Pipe Inner' }
+    //
+    // and:
+    // { $set: { type: 'Pipe Inner' } }
+
+    const updateData =
+      update.$set || update;
+
+    const type =
+      updateData.type;
+
+    // ----------------------------------------------------------
+    // OTHERS
+    // ----------------------------------------------------------
 
     if (type === 'Others') {
-      update.totalPrice =
-        Number(update.amount) || 0;
-    } else if (type) {
-      update.totalPrice =
-        (Number(update.quantity) || 0) *
-        (Number(update.costPerLiter) || 0);
+      updateData.totalPrice =
+        Number(updateData.amount) || 0;
+    }
 
-      update.amount = 0;
-      update.description = '';
+    // ----------------------------------------------------------
+    // NORMAL MATERIALS
+    // ----------------------------------------------------------
+
+    else if (type) {
+      updateData.totalPrice =
+        (Number(updateData.quantity) || 0) *
+        (Number(updateData.costPerLiter) || 0);
+
+      updateData.amount = 0;
+      updateData.description = '';
+    }
+
+    // ----------------------------------------------------------
+    // PRESERVE $SET WHEN USED
+    // ----------------------------------------------------------
+
+    if (update.$set) {
+      update.$set = updateData;
     }
 
     this.setUpdate(update);
@@ -177,6 +214,9 @@ materialSchema.pre(
   }
 );
 
+// ============================================================
+// EXPORT
+// ============================================================
 
 export default mongoose.model(
   'Material',
