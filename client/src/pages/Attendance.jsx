@@ -666,6 +666,11 @@ export default function Attendance() {
     setSharingAbsentWhatsApp,
   ] = useState(false);
 
+  const [
+    sharingEmployeeId,
+    setSharingEmployeeId,
+  ] = useState('');
+
   /*
    * Current employee
    */
@@ -695,7 +700,7 @@ export default function Attendance() {
        */
       const data =
         await apiRequest(
-          `/users?machineType=${currentMachine}`
+          `/users?machineType=${currentMachine}&page=1&limit=100`
         );
 
       const allUsers = extractList(data, [
@@ -1527,63 +1532,8 @@ export default function Attendance() {
   
   /*
    |--------------------------------------------------------------------------
-   | Individual salary WhatsApp bill
+   | WhatsApp number resolver
    |--------------------------------------------------------------------------
-   */
-  const individualSalary = useMemo(() => {
-    if (!employee) return null;
-
-    return calculateEmployeeRangeSalary(
-      employee,
-      attendanceRecords,
-      advances,
-      reportStartDate,
-      reportEndDate
-    );
-  }, [
-    employee,
-    attendanceRecords,
-    advances,
-    reportStartDate,
-    reportEndDate,
-  ]);
-
-  const reportPeriodValid =
-    Boolean(reportStartDate) &&
-    Boolean(reportEndDate) &&
-    reportEndDate >= reportStartDate;
-
-  const setQuickReportRange = (type) => {
-    const now = new Date();
-    const today = toDateKey(now);
-    const monthsBack = {
-      month: 0,
-      '2months': 1,
-      '6months': 5,
-      year: 11,
-    };
-
-    if (monthsBack[type] !== undefined) {
-      setReportStartDate(
-        toDateKey(
-          new Date(
-            now.getFullYear(),
-            now.getMonth() - monthsBack[type],
-            1
-          )
-        )
-      );
-      setReportEndDate(today);
-    }
-  };
-
-  /*
-   * Resolves the currently selected employee's WhatsApp number the
-   * same way for every "Share on WhatsApp" button on this page:
-   * re-fetch Personal Information for the freshest saved number,
-   * then normalize it to the full international format WhatsApp's
-   * click-to-chat links require so the chat opens directly with
-   * that employee instead of the generic picker.
    */
   const resolveEmployeeWhatsAppNumber = async (targetEmployee) => {
     if (!targetEmployee?._id) {
@@ -1643,13 +1593,14 @@ export default function Attendance() {
     return number;
   };
 
-  const shareEmployeeFromList = async (targetEmployee) => {
+  const shareEmployeeListWhatsApp = async (targetEmployee) => {
     if (!targetEmployee?._id) return;
 
     try {
+      setSharingEmployeeId(String(targetEmployee._id));
       setError('');
 
-      const [attendanceData, advanceData] = await Promise.all([
+      const [attendanceResponse, advanceResponse] = await Promise.all([
         apiRequest(
           `/attendance?employeeId=${targetEmployee._id}&machineType=${currentMachine}&limit=500`
         ),
@@ -1658,14 +1609,14 @@ export default function Attendance() {
         ),
       ]);
 
-      const targetAttendance = extractList(attendanceData, [
+      const targetAttendance = extractList(attendanceResponse, [
         'records',
         'attendance',
         'data',
         'items',
       ]).map(normalizeAttendanceRecord);
 
-      const targetAdvances = extractList(advanceData, [
+      const targetAdvances = extractList(advanceResponse, [
         'records',
         'advances',
         'data',
@@ -1680,9 +1631,17 @@ export default function Attendance() {
         reportEndDate
       );
 
-      const whatsappNumber = await resolveEmployeeWhatsAppNumber(targetEmployee);
-      const startDate = parseDateKey(salary.startDate || reportStartDate);
-      const endDate = parseDateKey(salary.endDate || reportEndDate);
+      const whatsappNumber =
+        await resolveEmployeeWhatsAppNumber(targetEmployee);
+
+      const startDate = parseDateKey(
+        salary.startDate || reportStartDate
+      );
+
+      const endDate = parseDateKey(
+        salary.endDate || reportEndDate
+      );
+
       const periodLabel =
         reportStartDate === reportEndDate
           ? formatDate(startDate)
@@ -1691,95 +1650,34 @@ export default function Attendance() {
       const message = [
         '*Salary Bill*',
         '',
-        `Name : ${targetEmployee.name || '-'}`,
-        `Joining Date: ${targetEmployee.date ? formatDate(new Date(targetEmployee.date)) : '-'}`,
+        `Name : ${targetEmployee?.name || '-'}`,
+        `Joining Date: ${
+          targetEmployee?.date
+            ? formatDate(new Date(targetEmployee.date))
+            : '-'
+        }`,
         `Date : ${periodLabel}`,
         `Total Days: ${salary.totalDays || 0}`,
         `Present Days: ${salary.presentDays || 0}`,
         `Absent Days: ${salary.absentDays || 0}`,
-        `Monthly Salary: ${formatMoney(Number(targetEmployee.salary) || 0)}`,
+        `Monthly Salary: ${formatMoney(Number(targetEmployee?.salary) || 0)}`,
         `Advance: ${formatMoney(salary.totalAdvance || 0)}`,
         `Remaining: ${formatMoney(salary.finalSalary || 0)}`,
       ].join('\n');
 
       shareOnWhatsApp(message, whatsappNumber);
-      setSuccess(`Salary bill opened in WhatsApp for ${targetEmployee.name || 'employee'}.`);
-    } catch (err) {
-      console.error('Employee list WhatsApp share error:', err);
-      setError(err?.message || 'Unable to share this employee salary bill on WhatsApp.');
-    }
-  };
-
-  const shareSalaryBillOnWhatsApp = async () => {
-    if (!employee) {
-      setError('Please select an employee first.');
-      return;
-    }
-
-    if (!reportPeriodValid) {
-      setError('Please select a valid From Date and To Date.');
-      return;
-    }
-
-    if (!individualSalary) {
-      setError('Salary details are not available.');
-      return;
-    }
-
-    try {
-      setError('');
-
-      // The employee number is taken from the same /users record
-      // used by Personal Information, fetched fresh so the share
-      // always uses the latest saved contact details.
-      const whatsappNumber = await resolveEmployeeWhatsAppNumber(employee);
-
-      const startDate = parseDateKey(
-        individualSalary.startDate || reportStartDate
-      );
-
-      const endDate = parseDateKey(
-        individualSalary.endDate || reportEndDate
-      );
-
-      const periodLabel =
-        reportStartDate === reportEndDate
-          ? formatDate(startDate)
-          : `${formatDate(startDate)} to ${formatDate(endDate)}`;
-
-      const message = [
-        '*Salary Bill*',
-        '',
-        `Name : ${employee?.name || '-'}`,
-        `Joining Date: ${
-          employee?.date
-            ? formatDate(new Date(employee.date))
-            : '-'
-        }`,
-        `Date : ${periodLabel}`,
-        `Total Days: ${individualSalary.totalDays || 0}`,
-        `Present Days: ${individualSalary.presentDays || 0}`,
-        `Absent Days: ${individualSalary.absentDays || 0}`,
-        `Monthly Salary: ${formatMoney(Number(employee?.salary) || 0)}`,
-        `Advance: ${formatMoney(individualSalary.totalAdvance || 0)}`,
-        `Remaining: ${formatMoney(individualSalary.finalSalary || 0)}`,
-      ].join('\n');
-
-      shareOnWhatsApp(message, whatsappNumber);
 
       setSuccess(
-        `Salary bill opened in WhatsApp for ${employee?.name || 'employee'}.`
+        `Salary bill opened in WhatsApp for ${targetEmployee?.name || 'employee'}.`
       );
     } catch (err) {
-      console.error(
-        'Salary WhatsApp share error:',
-        err
-      );
-
+      console.error('Employee salary WhatsApp share error:', err);
       setError(
         err?.message ||
           'Unable to get the employee mobile number from Personal Information.'
       );
+    } finally {
+      setSharingEmployeeId('');
     }
   };
 
@@ -1962,6 +1860,7 @@ export default function Attendance() {
 
         .employee-list-card {
           margin-bottom: 20px;
+          padding: 0;
           overflow: hidden;
         }
 
@@ -1970,21 +1869,18 @@ export default function Attendance() {
           align-items: center;
           justify-content: space-between;
           gap: 16px;
-          padding: 20px 24px;
-          border-bottom: 1px solid #e8eef3;
-        }
-
-        .employee-list-subtitle {
-          margin-top: 4px;
-          color: #718397;
-          font-size: 13px;
+          padding: 20px 22px;
+          border-bottom: 1px solid #edf1f5;
         }
 
         .employee-count {
-          flex: 0 0 auto;
-          padding: 7px 11px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 82px;
+          padding: 7px 12px;
           border-radius: 999px;
-          background: #eef8f5;
+          background: #eef8f6;
           color: #087d73;
           font-size: 12px;
           font-weight: 800;
@@ -1997,11 +1893,12 @@ export default function Attendance() {
 
         .employee-list-row {
           display: grid;
-          grid-template-columns: minmax(220px, 1.5fr) minmax(150px, 1fr) minmax(150px, 1fr) auto;
+          grid-template-columns: minmax(230px, 1.5fr) minmax(150px, .9fr) minmax(140px, .8fr) 90px 130px;
           align-items: center;
-          gap: 18px;
-          padding: 16px 24px;
-          border-bottom: 1px solid #eef2f6;
+          gap: 16px;
+          padding: 14px 22px;
+          border-bottom: 1px solid #edf1f5;
+          background: #fff;
           cursor: pointer;
           transition: background .15s, box-shadow .15s;
         }
@@ -2011,11 +1908,11 @@ export default function Attendance() {
         }
 
         .employee-list-row:hover {
-          background: #f8fcfb;
+          background: #f8fbfc;
         }
 
         .employee-list-row.selected {
-          background: #eefbf7;
+          background: #f0fbf8;
           box-shadow: inset 4px 0 0 #14b8a6;
         }
 
@@ -2027,33 +1924,42 @@ export default function Attendance() {
         }
 
         .employee-avatar {
-          width: 42px;
-          height: 42px;
-          flex: 0 0 42px;
-          display: grid;
-          place-items: center;
+          width: 40px;
+          height: 40px;
+          flex: 0 0 40px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
           border-radius: 12px;
-          background: #e8f7f4;
+          background: #e7f8f4;
           color: #087d73;
           font-size: 16px;
-          font-weight: 850;
+          font-weight: 900;
         }
 
         .employee-list-name {
-          color: #162f48;
-          font-size: 15px;
+          color: #17324d;
+          font-size: 14px;
           font-weight: 850;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
 
         .employee-list-type {
           margin-top: 3px;
-          color: #8a9aaa;
+          color: #7a8d9f;
           font-size: 11px;
+        }
+
+        .employee-list-detail {
+          min-width: 0;
         }
 
         .employee-list-detail span {
           display: block;
-          color: #8494a4;
+          margin-bottom: 4px;
+          color: #8a99a8;
           font-size: 10px;
           font-weight: 800;
           text-transform: uppercase;
@@ -2061,47 +1967,70 @@ export default function Attendance() {
         }
 
         .employee-list-detail strong {
-          display: block;
-          margin-top: 4px;
-          color: #304a61;
+          color: #263e55;
           font-size: 13px;
           font-weight: 750;
+          white-space: nowrap;
         }
 
-        .employee-list-detail.salary strong {
-          color: #087d73;
+        .employee-list-status {
+          display: flex;
+          justify-content: flex-start;
+        }
+
+        .employee-list-status span {
+          padding: 5px 9px;
+          border-radius: 999px;
+          font-size: 10px;
+          font-weight: 850;
+        }
+
+        .status-active {
+          background: #eaf9f3;
+          color: #07835f;
+        }
+
+        .status-ended {
+          background: #f1f3f5;
+          color: #7b8792;
         }
 
         .employee-row-whatsapp {
+          height: 38px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
           gap: 7px;
-          min-width: 112px;
-          height: 38px;
-          padding: 0 13px;
-          border: 1px solid #bdeecb;
+          padding: 0 12px;
+          border: 1px solid #18a957;
           border-radius: 9px;
-          background: #eafcf1;
-          color: #0f8a4d;
+          background: #18a957;
+          color: #fff;
           font-size: 12px;
-          font-weight: 800;
+          font-weight: 850;
           cursor: pointer;
+          white-space: nowrap;
         }
 
-        .employee-row-whatsapp:hover {
-          background: #d7f7e4;
-          border-color: #8fdfaa;
+        .employee-row-whatsapp:hover:not(:disabled) {
+          background: #128c47;
+          border-color: #128c47;
+        }
+
+        .employee-row-whatsapp:disabled {
+          opacity: .6;
+          cursor: wait;
         }
 
         .employee-list-empty {
-          padding: 30px 24px;
+          padding: 34px 22px;
           text-align: center;
-          color: #718397;
+          color: #7a8d9f;
           font-size: 13px;
         }
 
         /* ---------------- Employee picker ---------------- */
+
 
         .employee-card {
           padding: 20px 24px;
@@ -2200,7 +2129,7 @@ export default function Attendance() {
 
         .main-grid {
           display: grid;
-          grid-template-columns: 420px 1fr;
+          grid-template-columns: minmax(380px, 430px) minmax(0, 1fr);
           gap: 20px;
           align-items: start;
         }
@@ -3135,44 +3064,44 @@ export default function Attendance() {
 
         /* ---------------- Responsive ---------------- */
 
-        @media (max-width: 1100px) {
+        @media (max-width: 1180px) {
           .main-grid {
             grid-template-columns: 1fr;
           }
-        }
 
-        @media (max-width: 900px) {
           .employee-list-row {
-            grid-template-columns: minmax(200px, 1fr) minmax(140px, 1fr) auto;
-          }
-
-          .employee-list-detail.salary {
-            display: none;
+            grid-template-columns: minmax(220px, 1.5fr) 1fr 1fr 80px 125px;
           }
         }
 
         @media (max-width: 700px) {
+          .report-controls { grid-template-columns:1fr; }
+
           .employee-list-header {
             align-items: flex-start;
+            flex-direction: column;
             padding: 16px;
           }
 
           .employee-list-row {
             grid-template-columns: 1fr auto;
-            gap: 12px;
+            gap: 10px;
             padding: 14px 16px;
           }
 
-          .employee-list-detail {
+          .employee-list-person {
+            grid-column: 1 / -1;
+          }
+
+          .employee-list-detail,
+          .employee-list-status {
             display: none;
           }
 
           .employee-row-whatsapp {
             grid-column: 2;
-            grid-row: 1;
+            grid-row: 2;
           }
-
-          .report-controls { grid-template-columns:1fr; }
           .individual-summary-grid { grid-template-columns:1fr 1fr; }
           .individual-bill-heading { flex-direction:column; }
           .attendance-page {
@@ -3217,876 +3146,7 @@ export default function Attendance() {
           }
         }
 
-      
-        /* ==========================================================
-           MODERN ATTENDANCE UI
-           Visual-only refresh. Existing API/calculation behavior stays unchanged.
-           ========================================================== */
-
-        .attendance-page {
-          min-height: 100vh;
-          padding: 24px;
-          background:
-            radial-gradient(circle at top right, rgba(20,184,166,.10), transparent 28%),
-            #f4f7fb;
-          color: #172b3f;
-        }
-
-        .attendance-container {
-          max-width: 1440px;
-        }
-
-        .page-header {
-          position: relative;
-          padding: 24px 26px;
-          margin-bottom: 18px;
-          border: 1px solid #dce7ee;
-          border-radius: 20px;
-          background: linear-gradient(135deg, #ffffff 0%, #f7fbfb 100%);
-          box-shadow: 0 10px 30px rgba(19,43,63,.06);
-          overflow: hidden;
-        }
-
-        .page-header::after {
-          content: '';
-          position: absolute;
-          width: 180px;
-          height: 180px;
-          right: -70px;
-          top: -90px;
-          border-radius: 50%;
-          background: rgba(20,184,166,.10);
-          pointer-events: none;
-        }
-
-        .page-title {
-          font-size: 26px;
-          letter-spacing: -.03em;
-          color: #102a43;
-        }
-
-        .page-subtitle {
-          max-width: 620px;
-          color: #6b7d90;
-        }
-
-        .machine-badge {
-          position: relative;
-          z-index: 1;
-          padding: 9px 15px;
-          border: 1px solid #b9e8de;
-          background: #eafaf6;
-          color: #087d73;
-          box-shadow: 0 4px 12px rgba(8,125,115,.08);
-        }
-
-        .card {
-          border: 1px solid #dfe8ee;
-          border-radius: 18px;
-          box-shadow: 0 7px 24px rgba(21,45,66,.055);
-        }
-
-        .employee-card {
-          padding: 20px;
-          margin-bottom: 18px;
-          background: #fff;
-        }
-
-        .field-label {
-          color: #52677b;
-          font-size: 11px;
-          letter-spacing: .08em;
-        }
-
-        .select-input,
-        .text-input,
-        .textarea {
-          border-color: #d7e2e9;
-          background: #fbfdfe;
-          transition: border-color .18s, box-shadow .18s, background .18s;
-        }
-
-        .select-input {
-          max-width: 560px;
-          height: 48px;
-          border-radius: 12px;
-          font-weight: 650;
-        }
-
-        .select-input:hover,
-        .text-input:hover,
-        .textarea:hover {
-          border-color: #b8cbd7;
-        }
-
-        .select-input:focus,
-        .text-input:focus,
-        .textarea:focus {
-          border-color: #14a99a;
-          background: #fff;
-          box-shadow: 0 0 0 4px rgba(20,169,154,.10);
-        }
-
-        .employee-info {
-          grid-template-columns: 1.5fr 1fr 1fr 1fr;
-          gap: 12px;
-          margin-top: 16px;
-          padding-top: 16px;
-          border-top: 1px solid #edf2f5;
-        }
-
-        .employee-info > div {
-          min-height: 62px;
-          padding: 11px 13px;
-          border: 1px solid #edf0f3;
-          border-radius: 12px;
-          background: #f9fbfc;
-        }
-
-        .employee-info > div:first-child {
-          background: #f0fbf8;
-          border-color: #cfeee7;
-        }
-
-        .employee-name {
-          font-size: 17px;
-          color: #102a43;
-        }
-
-        .info-label {
-          font-size: 10px;
-          letter-spacing: .07em;
-        }
-
-        .info-value {
-          margin-top: 5px;
-          font-size: 14px;
-          color: #243b53;
-        }
-
-        .report-card {
-          padding: 20px;
-          margin-bottom: 18px;
-          background: #fff;
-        }
-
-        .report-header {
-          align-items: center;
-          padding-bottom: 16px;
-          border-bottom: 1px solid #edf2f5;
-        }
-
-        .section-title {
-          color: #102a43;
-          font-size: 18px;
-          letter-spacing: -.015em;
-        }
-
-        .section-subtitle {
-          color: #7a8b9b;
-        }
-
-        .report-under-title {
-          color: #087d73;
-        }
-
-        .report-controls {
-          grid-template-columns: 1.2fr 1fr 1fr;
-          gap: 12px;
-          margin-top: 16px;
-        }
-
-        .selected-report-person {
-          min-height: 46px;
-          border-radius: 11px;
-          background: #f5f9fb;
-          border-color: #d9e5eb;
-        }
-
-        .report-quick-buttons {
-          margin-top: 12px;
-          gap: 7px;
-        }
-
-        .report-quick-button {
-          padding: 8px 12px;
-          border-radius: 9px;
-          background: #f8fafc;
-          color: #496176;
-          transition: .18s ease;
-        }
-
-        .report-quick-button:hover {
-          background: #eaf8f5;
-          border-color: #b8e6dd;
-          color: #087d73;
-          transform: translateY(-1px);
-        }
-
-        .individual-bill-preview {
-          margin-top: 16px;
-          padding: 18px;
-          border: 1px solid #cfe7e2;
-          border-radius: 16px;
-          background: linear-gradient(145deg, #fbfffe 0%, #f4fbfa 100%);
-        }
-
-        .individual-bill-heading {
-          padding-bottom: 14px;
-          border-bottom-color: #dcebe8;
-        }
-
-        .individual-bill-heading h3 {
-          color: #102a43;
-          font-size: 19px;
-        }
-
-        .individual-bill-machine {
-          background: #e6f8f4;
-          border: 1px solid #c8ebe4;
-          color: #087d73 !important;
-        }
-
-        .individual-summary-grid {
-          grid-template-columns: repeat(4, 1fr);
-          gap: 10px;
-          margin-top: 14px;
-        }
-
-        .individual-summary-box {
-          min-height: 78px;
-          padding: 12px 13px;
-          border-radius: 12px;
-          background: #fff;
-          border-color: #e0e9ee;
-        }
-
-        .individual-summary-box span {
-          font-size: 10px;
-          letter-spacing: .05em;
-        }
-
-        .individual-summary-box strong {
-          font-size: 20px;
-        }
-
-        .individual-summary-box.final {
-          background: #eafaf6;
-          border-color: #b9e8de;
-        }
-
-        .individual-salary-lines {
-          margin-top: 14px;
-          padding: 12px 0;
-          border-color: #dfeae8;
-        }
-
-        .salary-whatsapp-action {
-          margin-top: 14px;
-          padding-top: 14px;
-          border-top-color: #dfeae8;
-        }
-
-        .salary-whatsapp-button {
-          min-height: 44px;
-          border-radius: 11px !important;
-          box-shadow: 0 6px 14px rgba(24,169,87,.16);
-        }
-
-        .whatsapp-note {
-          color: #7b8b99;
-        }
-
-        .main-grid {
-          grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
-          gap: 18px;
-        }
-
-        .summary-card,
-        .calendar-card {
-          background: #fff;
-        }
-
-        .summary-card {
-          padding: 20px;
-        }
-
-        .summary-grid {
-          gap: 10px;
-          margin-top: 14px;
-        }
-
-        .summary-box {
-          min-height: 78px;
-          padding: 13px 14px;
-          border-radius: 13px;
-          background: #f7fafc;
-          border-color: #e1e9ee;
-        }
-
-        .summary-value {
-          font-size: 21px;
-          color: #17324d;
-        }
-
-        .summary-box.green {
-          background: #effcf8;
-        }
-
-        .summary-box.red {
-          background: #fff5f5;
-        }
-
-        .salary-lines {
-          margin-top: 16px;
-          padding: 12px 0;
-        }
-
-        .salary-line {
-          padding: 7px 0;
-          color: #607487;
-        }
-
-        .salary-final {
-          margin-top: 14px;
-          padding: 16px 17px;
-          border-radius: 14px;
-          background: linear-gradient(135deg, #ecfbf7, #f5fffc);
-          border-color: #b9e8de;
-        }
-
-        .salary-final-label {
-          font-size: 11px;
-          letter-spacing: .06em;
-          text-transform: uppercase;
-        }
-
-        .salary-final-value {
-          margin-top: 4px;
-          color: #087d73;
-          font-size: 25px;
-          font-weight: 900;
-          overflow-wrap: anywhere;
-        }
-
-        .salary-action-row {
-          margin-top: 14px;
-          gap: 8px;
-          align-items: center;
-        }
-
-        .compact-attendance {
-          gap: 7px;
-        }
-
-        .compact-attendance-item {
-          min-width: 72px;
-          padding: 8px 10px;
-          border-radius: 10px;
-        }
-
-        .end-date-control {
-          margin-left: auto;
-        }
-
-        .advance-icon-button,
-        .end-date-save-button {
-          border-radius: 10px;
-        }
-
-        .advance-section {
-          margin-top: 20px;
-          padding-top: 16px;
-          border-top: 1px solid #edf2f5;
-        }
-
-        .advance-title-row {
-          min-height: 34px;
-        }
-
-        .advance-title-row .section-title {
-          font-size: 15px;
-        }
-
-        .advance-count {
-          background: #eef3f6;
-        }
-
-        .advance-item {
-          min-height: 62px;
-          column-gap: 10px;
-          padding: 9px 0;
-        }
-
-        .advance-amount {
-          color: #b45309;
-          font-size: 13px;
-        }
-
-        .calendar-card {
-          padding: 20px;
-        }
-
-        .calendar-header {
-          padding-bottom: 14px;
-          border-bottom: 1px solid #edf2f5;
-        }
-
-        .calendar-info {
-          margin-top: 14px;
-          padding: 10px 12px;
-          border-radius: 10px;
-          background: #f5f9fb;
-          color: #617589;
-          border: 1px solid #e4edf1;
-          font-size: 12px;
-        }
-
-        .calendar-weekdays {
-          margin-top: 16px;
-          gap: 6px;
-        }
-
-        .weekday {
-          color: #8293a3;
-          font-size: 10px;
-          font-weight: 800;
-          letter-spacing: .05em;
-          text-transform: uppercase;
-        }
-
-        .calendar-grid {
-          gap: 6px;
-          margin-top: 6px;
-        }
-
-        .calendar-day {
-          min-height: 44px;
-          border: 1px solid #e2e9ee;
-          border-radius: 10px;
-          background: #fff;
-          color: #29445d;
-          font-weight: 750;
-          transition: .15s ease;
-        }
-
-        .calendar-day:hover:not(:disabled) {
-          transform: translateY(-1px);
-          border-color: #14a99a;
-          background: #f0fbf8;
-          box-shadow: 0 5px 12px rgba(20,169,154,.10);
-        }
-
-        .calendar-day.today {
-          box-shadow: inset 0 0 0 2px #14a99a;
-          color: #087d73;
-        }
-
-        .calendar-day.absent {
-          background: #fff0f0;
-          border-color: #f3b7b7;
-          color: #c52f2f;
-        }
-
-        .calendar-day.absent:hover:not(:disabled) {
-          background: #ffe5e5;
-          border-color: #df6b6b;
-        }
-
-        .calendar-day.future,
-        .calendar-day.before-joining,
-        .calendar-day.after-end-date {
-          opacity: .42;
-        }
-
-        .calendar-legend {
-          margin-top: 14px;
-          padding-top: 12px;
-          border-top: 1px solid #edf2f5;
-        }
-
-        .legend-item {
-          color: #687b8e;
-          font-size: 12px;
-        }
-
-        .month-absent {
-          margin-top: 10px;
-          padding: 9px 12px;
-          border-radius: 9px;
-          background: #fff7f7;
-          color: #b13a3a;
-          border: 1px solid #f4dddd;
-          font-size: 12px;
-          font-weight: 700;
-        }
-
-        .alert {
-          top: 78px;
-          right: 20px;
-          max-width: 420px;
-          border-radius: 12px;
-          box-shadow: 0 14px 35px rgba(20,40,60,.18);
-        }
-
-        .empty-state {
-          padding: 72px 28px;
-          background: rgba(255,255,255,.85);
-        }
-
-        .empty-state-icon {
-          width: 64px;
-          height: 64px;
-          margin: 0 auto 14px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 18px;
-          background: #eaf8f5;
-          font-size: 30px;
-        }
-
-        .modal-backdrop {
-          background: rgba(12,28,44,.58);
-          backdrop-filter: blur(3px);
-        }
-
-        .modal {
-          max-width: 500px;
-          border: 1px solid #dce6ec;
-          border-radius: 18px;
-          padding: 22px;
-          box-shadow: 0 30px 80px rgba(7,25,42,.25);
-        }
-
-        .modal.wide {
-          max-width: 640px;
-        }
-
-        .close-button {
-          width: 34px;
-          height: 34px;
-          background: #f3f6f8;
-        }
-
-        .button {
-          border-radius: 10px;
-          transition: .15s ease;
-        }
-
-        .button:hover:not(:disabled) {
-          transform: translateY(-1px);
-        }
-
-        @media (max-width: 1100px) {
-          .employee-info {
-            grid-template-columns: 1fr 1fr;
-          }
-
-          .main-grid {
-            grid-template-columns: 1fr;
-          }
-        }
-
-        @media (max-width: 700px) {
-          .attendance-page {
-            padding: 10px;
-            background: #f3f6f9;
-          }
-
-          .attendance-container {
-            width: 100%;
-          }
-
-          .page-header {
-            padding: 16px;
-            margin-bottom: 10px;
-            border-radius: 15px;
-          }
-
-          .page-title {
-            font-size: 21px;
-          }
-
-          .page-subtitle {
-            font-size: 12px;
-            padding-right: 30px;
-          }
-
-          .machine-badge {
-            padding: 7px 10px;
-            font-size: 10px;
-          }
-
-          .employee-card,
-          .report-card,
-          .summary-card,
-          .calendar-card {
-            padding: 14px;
-            border-radius: 14px;
-            margin-bottom: 10px;
-          }
-
-          .employee-info {
-            grid-template-columns: 1fr 1fr;
-            gap: 7px;
-          }
-
-          .employee-info > div {
-            min-height: 56px;
-            padding: 9px 10px;
-          }
-
-          .employee-info > div:first-child {
-            grid-column: 1 / -1;
-          }
-
-          .employee-name {
-            font-size: 16px;
-          }
-
-          .info-label {
-            font-size: 9px;
-          }
-
-          .info-value {
-            font-size: 12px;
-          }
-
-          .report-controls {
-            grid-template-columns: 1fr;
-            gap: 9px;
-          }
-
-          .report-quick-buttons {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-          }
-
-          .report-quick-button {
-            width: 100%;
-            min-height: 38px;
-          }
-
-          .individual-bill-preview {
-            padding: 13px;
-            border-radius: 13px;
-          }
-
-          .individual-bill-heading {
-            gap: 9px;
-          }
-
-          .individual-summary-grid {
-            grid-template-columns: 1fr 1fr;
-            gap: 7px;
-          }
-
-          .individual-summary-box {
-            min-height: 68px;
-            padding: 10px;
-          }
-
-          .individual-summary-box strong {
-            font-size: 17px;
-          }
-
-          .individual-salary-lines > div {
-            font-size: 13px;
-          }
-
-          .salary-whatsapp-button {
-            width: 100%;
-            min-height: 46px;
-          }
-
-          .whatsapp-note {
-            text-align: center;
-            line-height: 1.45;
-          }
-
-          .summary-grid {
-            gap: 7px;
-          }
-
-          .summary-box {
-            min-height: 68px;
-            padding: 11px;
-          }
-
-          .summary-value {
-            font-size: 19px;
-          }
-
-          .salary-line {
-            font-size: 13px;
-          }
-
-          .salary-final {
-            padding: 14px;
-          }
-
-          .salary-final-value {
-            font-size: 22px;
-          }
-
-          .salary-action-row {
-            display: grid;
-            grid-template-columns: 1fr auto;
-            gap: 7px;
-          }
-
-          .compact-attendance {
-            min-width: 0;
-          }
-
-          .compact-attendance-item {
-            flex: 1;
-            min-width: 0;
-          }
-
-          .end-date-control {
-            grid-column: 1 / -1;
-            width: 100%;
-            margin-left: 0;
-            padding-top: 8px;
-            border-top: 1px solid #edf2f5;
-          }
-
-          .end-date-control label {
-            position: static;
-            margin: 0 7px 0 0;
-            white-space: nowrap;
-          }
-
-          .compact-date-input {
-            flex: 1;
-            width: auto;
-            min-width: 0;
-          }
-
-          .advance-section {
-            margin-top: 15px;
-          }
-
-          .advance-item {
-            grid-template-columns: minmax(0, 1fr) auto;
-            column-gap: 8px;
-          }
-
-          .advance-item-right {
-            display: flex;
-            align-items: center;
-            gap: 7px;
-          }
-
-          .advance-amount {
-            min-width: auto;
-            font-size: 12px;
-          }
-
-          .advance-actions {
-            min-width: auto;
-          }
-
-          .calendar-header {
-            display: flex;
-            flex-direction: column;
-            align-items: stretch;
-            gap: 12px;
-          }
-
-          .month-controls {
-            width: 100%;
-            justify-content: space-between;
-          }
-
-          .month-name {
-            flex: 1;
-            text-align: center;
-          }
-
-          .calendar-info {
-            font-size: 11px;
-          }
-
-          .calendar-grid,
-          .calendar-weekdays {
-            gap: 4px;
-          }
-
-          .calendar-day {
-            min-height: 39px;
-            border-radius: 8px;
-            font-size: 13px;
-          }
-
-          .weekday {
-            font-size: 9px;
-          }
-
-          .alert {
-            left: 10px;
-            right: 10px;
-            top: 72px;
-            max-width: none;
-          }
-
-          .modal-backdrop {
-            align-items: flex-end;
-            padding: 0;
-          }
-
-          .modal,
-          .modal.wide {
-            max-width: none;
-            width: 100%;
-            border-radius: 20px 20px 0 0;
-            padding: 18px;
-            max-height: 90vh;
-            overflow-y: auto;
-          }
-
-          .modal-actions {
-            gap: 7px;
-          }
-
-          .modal-actions .button {
-            flex: 1;
-          }
-        }
-
-        @media (max-width: 380px) {
-          .attendance-page {
-            padding: 7px;
-          }
-
-          .employee-info {
-            grid-template-columns: 1fr;
-          }
-
-          .employee-info > div:first-child {
-            grid-column: auto;
-          }
-
-          .individual-summary-grid {
-            grid-template-columns: 1fr 1fr;
-          }
-
-          .calendar-day {
-            min-height: 35px;
-            font-size: 12px;
-          }
-
-          .salary-action-row {
-            grid-template-columns: 1fr;
-          }
-
-          .advance-icon-button {
-            width: 100%;
-          }
-        }
-`}</style>
+      `}</style>
 
       <div className="attendance-container">
 
@@ -4141,130 +3201,23 @@ export default function Attendance() {
           </div>
         )}
 
-        {/* Employee selection */}
-        <div className="card employee-card">
-
-          <label className="field-label">
-            Employee
-          </label>
-
-          <select
-            className="select-input"
-            value={
-              selectedEmployee
-            }
-            onChange={(event) => {
-              const nextId = event.target.value;
-              setSelectedEmployee(nextId);
-
-              const nextEmployee = employees.find(
-                (item) => String(item?._id) === String(nextId)
-              );
-              const nextEndDate = getEmployeeEndDateKey(nextEmployee);
-
-              setReportEndDate(
-                nextEndDate || toDateKey(new Date())
-              );
-            }}
-          >
-            <option value="">
-              Select Employee
-            </option>
-
-            {employees.map(
-              (item) => (
-                <option
-                  key={item._id}
-                  value={item._id}
-                >
-                  {item.name}
-                </option>
-              )
-            )}
-          </select>
-
-          {employee && (
-            <div className="employee-info">
-
-              <div>
-                <div className="employee-name">
-                  {employee.name}
-                </div>
-
-                <div className="employee-type">
-                  {employee.type ||
-                    'Employee'}
-                </div>
-              </div>
-
-              <div>
-                <div className="info-label">
-                  Joining Date
-                </div>
-
-                <div className="info-value">
-                  {employee.date
-                    ? formatDate(
-                        new Date(
-                          employee.date
-                        )
-                      )
-                    : '-'}
-                </div>
-              </div>
-
-              <div>
-                <div className="info-label">
-                  Monthly Salary
-                </div>
-
-                <div className="info-value">
-                  {formatMoney(
-                    employee.salary
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <div className="info-label">
-                  End Date
-                </div>
-
-                <div className="info-value">
-                  {getEmployeeEndDateKey(employee)
-                    ? formatDate(
-                        parseDateKey(
-                          getEmployeeEndDateKey(employee)
-                        )
-                      )
-                    : 'Active'}
-                </div>
-              </div>
-
-            </div>
-          )}
-        </div>
-
-        {/* ==========================================================
-            EMPLOYEE SALARY BILL
-            ========================================================== */}
-        {/* Employee list */}
+        {/* Employee List */}
         <div className="card employee-list-card">
           <div className="employee-list-header">
             <div>
               <h2 className="section-title">Employees</h2>
-              <div className="employee-list-subtitle">
-                Click an employee to view salary summary and attendance.
+              <div className="section-subtitle">
+                Click an employee to view salary summary and attendance calendar.
               </div>
             </div>
             <span className="employee-count">
-              {employees.length} Employees
+              {employees.length} {employees.length === 1 ? 'employee' : 'employees'}
             </span>
           </div>
 
           {employees.length === 0 ? (
             <div className="employee-list-empty">
-              No employees available.
+              No employees available for this machine.
             </div>
           ) : (
             <div className="employee-list">
@@ -4272,15 +3225,33 @@ export default function Attendance() {
                 const isSelected =
                   String(item?._id) === String(selectedEmployee);
 
+                const isSharing =
+                  sharingEmployeeId === String(item?._id);
+
                 return (
                   <div
                     key={item?._id}
-                    className={`employee-list-row ${isSelected ? 'selected' : ''}`}
-                    onClick={() => setSelectedEmployee(item?._id || '')}
+                    className={`employee-list-row ${
+                      isSelected ? 'selected' : ''
+                    }`}
+                    onClick={() => {
+                      setSelectedEmployee(item?._id || '');
+
+                      const nextEndDate =
+                        getEmployeeEndDateKey(item);
+
+                      setReportEndDate(
+                        nextEndDate ||
+                          toDateKey(new Date())
+                      );
+                    }}
                     role="button"
                     tabIndex={0}
                     onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
+                      if (
+                        event.key === 'Enter' ||
+                        event.key === ' '
+                      ) {
                         event.preventDefault();
                         setSelectedEmployee(item?._id || '');
                       }
@@ -4288,8 +3259,12 @@ export default function Attendance() {
                   >
                     <div className="employee-list-person">
                       <div className="employee-avatar">
-                        {(item?.name || '?').trim().charAt(0).toUpperCase()}
+                        {(item?.name || 'E')
+                          .trim()
+                          .charAt(0)
+                          .toUpperCase()}
                       </div>
+
                       <div>
                         <div className="employee-list-name">
                           {item?.name || 'Unnamed Employee'}
@@ -4309,9 +3284,25 @@ export default function Attendance() {
                       </strong>
                     </div>
 
-                    <div className="employee-list-detail salary">
+                    <div className="employee-list-detail">
                       <span>Monthly Salary</span>
-                      <strong>{formatMoney(item?.salary)}</strong>
+                      <strong>
+                        {formatMoney(item?.salary)}
+                      </strong>
+                    </div>
+
+                    <div className="employee-list-status">
+                      <span
+                        className={
+                          getEmployeeEndDateKey(item)
+                            ? 'status-ended'
+                            : 'status-active'
+                        }
+                      >
+                        {getEmployeeEndDateKey(item)
+                          ? 'Ended'
+                          : 'Active'}
+                      </span>
                     </div>
 
                     <button
@@ -4319,13 +3310,16 @@ export default function Attendance() {
                       className="employee-row-whatsapp"
                       onClick={(event) => {
                         event.stopPropagation();
-                        shareEmployeeFromList(item);
+                        shareEmployeeListWhatsApp(item);
                       }}
+                      disabled={isSharing}
                       title={`Share ${item?.name || 'employee'} salary bill on WhatsApp`}
                       aria-label={`Share ${item?.name || 'employee'} salary bill on WhatsApp`}
                     >
                       <WhatsAppIcon sx={{ fontSize: 19 }} />
-                      <span>WhatsApp</span>
+                      <span>
+                        {isSharing ? 'Opening...' : 'WhatsApp'}
+                      </span>
                     </button>
                   </div>
                 );
