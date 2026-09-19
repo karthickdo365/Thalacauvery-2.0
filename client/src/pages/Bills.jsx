@@ -694,38 +694,165 @@ const BorewellBills = () => {
 
         try {
 
-          const {
-            data,
-          } = await api.get(
-            '/borewell-points',
-            {
-              params: {
+          const trimmedSearch =
+            String(search || '').trim().toLowerCase();
 
-                search,
+          // ------------------------------------------------------
+          // NORMAL LIST
+          // ------------------------------------------------------
+          // Keep the existing server-side pagination when there
+          // is no search text.
+          if (!trimmedSearch) {
 
-                page:
-                  page + 1,
+            const {
+              data,
+            } = await api.get(
+              '/borewell-points',
+              {
+                params: {
 
-                limit:
-                  rowsPerPage,
+                  search: '',
 
-                // IMPORTANT
-                // Exact machine only.
-                machineType:
-                  currentMachine,
-              },
+                  page:
+                    page + 1,
+
+                  limit:
+                    rowsPerPage,
+
+                  // IMPORTANT
+                  // Exact machine only.
+                  machineType:
+                    currentMachine,
+                },
+              }
+            );
+
+
+            setPoints(
+              data.points ||
+              data.bills ||
+              []
+            );
+
+            setTotal(
+              data.total || 0
+            );
+
+            return;
+          }
+
+
+          // ------------------------------------------------------
+          // SEARCH
+          // ------------------------------------------------------
+          // The backend search may not include the populated
+          // broker name. Fetch all records for the current machine
+          // and filter the fields visible in this table locally.
+          // This makes searches such as "R" -> "Rafik" work.
+          const allPoints = [];
+          let pageNumber = 1;
+          const fetchLimit = 500;
+
+          while (true) {
+
+            const {
+              data,
+            } = await api.get(
+              '/borewell-points',
+              {
+                params: {
+                  search: '',
+                  page: pageNumber,
+                  limit: fetchLimit,
+                  machineType: currentMachine,
+                },
+              }
+            );
+
+            const batch =
+              data.points ||
+              data.bills ||
+              [];
+
+            allPoints.push(...batch);
+
+            const serverTotal =
+              Number(data.total || 0);
+
+            if (
+              batch.length < fetchLimit ||
+              allPoints.length >= serverTotal
+            ) {
+              break;
             }
-          );
 
+            pageNumber += 1;
+          }
+
+
+          const normalize =
+            (value) =>
+              String(value ?? '')
+                .trim()
+                .toLowerCase();
+
+
+          const filteredPoints =
+            allPoints.filter((point) => {
+
+              const brokerName =
+                point?.brokerId?.name ||
+                point?.brokerName ||
+                point?.broker?.name ||
+                '';
+
+              const searchableValues = [
+                brokerName,
+                point?.serviceType,
+                point?.paymentStatus,
+                point?.date
+                  ? dayjs(point.date).format('DD/MM/YYYY')
+                  : '',
+                point?.date
+                  ? dayjs(point.date).format('DD-MM-YYYY')
+                  : '',
+                point?.date
+                  ? dayjs(point.date).format('YYYY-MM-DD')
+                  : '',
+                point?.outerPipeFeet,
+                point?.innerPipeFeet,
+                point?.smallPipeFeet,
+                point?.plasticOuterFeet,
+                point?.plasticInnerFeet,
+                point?.jiInnerFeet,
+                point?.depthFeet,
+                point?.totalAmount,
+              ];
+
+              return searchableValues.some(
+                (value) =>
+                  normalize(value).includes(
+                    trimmedSearch
+                  )
+              );
+            });
+
+
+          const start =
+            page * rowsPerPage;
+
+          const end =
+            start + rowsPerPage;
 
           setPoints(
-            data.points ||
-            data.bills ||
-            []
+            filteredPoints.slice(
+              start,
+              end
+            )
           );
 
           setTotal(
-            data.total || 0
+            filteredPoints.length
           );
 
         } catch (error) {
