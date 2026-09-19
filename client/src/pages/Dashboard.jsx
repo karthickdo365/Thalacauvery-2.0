@@ -2912,9 +2912,26 @@ const Dashboard = () => {
     stats?.paidAmount ??
     0;
 
+  /*
+   * Pending Amount must come from borewell point payments.
+   * Do not use the salary pending value here.
+   *
+   * Unpaid point:
+   *   pending = totalAmount
+   *
+   * Partial point:
+   *   pending = totalAmount - paidAmount
+   *
+   * This keeps the dashboard card consistent with the
+   * Pending Amount detail dialog and the Points page.
+   */
   const pendingAmount =
-    stats?.pendingAmount ??
-    0;
+    pointRows.reduce(
+      (sum, point) =>
+        sum +
+        getPendingAmount(point),
+      0
+    );
 
   /* -------------------------------------------------------
      Discount
@@ -3507,7 +3524,7 @@ const Dashboard = () => {
         'Pending Amount',
 
       value:
-        fmt(salaryPendingAmount),
+        fmt(pendingAmount),
 
       icon:
         <PendingActionsIcon />,
