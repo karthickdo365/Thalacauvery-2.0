@@ -1590,17 +1590,37 @@ export default function Attendance() {
       throw new Error('Please select an employee first.');
     }
 
-    const response = await apiRequest(
-      `/users/${targetEmployee._id}`,
-      { method: 'GET' }
-    );
+    /*
+     * Try to refresh Personal Information first so the share uses the
+     * latest saved number. But this single-user GET is a "nice to have"
+     * — if the backend doesn't expose that route, is briefly offline,
+     * or returns an error, that should NOT block the WhatsApp share
+     * when we already have a perfectly good phone number sitting in
+     * the employee list that was just loaded on this page. Previously
+     * any failure here threw immediately and surfaced as a hard error
+     * even when Personal Information clearly had the number saved
+     * (visible right there in the table).
+     */
+    let personalInfoEmployee = null;
 
-    const personalInfoEmployee =
-      response?.user ||
-      response?.employee ||
-      response?.data ||
-      response?.record ||
-      response;
+    try {
+      const response = await apiRequest(
+        `/users/${targetEmployee._id}`,
+        { method: 'GET' }
+      );
+
+      personalInfoEmployee =
+        response?.user ||
+        response?.employee ||
+        response?.data ||
+        response?.record ||
+        response;
+    } catch (err) {
+      console.warn(
+        'Could not refresh Personal Information before WhatsApp share, falling back to the loaded employee record:',
+        err?.message || err
+      );
+    }
 
     const phone =
       getEmployeePhone(personalInfoEmployee) ||
@@ -1616,7 +1636,7 @@ export default function Attendance() {
 
     if (!valid) {
       throw new Error(
-        'The mobile number saved in Personal Information is not a valid Indian mobile number.'
+        'The mobile number saved in Personal Information is not a valid Indian mobile number. Please re-check it in Personal Information.'
       );
     }
 
@@ -2260,16 +2280,25 @@ export default function Attendance() {
 
         .alert {
           position: fixed;
-          top: 22px;
+          /* Cleared past the app's top header/navbar so the banner is
+             never partially hidden behind it — previously this sat at
+             top: 22px, which on this layout falls right underneath the
+             fixed header, so only a sliver of the alert peeked out. */
+          top: 88px;
           right: 22px;
-          z-index: 1000;
-          padding: 14px 18px;
+          z-index: 2000;
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          padding: 14px 16px;
           border-radius: 12px;
           color: white;
           font-weight: 650;
           font-size: 14px;
+          line-height: 1.4;
           box-shadow: 0 10px 30px rgba(0,0,0,.18);
           max-width: 380px;
+          word-break: break-word;
         }
 
         .alert.error {
@@ -2278,6 +2307,30 @@ export default function Attendance() {
 
         .alert.success {
           background: #0f9d75;
+        }
+
+        .alert-message {
+          flex: 1;
+        }
+
+        .alert-close {
+          flex-shrink: 0;
+          border: 0;
+          background: rgba(255, 255, 255, .18);
+          color: white;
+          width: 22px;
+          height: 22px;
+          border-radius: 50%;
+          cursor: pointer;
+          font-size: 14px;
+          line-height: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .alert-close:hover {
+          background: rgba(255, 255, 255, .3);
         }
 
 
@@ -2952,14 +3005,30 @@ export default function Attendance() {
         {/* Error */}
         {error && (
           <div className="alert error">
-            {error}
+            <span className="alert-message">{error}</span>
+            <button
+              type="button"
+              className="alert-close"
+              onClick={() => setError('')}
+              aria-label="Dismiss error"
+            >
+              ×
+            </button>
           </div>
         )}
 
         {/* Success */}
         {success && (
           <div className="alert success">
-            {success}
+            <span className="alert-message">{success}</span>
+            <button
+              type="button"
+              className="alert-close"
+              onClick={() => setSuccess('')}
+              aria-label="Dismiss message"
+            >
+              ×
+            </button>
           </div>
         )}
 
