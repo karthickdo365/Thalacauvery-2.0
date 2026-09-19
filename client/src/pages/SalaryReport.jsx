@@ -222,6 +222,7 @@ const calculateEmployeeRangeSalary = (
       absentDays: 0,
       grossSalary: 0,
       absentDeduction: 0,
+      workedSalary: 0,
       totalAdvance: 0,
       finalSalary: 0,
     };
@@ -258,6 +259,7 @@ const calculateEmployeeRangeSalary = (
       absentDays: 0,
       grossSalary: 0,
       absentDeduction: 0,
+      workedSalary: 0,
       totalAdvance: 0,
       finalSalary: 0,
       startDate: effectiveStart,
@@ -357,6 +359,10 @@ const calculateEmployeeRangeSalary = (
       0
     );
 
+  // Salary actually earned for worked/present days,
+  // before deducting salary advances.
+  const workedSalary = salaryBeforeAdvance;
+
   const finalSalary =
     salaryBeforeAdvance - totalAdvance;
 
@@ -366,6 +372,7 @@ const calculateEmployeeRangeSalary = (
     absentDays,
     grossSalary,
     absentDeduction,
+    workedSalary,
     totalAdvance,
     finalSalary,
     startDate: effectiveStart,
@@ -422,7 +429,7 @@ const SalaryReport = () => {
         setError('');
 
         const data = await apiRequest(
-          `/users?machineType=${currentMachine}`
+          `/users?machineType=${currentMachine}&limit=500`
         );
 
         const allUsers = extractList(
@@ -640,6 +647,11 @@ const SalaryReport = () => {
               salary.absentDeduction
             ) || 0;
 
+          totals.workedSalary +=
+            Number(
+              salary.workedSalary
+            ) || 0;
+
           totals.totalAdvance +=
             Number(
               salary.totalAdvance
@@ -657,6 +669,7 @@ const SalaryReport = () => {
           grossSalary: 0,
           monthlySalary: 0,
           absentDeduction: 0,
+          workedSalary: 0,
           totalAdvance: 0,
           finalSalary: 0,
         }
@@ -1344,6 +1357,7 @@ const SalaryReport = () => {
                         <th>Present</th>
                         <th>Absent</th>
                         <th>Monthly Salary</th>
+                        <th>Worked Salary</th>
                         <th>Total Advance</th>
                         <th>Final Salary</th>
                       </tr>
@@ -1407,6 +1421,12 @@ const SalaryReport = () => {
 
                               <td>
                                 {formatMoney(
+                                  salary.workedSalary
+                                )}
+                              </td>
+
+                              <td>
+                                {formatMoney(
                                   salary.totalAdvance
                                 )}
                               </td>
@@ -1441,6 +1461,12 @@ const SalaryReport = () => {
                         <td>
                           {formatMoney(
                             reportTotals.monthlySalary
+                          )}
+                        </td>
+
+                        <td>
+                          {formatMoney(
+                            reportTotals.workedSalary
                           )}
                         </td>
 
@@ -1550,7 +1576,8 @@ const SalaryReport = () => {
                     <th>Present</th>
                     <th>Absent</th>
                     <th>Monthly Salary</th>
-                    <th>Total Advance</th>
+                    <th>Worked Salary</th>
+                        <th>Total Advance</th>
                     <th>Final Salary</th>
                   </tr>
                 </thead>
@@ -1604,6 +1631,12 @@ const SalaryReport = () => {
                           </td>
                           <td>
                             {formatMoney(
+                              salary.workedSalary
+                            )}
+                          </td>
+
+                          <td>
+                            {formatMoney(
                               salary.totalAdvance
                             )}
                           </td>
@@ -1633,6 +1666,11 @@ const SalaryReport = () => {
                     <td>
                       {formatMoney(
                         reportTotals.monthlySalary
+                      )}
+                    </td>
+                    <td>
+                      {formatMoney(
+                        reportTotals.workedSalary
                       )}
                     </td>
                     <td>
