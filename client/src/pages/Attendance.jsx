@@ -434,6 +434,51 @@ const getEmployeePhone = (emp) => {
   return String(raw).replace(/[^\d]/g, '');
 };
 
+/*
+ * Turns a raw phone number (any of the shapes Personal Information
+ * might store: 10-digit local, 12-digit with country code, or a
+ * 91-prefixed/leading-zero variant) into the full international
+ * digits WhatsApp's click-to-chat API needs.
+ *
+ * wa.me / api.whatsapp.com only open a chat with a SPECIFIC person
+ * when given the full international number with no '+', spaces or
+ * leading zero. Anything else (a bare 10-digit number, for example)
+ * is not a valid international number, so WhatsApp silently falls
+ * back to the generic picker/web screen instead of that contact's
+ * chat — which is exactly the "doesn't go directly to the number"
+ * bug this fixes.
+ *
+ * Returns { number, valid }. number is the best-effort digits to use
+ * (for logging/debugging); valid tells the caller whether it's safe
+ * to open a direct chat with it.
+ */
+const normalizeIndianWhatsAppNumber = (phone) => {
+  const digits = String(phone || '').replace(/[^\d]/g, '');
+
+  if (!digits) {
+    return { number: '', valid: false };
+  }
+
+  // Plain 10-digit Indian mobile number -> add the country code.
+  if (digits.length === 10) {
+    return { number: `91${digits}`, valid: true };
+  }
+
+  // Already has the country code (e.g. 91XXXXXXXXXX).
+  if (digits.length === 12 && digits.startsWith('91')) {
+    return { number: digits, valid: true };
+  }
+
+  // Leading-zero trunk-prefixed variant (0 + 10 digits), sometimes
+  // saved from a landline-style entry form.
+  if (digits.length === 11 && digits.startsWith('0')) {
+    return { number: `91${digits.slice(1)}`, valid: true };
+  }
+
+  // Anything else isn't a number we can confidently route directly.
+  return { number: digits, valid: false };
+};
+
 const shareOnWhatsApp = (
   text,
   phone
@@ -614,6 +659,11 @@ export default function Attendance() {
   const [
     revertingAbsent,
     setRevertingAbsent,
+  ] = useState(false);
+
+  const [
+    sharingAbsentWhatsApp,
+    setSharingAbsentWhatsApp,
   ] = useState(false);
 
   /*
@@ -1527,6 +1577,52 @@ export default function Attendance() {
     }
   };
 
+  /*
+   * Resolves the currently selected employee's WhatsApp number the
+   * same way for every "Share on WhatsApp" button on this page:
+   * re-fetch Personal Information for the freshest saved number,
+   * then normalize it to the full international format WhatsApp's
+   * click-to-chat links require so the chat opens directly with
+   * that employee instead of the generic picker.
+   */
+  const resolveEmployeeWhatsAppNumber = async (targetEmployee) => {
+    if (!targetEmployee?._id) {
+      throw new Error('Please select an employee first.');
+    }
+
+    const response = await apiRequest(
+      `/users/${targetEmployee._id}`,
+      { method: 'GET' }
+    );
+
+    const personalInfoEmployee =
+      response?.user ||
+      response?.employee ||
+      response?.data ||
+      response?.record ||
+      response;
+
+    const phone =
+      getEmployeePhone(personalInfoEmployee) ||
+      getEmployeePhone(targetEmployee);
+
+    if (!phone) {
+      throw new Error(
+        'Mobile number is not saved in Personal Information for this employee.'
+      );
+    }
+
+    const { number, valid } = normalizeIndianWhatsAppNumber(phone);
+
+    if (!valid) {
+      throw new Error(
+        'The mobile number saved in Personal Information is not a valid Indian mobile number.'
+      );
+    }
+
+    return number;
+  };
+
   const shareSalaryBillOnWhatsApp = async () => {
     if (!employee) {
       setError('Please select an employee first.');
@@ -1546,59 +1642,10 @@ export default function Attendance() {
     try {
       setError('');
 
-      /*
-       * The employee number is taken from the same /users record
-       * used by Personal Information.
-       *
-       * Fetch the selected employee again here so the WhatsApp
-       * share always uses the latest saved Personal Information,
-       * instead of relying on an older employee-list object.
-       */
-      const response = await apiRequest(
-        `/users/${employee._id}`,
-        {
-          method: 'GET',
-        }
-      );
-
-      const personalInfoEmployee =
-        response?.user ||
-        response?.employee ||
-        response?.data ||
-        response?.record ||
-        response;
-
-      const phone =
-        getEmployeePhone(personalInfoEmployee) ||
-        getEmployeePhone(employee);
-
-      if (!phone) {
-        setError(
-          'Mobile number is not saved in Personal Information for this employee.'
-        );
-        return;
-      }
-
-      let whatsappNumber = phone;
-
-      /*
-       * Indian mobile number:
-       * 10 digits -> add India country code 91.
-       * 12 digits beginning with 91 -> already has country code.
-       */
-      if (phone.length === 10) {
-        whatsappNumber = `91${phone}`;
-      } else if (
-        phone.length === 12 &&
-        phone.startsWith('91')
-      ) {
-        whatsappNumber = phone;
-      } else {
-        setError(
-          'The mobile number saved in Personal Information is not a valid Indian mobile number.'
-        );
-        return;
-      }
+      // The employee number is taken from the same /users record
+      // used by Personal Information, fetched fresh so the share
+      // always uses the latest saved contact details.
+      const whatsappNumber = await resolveEmployeeWhatsAppNumber(employee);
 
       const startDate = parseDateKey(
         individualSalary.startDate || reportStartDate
@@ -1646,6 +1693,57 @@ export default function Attendance() {
         err?.message ||
           'Unable to get the employee mobile number from Personal Information.'
       );
+    }
+  };
+
+  /*
+   |--------------------------------------------------------------------------
+   | Absence-details WhatsApp share
+   |--------------------------------------------------------------------------
+   | Previously this called shareOnWhatsApp() with the raw, un-normalized
+   | phone number from the employee list, so a plain 10-digit number
+   | opened WhatsApp's generic picker instead of that employee's chat.
+   | This now goes through the same fetch + normalize path as the
+   | Salary Bill share above, and surfaces a clear error instead of
+   | silently opening the picker when the saved number isn't valid.
+   */
+  const shareAbsenceOnWhatsApp = async () => {
+    if (!employee) {
+      setError('Please select an employee first.');
+      return;
+    }
+
+    if (!detailsDate) return;
+
+    try {
+      setSharingAbsentWhatsApp(true);
+      setError('');
+
+      const whatsappNumber = await resolveEmployeeWhatsAppNumber(employee);
+
+      const message = buildAbsenceShareText({
+        employeeName: employee?.name,
+        unitLabel:
+          currentMachine === 'big'
+            ? 'Big Machine'
+            : 'Small Machine',
+        dateLabel: formatDate(detailsDate),
+        reason: detailsInfo?.reason,
+      });
+
+      shareOnWhatsApp(message, whatsappNumber);
+
+      setSuccess(
+        `Attendance update opened in WhatsApp for ${employee?.name || 'employee'}.`
+      );
+    } catch (err) {
+      console.error('Absence WhatsApp share error:', err);
+      setError(
+        err?.message ||
+          'Unable to get the employee mobile number from Personal Information.'
+      );
+    } finally {
+      setSharingAbsentWhatsApp(false);
     }
   };
 
@@ -4026,7 +4124,8 @@ export default function Attendance() {
                     );
                   }}
                   disabled={
-                    revertingAbsent
+                    revertingAbsent ||
+                    sharingAbsentWhatsApp
                   }
                 >
                   Close
@@ -4035,29 +4134,15 @@ export default function Attendance() {
                 <button
                   type="button"
                   className="button"
-                  onClick={() =>
-                    shareOnWhatsApp(
-                      buildAbsenceShareText({
-                        employeeName:
-                          employee?.name,
-                        unitLabel:
-                          currentMachine ===
-                          'big'
-                            ? 'Big Machine'
-                            : 'Small Machine',
-                        dateLabel: formatDate(
-                          detailsDate
-                        ),
-                        reason:
-                          detailsInfo?.reason,
-                      }),
-                      getEmployeePhone(
-                        employee
-                      )
-                    )
+                  onClick={shareAbsenceOnWhatsApp}
+                  disabled={
+                    sharingAbsentWhatsApp ||
+                    revertingAbsent
                   }
                 >
-                  Share via WhatsApp
+                  {sharingAbsentWhatsApp
+                    ? 'Opening WhatsApp...'
+                    : 'Share via WhatsApp'}
                 </button>
 
                 <button
@@ -4070,7 +4155,8 @@ export default function Attendance() {
                     )
                   }
                   disabled={
-                    revertingAbsent
+                    revertingAbsent ||
+                    sharingAbsentWhatsApp
                   }
                 >
                   {revertingAbsent
