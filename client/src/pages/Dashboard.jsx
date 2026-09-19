@@ -450,11 +450,8 @@ const calculateCurrentEmployeeSalary = (
     );
 
   const currentSalary =
-    Math.max(
-      salaryBeforeAdvance -
-        currentMonthAdvances,
-      0
-    );
+    salaryBeforeAdvance -
+    currentMonthAdvances;
 
   return {
     employee,
@@ -2576,11 +2573,8 @@ const Dashboard = () => {
     const loadEmployeesAndSalary =
       async () => {
         try {
-          const [
-            employeeResponse,
-            advanceResponse,
-          ] = await Promise.all([
-            api.get(
+          const employeeResponse =
+            await api.get(
               '/users',
               {
                 params: {
@@ -2590,27 +2584,11 @@ const Dashboard = () => {
                     currentMachine,
                 },
               }
-            ),
-
-            api.get(
-              '/salary-advances',
-              {
-                params: {
-                  machineType:
-                    currentMachine,
-                  limit: 500,
-                },
-              }
-            ),
-          ]);
+            );
 
           const employeeData =
             employeeResponse?.data ??
             employeeResponse;
-
-          const advanceData =
-            advanceResponse?.data ??
-            advanceResponse;
 
           const users =
             Array.isArray(
@@ -2623,54 +2601,42 @@ const Dashboard = () => {
               ? employeeData
               : [];
 
-          const advances =
-            Array.isArray(
-              advanceData?.records
-            )
-              ? advanceData.records
-              : Array.isArray(
-                  advanceData?.advances
-                )
-              ? advanceData.advances
-              : Array.isArray(
-                  advanceData?.data
-                )
-              ? advanceData.data
-              : Array.isArray(
-                  advanceData?.items
-                )
-              ? advanceData.items
-              : Array.isArray(
-                  advanceData
-                )
-              ? advanceData
-              : [];
-
           /*
-           * Load attendance separately for each employee because the
-           * attendance API is employee-specific. This is important:
-           * summing the monthly salary alone cannot account for
-           * different salaries or different absent days.
+           * Attendance and salary advances are loaded separately for
+           * EACH employee. The previous dashboard loaded all advances
+           * for the machine once and then deducted that same advance
+           * total from every employee. That made the salary collapse
+           * to ₹0 when the combined advance amount was larger than an
+           * individual employee's salary.
+           *
+           * Attendance & Salary uses the employee-specific endpoints,
+           * so the dashboard must use the same rule.
            */
-          const salaryRows =
+          const salaryResults =
             await Promise.all(
               users.map(
                 async (employee) => {
-                  try {
-                    const employeeId =
-                      employee?._id ||
-                      employee?.id;
+                  const employeeId =
+                    employee?._id ||
+                    employee?.id;
 
-                    if (!employeeId) {
-                      return calculateCurrentEmployeeSalary(
+                  if (!employeeId) {
+                    return {
+                      salary: calculateCurrentEmployeeSalary(
                         employee,
                         [],
-                        advances
-                      );
-                    }
+                        []
+                      ),
+                      advances: [],
+                    };
+                  }
 
-                    const attendanceResponse =
-                      await api.get(
+                  try {
+                    const [
+                      attendanceResponse,
+                      advanceResponse,
+                    ] = await Promise.all([
+                      api.get(
                         '/attendance',
                         {
                           params: {
@@ -2680,45 +2646,102 @@ const Dashboard = () => {
                             limit: 500,
                           },
                         }
-                      );
+                      ),
+                      api.get(
+                        '/salary-advances',
+                        {
+                          params: {
+                            employeeId,
+                            machineType:
+                              currentMachine,
+                            limit: 500,
+                          },
+                        }
+                      ),
+                    ]);
 
                     const attendanceData =
                       attendanceResponse?.data ??
                       attendanceResponse;
+
+                    const advanceData =
+                      advanceResponse?.data ??
+                      advanceResponse;
 
                     const attendanceRecords =
                       extractAttendanceRows(
                         attendanceData
                       );
 
-                    return calculateCurrentEmployeeSalary(
-                      employee,
-                      attendanceRecords,
-                      advances
-                    );
-                  } catch (attendanceError) {
+                    const employeeAdvances =
+                      Array.isArray(
+                        advanceData?.records
+                      )
+                        ? advanceData.records
+                        : Array.isArray(
+                            advanceData?.advances
+                          )
+                        ? advanceData.advances
+                        : Array.isArray(
+                            advanceData?.data
+                          )
+                        ? advanceData.data
+                        : Array.isArray(
+                            advanceData?.items
+                          )
+                        ? advanceData.items
+                        : Array.isArray(
+                            advanceData
+                          )
+                        ? advanceData
+                        : [];
+
+                    return {
+                      salary:
+                        calculateCurrentEmployeeSalary(
+                          employee,
+                          attendanceRecords,
+                          employeeAdvances
+                        ),
+                      advances:
+                        employeeAdvances,
+                    };
+                  } catch (employeeSalaryError) {
                     console.error(
-                      `Failed to load attendance for ${
+                      `Failed to load salary data for ${
                         employee?.name ||
                         'employee'
                       }:`,
-                      attendanceError
+                      employeeSalaryError
                     );
 
                     /*
-                     * If attendance cannot be loaded, do not invent
-                     * absence days. Calculate the employee's current
-                     * salary using the available employee and
-                     * advance data only.
+                     * If the attendance/advance request fails, do not
+                     * invent deductions. Show the salary based on the
+                     * employee record and the dates we can calculate.
                      */
-                    return calculateCurrentEmployeeSalary(
-                      employee,
-                      [],
-                      advances
-                    );
+                    return {
+                      salary:
+                        calculateCurrentEmployeeSalary(
+                          employee,
+                          [],
+                          []
+                        ),
+                      advances: [],
+                    };
                   }
                 }
               )
+            );
+
+          const salaryRows =
+            salaryResults.map(
+              (result) => result.salary
+            );
+
+          const advances =
+            salaryResults.flatMap(
+              (result) => result.advances || []
             );
 
           if (cancelled) {
