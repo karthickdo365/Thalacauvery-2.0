@@ -3755,7 +3755,7 @@ const Dashboard = () => {
                         color: '#0f172a',
                       }}
                     >
-                      Remaining = {card.remaining}
+                      Total ft = {card.totalFeet}
                     </Typography>
 
                     <Typography
@@ -3763,11 +3763,11 @@ const Dashboard = () => {
                       sx={{
                         fontSize: '0.72rem',
                         lineHeight: 1.35,
-                        fontWeight: 700,
-                        color: '#0f172a',
+                        fontWeight: 800,
+                        color: '#dc2626',
                       }}
                     >
-                      Total ft = {card.totalFeet}
+                      Stock = {card.remaining}
                     </Typography>
                   </Box>
                 }
@@ -3790,7 +3790,7 @@ const Dashboard = () => {
                 height: '100%',
                 border: '1px solid #dbe3ec',
                 borderRadius: '12px',
-                bgcolor: '#0f172a',
+                bgcolor: '#fff',
               }}
             >
               <CardContent
@@ -3822,7 +3822,7 @@ const Dashboard = () => {
                   <Box>
                     <Typography
                       sx={{
-                        color: '#0f172a',
+                        color: '#64748b',
                         fontSize: '0.6rem',
                         whiteSpace: 'nowrap',
                       }}
@@ -3855,7 +3855,7 @@ const Dashboard = () => {
 
                     <Typography
                       sx={{
-                        color: '#0f172a',
+                        color: '#b45309',
                         fontWeight: 800,
                         fontSize: '0.74rem',
                         whiteSpace: 'nowrap',
@@ -3867,7 +3867,7 @@ const Dashboard = () => {
                     </Typography>
                   </Box>
 
-                  {/* BOREWELL PAYMENT PENDING */}
+                  {/* ATTENDANCE / SALARY PENDING */}
                   <Box>
                     <Typography
                       sx={{
@@ -3876,12 +3876,12 @@ const Dashboard = () => {
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      Pending
+                      Pending Salary
                     </Typography>
 
                     <Typography
                       sx={{
-                        color: '#0f172a',
+                        color: '#b91c1c',
                         fontWeight: 800,
                         fontSize: '0.74rem',
                         whiteSpace: 'nowrap',
@@ -3897,7 +3897,7 @@ const Dashboard = () => {
                 <Typography
                   sx={{
                     mt: 0.8,
-                    color: '#0f172a',
+                    color: '#64748b',
                     fontSize: '0.62rem',
                   }}
                 >
