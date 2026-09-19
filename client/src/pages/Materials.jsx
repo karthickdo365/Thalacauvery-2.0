@@ -118,6 +118,7 @@ const BIG_MATERIAL_TYPES = [
 
 const SMALL_MATERIAL_TYPES = [
   'Diesel',
+  'Petrol',
   'Pipe Outer',
   'Pipe Inner',
   'Pipe Small',
