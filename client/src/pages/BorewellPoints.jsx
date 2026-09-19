@@ -50,7 +50,7 @@ import {
   TEAL,
   TEAL_DARK,
   toNum,
-  machineChipSx,
+
   SMALL_PIPES,
   BIG_PIPES,
   SMALL_DEPTH_RANGES,
@@ -1506,7 +1506,6 @@ const AgentInformation = () => {
 
                   {[
                     'Date',
-                    'Machine Type',
                     'Broker',
                     'Rate Descriptions',
                     'Actions',
@@ -1534,7 +1533,7 @@ const AgentInformation = () => {
                   <TableRow>
 
                     <TableCell
-                      colSpan={5}
+                      colSpan={4}
                       align="center"
                       sx={{
                         color:
@@ -1636,30 +1635,6 @@ const AgentInformation = () => {
                           ).format(
                             'DD/MM/YYYY'
                           )}
-                        </TableCell>
-
-
-                        {/* MACHINE */}
-
-                        <TableCell>
-
-                          <Chip
-                            label={
-                              isBigRow
-                                ? 'Big'
-                                : 'Small'
-                            }
-                            size="small"
-                            sx={{
-                              ...machineChipSx(
-                                isBigRow
-                              ),
-                              fontSize:
-                                '0.72rem',
-                              height: 22,
-                            }}
-                          />
-
                         </TableCell>
 
 
