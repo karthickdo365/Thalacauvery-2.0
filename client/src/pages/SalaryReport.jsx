@@ -1,319 +1,398 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+
+import {
+  Box,
+  Card,
+  CardContent,
+  Grid,
+  Typography,
+  CircularProgress,
+  Chip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  IconButton,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
+  TextField,
+  InputAdornment,
+  ToggleButtonGroup,
+  ToggleButton,
+} from '@mui/material';
+
+import PeopleIcon from '@mui/icons-material/People';
+import WaterDropIcon from '@mui/icons-material/WaterDrop';
+import PaidIcon from '@mui/icons-material/Paid';
+import PendingActionsIcon from '@mui/icons-material/PendingActions';
+import DiscountIcon from '@mui/icons-material/Discount';
+import LocalGasStationIcon from '@mui/icons-material/LocalGasStation';
+import ConstructionIcon from '@mui/icons-material/Construction';
+import BuildIcon from '@mui/icons-material/Build';
+
+import CloseIcon from '@mui/icons-material/Close';
+import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
+import SearchIcon from '@mui/icons-material/Search';
+import DashboardIcon from '@mui/icons-material/Dashboard';
+
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement,
+} from 'chart.js';
+
+import { Bar, Doughnut } from 'react-chartjs-2';
+
+import dayjs from 'dayjs';
+import isoWeek from 'dayjs/plugin/isoWeek';
+
+import { fetchDashboardStats } from '../redux/slices/dashboardSlice';
 import { useMachine } from '../context/MachineContext';
 
-const API_URL =
-  import.meta.env.VITE_API_URL ||
-  'http://localhost:5000/api';
+import api from '../utils/api';
+import PageHeader from '../components/PageHeader';
 
-const getToken = () =>
-  localStorage.getItem('token') ||
-  localStorage.getItem('accessToken') ||
-  localStorage.getItem('jwt') ||
-  '';
+import {
+  NAVY,
+  TEAL,
+  TEAL_DARK as TEAL_D,
+  toNum as safeNum,
+  fmtINR as fmtSafe,
+  statusColor,
+} from '../utils/constants';
 
-const apiRequest = async (endpoint, options = {}) => {
-  const token = getToken();
+dayjs.extend(isoWeek);
 
-  const headers = {
-    'Content-Type': 'application/json',
-    ...(options.headers || {}),
-  };
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement
+);
 
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
+const fmt = fmtSafe;
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+const filterByPeriod = (
+  rows,
+  period,
+  dateField = 'date'
+) => {
+  if (!period || period === 'all') {
+    return rows;
   }
 
-  const response = await fetch(`${API_URL}${endpoint}`, {
-    ...options,
-    headers,
+  const now = dayjs();
+
+  return rows.filter((row) => {
+    const date = dayjs(row?.[dateField]);
+
+    if (!date.isValid()) {
+      return true;
+    }
+
+    if (period === 'week') {
+      return date.isSame(now, 'week');
+    }
+
+    if (period === 'month') {
+      return date.isSame(now, 'month');
+    }
+
+    if (period === 'year') {
+      return date.isSame(now, 'year');
+    }
+
+    return true;
   });
-
-  let data = null;
-
-  try {
-    data = await response.json();
-  } catch {
-    data = null;
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      data?.message ||
-        `Request failed (${response.status})`
-    );
-  }
-
-  return data;
 };
 
-const extractList = (data, keys = []) => {
-  if (Array.isArray(data)) {
-    return data;
-  }
-
-  if (!data || typeof data !== 'object') {
-    return [];
-  }
-
-  for (const key of keys) {
-    if (Array.isArray(data[key])) {
-      return data[key];
-    }
-  }
-
-  for (const key of Object.keys(data)) {
-    if (Array.isArray(data[key])) {
-      return data[key];
-    }
-  }
-
-  return [];
+const getMaterialType = (material) => {
+  return String(
+    material?.type ||
+      material?.materialType ||
+      material?.name ||
+      ''
+  )
+    .trim()
+    .toLowerCase();
 };
 
-const pad = (value) =>
-  String(value).padStart(2, '0');
+const isMaterialType = (
+  material,
+  type
+) => {
+  const materialType =
+    getMaterialType(material);
 
-const toDateKey = (date) => {
-  if (!date) return '';
-
-  const d =
-    date instanceof Date
-      ? date
-      : new Date(date);
-
-  if (Number.isNaN(d.getTime())) {
-    return '';
-  }
-
-  return `${d.getFullYear()}-${pad(
-    d.getMonth() + 1
-  )}-${pad(d.getDate())}`;
-};
-
-const parseDateKey = (key) => {
-  if (!key) return null;
-
-  const [year, month, day] =
-    key.split('-').map(Number);
-
-  if (!year || !month || !day) {
-    return null;
-  }
-
-  return new Date(
-    year,
-    month - 1,
-    day
+  return (
+    materialType === type ||
+    materialType.includes(type)
   );
 };
 
-const getDateRange = (startKey, endKey) => {
-  if (!startKey) return [];
-
-  const start = parseDateKey(startKey);
-  const end = parseDateKey(endKey || startKey);
-
-  if (!start || !end || end < start) {
-    return [];
-  }
-
-  const dates = [];
-  const cursor = new Date(start);
-
-  while (cursor <= end) {
-    dates.push(toDateKey(cursor));
-    cursor.setDate(cursor.getDate() + 1);
-  }
-
-  return dates;
+const getDiscount = (point) => {
+  return safeNum(
+    point?.discountAmount ??
+      point?.discount ??
+      point?.discountValue ??
+      point?.breakdown?.discountAmount ??
+      0
+  );
 };
 
-const normalizeStatus = (value) => {
-  const status = String(value || '')
-    .trim()
-    .toLowerCase();
-
+const getPaidAmount = (point) => {
   if (
-    ['absent', 'a', 'leave', 'on_leave'].includes(status)
+    point?.paymentStatus ===
+    'Paid'
   ) {
-    return 'absent';
+    return safeNum(
+      point?.totalAmount
+    );
   }
 
-  if (
-    ['present', 'p', 'working'].includes(status)
-  ) {
-    return 'present';
-  }
-
-  return status;
+  return safeNum(
+    point?.paidAmount
+  );
 };
 
-const normalizeAttendanceRecord = (record) => ({
-  ...record,
-  status: normalizeStatus(record?.status),
-});
+const getPendingAmount = (point) => {
+  const total = safeNum(
+    point?.totalAmount
+  );
+
+  if (
+    point?.paymentStatus ===
+    'Unpaid'
+  ) {
+    return total;
+  }
+
+  const paid = safeNum(
+    point?.paidAmount
+  );
+
+  return Math.max(
+    0,
+    total - paid
+  );
+};
+
+
+const getEmployeeDateKey = (value) => {
+  if (!value) return '';
+
+  const date = dayjs(value);
+  return date.isValid()
+    ? date.format('YYYY-MM-DD')
+    : '';
+};
 
 const getEmployeeEndDateKey = (employee) => {
   if (!employee) return '';
 
-  const raw =
-    employee.endDate ||
-    employee.terminationDate ||
-    employee.lastWorkingDate ||
-    employee.exitDate ||
-    employee.terminatedOn ||
-    '';
-
-  return raw ? toDateKey(new Date(raw)) : '';
-};
-
-const getAdvanceDateValue = (item) => {
-  if (!item) return null;
-
-  return (
-    item.date ||
-    item.advanceDate ||
-    item.paymentDate ||
-    item.transactionDate ||
-    item.createdAt ||
-    null
+  return getEmployeeDateKey(
+    employee?.endDate ||
+      employee?.terminationDate ||
+      employee?.lastWorkingDate ||
+      employee?.exitDate ||
+      employee?.terminatedOn ||
+      ''
   );
 };
 
-const formatDate = (date) => {
-  if (!date) return '';
-
-  return new Intl.DateTimeFormat(
-    'en-IN',
-    {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric',
-    }
-  ).format(date);
+const getAttendanceDateKey = (record) => {
+  return getEmployeeDateKey(
+    record?.date ||
+      record?.attendanceDate ||
+      record?.absenceDate ||
+      ''
+  );
 };
 
-const formatMoney = (value) =>
-  new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 2,
-  }).format(Number(value) || 0);
+const isAbsentAttendance = (record) => {
+  const status = String(
+    record?.status ||
+      record?.attendanceStatus ||
+      record?.state ||
+      ''
+  )
+    .trim()
+    .toLowerCase();
 
-const calculateEmployeeRangeSalary = (
+  return status === 'absent';
+};
+
+const extractAttendanceRows = (data) => {
+  const rows =
+    data?.records ||
+    data?.attendance ||
+    data?.data ||
+    data?.items ||
+    [];
+
+  return Array.isArray(rows)
+    ? rows
+    : [];
+};
+
+/*
+ * Current-month salary calculation used by the dashboard.
+ *
+ * Salary is calculated per employee, not by adding the full monthly
+ * salary of every employee. The calculation follows the Attendance
+ * page rule:
+ *
+ *   daily salary = monthly salary / 30
+ *   gross salary = daily salary × eligible days
+ *   absent deduction = daily salary × absent days
+ *   current payable = gross salary - absent deduction - advances
+ *
+ * Every employee gets their own salary rate, joining date and absence
+ * records. Therefore employees with different salaries are calculated
+ * independently.
+ */
+const calculateCurrentEmployeeSalary = (
   employee,
   attendanceRecords = [],
-  advances = [],
-  startKey,
-  endKey
+  advances = []
 ) => {
-  const todayKey = toDateKey(new Date());
-  const requestedStart = startKey || todayKey;
-  const requestedEnd = endKey || todayKey;
-
-  if (
-    !requestedStart ||
-    !requestedEnd ||
-    requestedEnd < requestedStart
-  ) {
+  if (!employee) {
     return {
+      employee,
+      monthlySalary: 0,
       totalDays: 0,
       presentDays: 0,
       absentDays: 0,
       grossSalary: 0,
       absentDeduction: 0,
-      totalAdvance: 0,
-      finalSalary: 0,
+      advance: 0,
+      currentSalary: 0,
     };
   }
 
-  const joiningKey = employee?.date
-    ? toDateKey(new Date(employee.date))
-    : requestedStart;
+  const today = dayjs().startOf('day');
+  const todayKey = today.format('YYYY-MM-DD');
+
+  const monthStartKey = today
+    .startOf('month')
+    .format('YYYY-MM-DD');
+
+  const joiningKey =
+    getEmployeeDateKey(employee?.date) ||
+    monthStartKey;
 
   const employeeEndKey =
     getEmployeeEndDateKey(employee);
 
-  const effectiveStart =
-    joiningKey && joiningKey > requestedStart
+  let startKey =
+    joiningKey > monthStartKey
       ? joiningKey
-      : requestedStart;
+      : monthStartKey;
 
-  let effectiveEnd =
-    requestedEnd > todayKey
-      ? todayKey
-      : requestedEnd;
+  let endKey = todayKey;
 
-  if (
-    employeeEndKey &&
-    employeeEndKey < effectiveEnd
-  ) {
-    effectiveEnd = employeeEndKey;
+  if (employeeEndKey && employeeEndKey < endKey) {
+    endKey = employeeEndKey;
   }
 
-  if (effectiveEnd < effectiveStart) {
+  if (endKey < startKey) {
     return {
+      employee,
+      monthlySalary:
+        safeNum(employee?.salary),
       totalDays: 0,
       presentDays: 0,
       absentDays: 0,
       grossSalary: 0,
       absentDeduction: 0,
-      totalAdvance: 0,
-      finalSalary: 0,
-      startDate: effectiveStart,
-      endDate: effectiveEnd,
+      advance: 0,
+      currentSalary: 0,
     };
   }
 
-  const rangeDates = getDateRange(
-    effectiveStart,
-    effectiveEnd
-  );
+  const rangeStart = dayjs(startKey);
+  const rangeEnd = dayjs(endKey);
 
-  const rangeSet = new Set(rangeDates);
+  const totalDays =
+    rangeEnd.diff(
+      rangeStart,
+      'day'
+    ) + 1;
+
+  const rangeSet = new Set();
+
+  for (
+    let date = rangeStart;
+    !date.isAfter(rangeEnd, 'day');
+    date = date.add(1, 'day')
+  ) {
+    rangeSet.add(
+      date.format('YYYY-MM-DD')
+    );
+  }
+
   const absentKeys = new Set();
 
   for (const record of attendanceRecords) {
-    if (
-      normalizeStatus(record?.status) ===
-      'absent'
-    ) {
-      const rawDate =
-        record?.date ||
-        record?.attendanceDate ||
-        record?.absenceDate;
-
-      const key = rawDate
-        ? toDateKey(rawDate)
-        : '';
+    if (isAbsentAttendance(record)) {
+      const key =
+        getAttendanceDateKey(record);
 
       if (key && rangeSet.has(key)) {
         absentKeys.add(key);
       }
     }
 
-    if (Array.isArray(record?.absentDates)) {
-      for (const item of record.absentDates) {
-        const key = toDateKey(
-          item?.date || item
-        );
+    if (
+      Array.isArray(
+        record?.absentDates
+      )
+    ) {
+      for (
+        const item of record.absentDates
+      ) {
+        const key =
+          getEmployeeDateKey(
+            item?.date || item
+          );
 
-        if (key && rangeSet.has(key)) {
+        if (
+          key &&
+          rangeSet.has(key)
+        ) {
           absentKeys.add(key);
         }
       }
     }
   }
 
-  const totalDays = rangeDates.length;
-  const absentDays = absentKeys.size;
+  const absentDays =
+    absentKeys.size;
+
   const presentDays = Math.max(
     totalDays - absentDays,
     0
   );
 
   const monthlySalary =
-    Number(employee?.salary) || 0;
+    safeNum(employee?.salary);
 
   const dailySalary =
     monthlySalary / 30;
@@ -324,1335 +403,3777 @@ const calculateEmployeeRangeSalary = (
   const absentDeduction =
     dailySalary * absentDays;
 
-  const totalAdvance = advances.reduce(
-    (sum, item) => {
-      const rawDate =
-        getAdvanceDateValue(item);
+  const currentMonthAdvances =
+    advances.reduce(
+      (sum, item) => {
+        const rawDate =
+          item?.date ||
+          item?.advanceDate ||
+          item?.paymentDate ||
+          item?.transactionDate ||
+          item?.createdAt ||
+          null;
 
-      const advanceKey = rawDate
-        ? toDateKey(new Date(rawDate))
-        : item?.month
-          ? `${item.month}-01`
-          : '';
+        const advanceKey =
+          rawDate
+            ? getEmployeeDateKey(
+                rawDate
+              )
+            : item?.month
+              ? `${item.month}-01`
+              : '';
 
-      if (
-        advanceKey &&
-        advanceKey >= effectiveStart &&
-        advanceKey <= effectiveEnd
-      ) {
-        return (
-          sum +
-          (Number(item?.advanceAmount) || 0)
-        );
-      }
+        if (
+          advanceKey &&
+          advanceKey >= startKey &&
+          advanceKey <= endKey
+        ) {
+          return (
+            sum +
+            safeNum(
+              item?.advanceAmount ??
+                item?.amount
+            )
+          );
+        }
 
-      return sum;
-    },
-    0
-  );
-
-  const salaryBeforeAdvance =
-    Math.max(
-      grossSalary - absentDeduction,
+        return sum;
+      },
       0
     );
 
-  const finalSalary =
-    salaryBeforeAdvance - totalAdvance;
+  const salaryBeforeAdvance =
+    Math.max(
+      grossSalary -
+        absentDeduction,
+      0
+    );
+
+  const currentSalary =
+    Math.max(
+      salaryBeforeAdvance -
+        currentMonthAdvances,
+      0
+    );
 
   return {
+    employee,
+    monthlySalary,
     totalDays,
     presentDays,
     absentDays,
     grossSalary,
     absentDeduction,
-    totalAdvance,
-    finalSalary,
-    startDate: effectiveStart,
-    endDate: effectiveEnd,
+    advance:
+      currentMonthAdvances,
+    currentSalary,
+    startDate: startKey,
+    endDate: endKey,
   };
 };
 
-const SalaryReport = () => {
-  const {
-    currentMachine = 'big',
-  } = useMachine();
+/* =========================================================
+   PERIOD OPTIONS
+========================================================= */
 
-  const [employees, setEmployees] =
-    useState([]);
+const PERIOD_OPTIONS = [
+  {
+    value: 'all',
+    label: 'All',
+  },
+  {
+    value: 'week',
+    label: 'Week',
+  },
+  {
+    value: 'month',
+    label: 'Month',
+  },
+  {
+    value: 'year',
+    label: 'Year',
+  },
+];
 
-  const [allEmployeeSalaryRows, setAllEmployeeSalaryRows] =
+/* =========================================================
+   CARD CONFIG
+========================================================= */
+
+const CARD_CONFIG = {
+  totalBorewellPoints: {
+    label: 'Points',
+    color: '#0f172a',
+    icon: <WaterDropIcon />,
+    hasPeriodFilter: true,
+
+    fetch: (machineType) =>
+      api.get(
+        '/borewell-points',
+        {
+          params: {
+            limit: 500,
+            machineType,
+          },
+        }
+      ),
+
+    extract: (data) =>
+      data?.points || [],
+
+    columns: [
+      'Date',
+      'Party',
+      'Broker',
+      'Total',
+      'Status',
+    ],
+
+    render: (point) => [
+      dayjs(
+        point?.date
+      ).format('DD/MM/YYYY'),
+
+      point?.partyName ||
+        '—',
+
+      point?.brokerId?.name ||
+        '—',
+
+      fmtSafe(
+        point?.totalAmount
+      ),
+
+      point?.paymentStatus ||
+        'Unpaid',
+    ],
+
+    chipCol: 4,
+  },
+
+  paidAmount: {
+    label: 'Paid Amount',
+    color: '#0f172a',
+    icon: <PaidIcon />,
+    hasPeriodFilter: true,
+
+    fetch: (machineType) =>
+      api.get(
+        '/borewell-points',
+        {
+          params: {
+            limit: 500,
+            machineType,
+          },
+        }
+      ),
+
+    extract: (data) =>
+      (data?.points || []).filter(
+        (point) =>
+          point?.paymentStatus ===
+            'Paid' ||
+          point?.paymentStatus ===
+            'Partial'
+      ),
+
+    columns: [
+      'Date',
+      'Party',
+      'Broker',
+      'Total',
+      'Paid',
+      'Status',
+    ],
+
+    render: (point) => [
+      dayjs(
+        point?.date
+      ).format('DD/MM/YYYY'),
+
+      point?.partyName ||
+        '—',
+
+      point?.brokerId?.name ||
+        '—',
+
+      fmtSafe(
+        point?.totalAmount
+      ),
+
+      fmtSafe(
+        getPaidAmount(point)
+      ),
+
+      point?.paymentStatus ||
+        'Unpaid',
+    ],
+
+    chipCol: 5,
+  },
+
+  pendingAmount: {
+    label: 'Pending Amount',
+    color: '#0f172a',
+    icon: <PendingActionsIcon />,
+    hasPeriodFilter: true,
+
+    fetch: (machineType) =>
+      api.get(
+        '/borewell-points',
+        {
+          params: {
+            limit: 500,
+            machineType,
+          },
+        }
+      ),
+
+    extract: (data) =>
+      (data?.points || []).filter(
+        (point) =>
+          point?.paymentStatus ===
+            'Unpaid' ||
+          point?.paymentStatus ===
+            'Partial'
+      ),
+
+    columns: [
+      'Date',
+      'Party',
+      'Broker',
+      'Total',
+      'Pending',
+      'Status',
+    ],
+
+    render: (point) => [
+      dayjs(
+        point?.date
+      ).format('DD/MM/YYYY'),
+
+      point?.partyName ||
+        '—',
+
+      point?.brokerId?.name ||
+        '—',
+
+      fmtSafe(
+        point?.totalAmount
+      ),
+
+      fmtSafe(
+        getPendingAmount(point)
+      ),
+
+      point?.paymentStatus ||
+        'Unpaid',
+    ],
+
+    chipCol: 5,
+  },
+
+  discount: {
+    label: 'Discount',
+    color: '#0f172a',
+    icon: <DiscountIcon />,
+    hasPeriodFilter: true,
+
+    fetch: (machineType) =>
+      api.get(
+        '/borewell-points',
+        {
+          params: {
+            limit: 500,
+            machineType,
+          },
+        }
+      ),
+
+    extract: (data) =>
+      (data?.points || []).filter(
+        (point) =>
+          getDiscount(point) > 0
+      ),
+
+    columns: [
+      'Date',
+      'Party',
+      'Broker',
+      'Total',
+      'Discount',
+    ],
+
+    render: (point) => [
+      dayjs(
+        point?.date
+      ).format('DD/MM/YYYY'),
+
+      point?.partyName ||
+        '—',
+
+      point?.brokerId?.name ||
+        '—',
+
+      fmtSafe(
+        point?.totalAmount
+      ),
+
+      fmtSafe(
+        getDiscount(point)
+      ),
+    ],
+  },
+
+  diesel: {
+    label: 'Diesel',
+    color: '#0f172a',
+    icon: <LocalGasStationIcon />,
+    hasPeriodFilter: true,
+
+    fetch: (machineType) =>
+      api.get(
+        '/materials',
+        {
+          params: {
+            limit: 500,
+            machineType,
+          },
+        }
+      ),
+
+    extract: (data) =>
+      (data?.materials || []).filter(
+        (material) =>
+          isMaterialType(
+            material,
+            'diesel'
+          )
+      ),
+
+    columns: [
+      'Date',
+      'Type',
+      'Quantity',
+      'Cost/L',
+      'Total Amount',
+    ],
+
+    render: (material) => [
+      dayjs(
+        material?.date
+      ).format('DD/MM/YYYY'),
+
+      material?.type ||
+        'Diesel',
+
+      safeNum(
+        material?.quantity
+      ) || '—',
+
+      material?.costPerLiter !=
+      null
+        ? fmtSafe(
+            material.costPerLiter
+          )
+        : '—',
+
+      fmtSafe(
+        material?.totalPrice
+      ),
+    ],
+
+    totalField:
+      'totalPrice',
+  },
+
+  petrol: {
+    label: 'Petrol',
+    color: '#0f172a',
+    icon: <LocalGasStationIcon />,
+    hasPeriodFilter: true,
+
+    fetch: (machineType) =>
+      api.get(
+        '/materials',
+        {
+          params: {
+            limit: 500,
+            machineType,
+          },
+        }
+      ),
+
+    extract: (data) =>
+      (data?.materials || []).filter(
+        (material) =>
+          isMaterialType(
+            material,
+            'petrol'
+          )
+      ),
+
+    columns: [
+      'Date',
+      'Type',
+      'Quantity',
+      'Cost/L',
+      'Total Amount',
+    ],
+
+    render: (material) => [
+      dayjs(
+        material?.date
+      ).format('DD/MM/YYYY'),
+
+      material?.type ||
+        'Petrol',
+
+      safeNum(
+        material?.quantity
+      ) || '—',
+
+      material?.costPerLiter !=
+      null
+        ? fmtSafe(
+            material.costPerLiter
+          )
+        : '—',
+
+      fmtSafe(
+        material?.totalPrice
+      ),
+    ],
+
+    totalField:
+      'totalPrice',
+  },
+
+  bit: {
+    label: 'Bit',
+    color: '#0f172a',
+    icon: <ConstructionIcon />,
+    hasPeriodFilter: true,
+
+    fetch: (machineType) =>
+      api.get(
+        '/materials',
+        {
+          params: {
+            limit: 500,
+            machineType,
+          },
+        }
+      ),
+
+    extract: (data) =>
+      (data?.materials || []).filter(
+        (material) =>
+          isMaterialType(
+            material,
+            'bit'
+          )
+      ),
+
+    columns: [
+      'Date',
+      'Type',
+      'Quantity',
+      'Cost',
+      'Total Amount',
+    ],
+
+    render: (material) => [
+      dayjs(
+        material?.date
+      ).format('DD/MM/YYYY'),
+
+      material?.type ||
+        'Bit',
+
+      safeNum(
+        material?.quantity
+      ) || '—',
+
+      material?.costPerLiter !=
+      null
+        ? fmtSafe(
+            material.costPerLiter
+          )
+        : '—',
+
+      fmtSafe(
+        material?.totalPrice
+      ),
+    ],
+
+    totalField:
+      'totalPrice',
+  },
+
+  hammer: {
+    label: 'Hammer',
+    color: '#0f172a',
+    icon: <BuildIcon />,
+    hasPeriodFilter: true,
+
+    fetch: (machineType) =>
+      api.get(
+        '/materials',
+        {
+          params: {
+            limit: 500,
+            machineType,
+          },
+        }
+      ),
+
+    extract: (data) =>
+      (data?.materials || []).filter(
+        (material) =>
+          isMaterialType(
+            material,
+            'hammer'
+          )
+      ),
+
+    columns: [
+      'Date',
+      'Type',
+      'Quantity',
+      'Cost',
+      'Total Amount',
+    ],
+
+    render: (material) => [
+      dayjs(
+        material?.date
+      ).format('DD/MM/YYYY'),
+
+      material?.type ||
+        'Hammer',
+
+      safeNum(
+        material?.quantity
+      ) || '—',
+
+      material?.costPerLiter !=
+      null
+        ? fmtSafe(
+            material.costPerLiter
+          )
+        : '—',
+
+      fmtSafe(
+        material?.totalPrice
+      ),
+    ],
+
+    totalField:
+      'totalPrice',
+  },
+
+  totalEmployees: {
+    label: 'Employee',
+    color: '#0f172a',
+    icon: <PeopleIcon />,
+    hasPeriodFilter: false,
+
+    fetch: (machineType) =>
+      api.get(
+        '/users',
+        {
+          params: {
+            type: 'Employee',
+            limit: 100,
+            machineType,
+          },
+        }
+      ),
+
+    extract: (data) =>
+      data?.users || [],
+
+    columns: [
+      'Name',
+      'Phone',
+      'Salary',
+      'Date',
+    ],
+
+    render: (user) => [
+      user?.name ||
+        '—',
+
+      user?.phone ||
+        '—',
+
+      user?.salary
+        ? fmtSafe(
+            user.salary
+          )
+        : '—',
+
+      user?.date
+        ? dayjs(
+            user.date
+          ).format(
+            'DD/MM/YYYY'
+          )
+        : '—',
+    ],
+  },
+};
+
+/* =========================================================
+   DASHBOARD CARD ORDER
+========================================================= */
+
+const FIRST_ROW = [
+  {
+    key: 'totalBorewellPoints',
+    currency: false,
+  },
+
+  {
+    key: 'paidAmount',
+    currency: true,
+  },
+
+  {
+    key: 'pendingAmount',
+    currency: true,
+  },
+
+  {
+    key: 'discount',
+    currency: true,
+  },
+];
+
+const SECOND_ROW = [
+  {
+    key: 'diesel',
+    currency: true,
+  },
+
+  {
+    key: 'petrol',
+    currency: true,
+  },
+
+  {
+    key: 'bit',
+    currency: true,
+  },
+
+  {
+    key: 'hammer',
+    currency: true,
+  },
+];
+
+/* =========================================================
+   STAT CARD
+========================================================= */
+
+const StatCard = ({
+  title,
+  value,
+  icon,
+  color,
+  onClick,
+  multiline = false,
+}) => (
+  <Card
+    onClick={onClick}
+    elevation={0}
+    sx={{
+      height: '100%',
+      cursor: 'pointer',
+
+      border:
+        '1px solid #dbe3ec',
+
+      borderRadius: '12px',
+
+      bgcolor: '#0f172a',
+
+      transition:
+        'transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease',
+
+      '&:hover': {
+        transform:
+          'translateY(-3px)',
+
+        boxShadow:
+          `0 8px 24px ${color}22`,
+
+        borderColor:
+          `${color}66`,
+      },
+
+      '&:active': {
+        transform:
+          'translateY(-1px)',
+      },
+    }}
+  >
+    <CardContent
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+
+        gap: 1.5,
+
+        p: '14px !important',
+
+        minHeight: 74,
+      }}
+    >
+      {/* Icon */}
+      <Box
+        sx={{
+          width: 46,
+          height: 46,
+
+          borderRadius: '10px',
+
+          bgcolor: `${color}18`,
+          color,
+
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+
+          flexShrink: 0,
+
+          '& svg': {
+            fontSize: 24,
+          },
+        }}
+      >
+        {icon}
+      </Box>
+
+      {/* Text */}
+      <Box
+        sx={{
+          flex: 1,
+          minWidth: 0,
+        }}
+      >
+        <Typography
+          sx={{
+            color: '#0f172a',
+
+            fontSize:
+              '0.72rem',
+
+            fontWeight: 500,
+
+            letterSpacing:
+              '0.02em',
+
+            mb: 0.25,
+
+            textTransform:
+              'none',
+          }}
+        >
+          {title}
+        </Typography>
+
+        <Typography
+          sx={{
+            color: '#0f172a',
+
+            fontWeight: 700,
+
+            fontSize:
+              multiline
+                ? '0.78rem'
+                : '1.05rem',
+
+            lineHeight:
+              multiline
+                ? 1.35
+                : 1.2,
+
+            whiteSpace:
+              multiline
+                ? 'normal'
+                : 'nowrap',
+
+            overflow:
+              multiline
+                ? 'visible'
+                : 'hidden',
+
+            textOverflow:
+              multiline
+                ? 'clip'
+                : 'ellipsis',
+          }}
+        >
+          {value}
+        </Typography>
+      </Box>
+
+      {/* Arrow */}
+      <ArrowForwardIosIcon
+        sx={{
+          fontSize: 12,
+          color: '#0f172a',
+        }}
+      />
+    </CardContent>
+  </Card>
+);
+
+/* =========================================================
+   CHART CARD
+========================================================= */
+
+const ChartCard = ({
+  title,
+  children,
+}) => (
+  <Card
+    elevation={0}
+    sx={{
+      height: '100%',
+
+      border:
+        '1px solid #dbe3ec',
+
+      borderRadius:
+        '14px',
+
+      bgcolor: '#0f172a',
+    }}
+  >
+    <CardContent
+      sx={{
+        p: '16px !important',
+      }}
+    >
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+
+          gap: 1,
+
+          mb: 1.5,
+        }}
+      >
+        <Box
+          sx={{
+            width: 3,
+            height: 16,
+
+            bgcolor: '#0f172a',
+
+            borderRadius: 1,
+          }}
+        />
+
+        <Typography
+          variant="subtitle2"
+          fontWeight={700}
+          sx={{
+            color:
+              'text.primary',
+          }}
+        >
+          {title}
+        </Typography>
+      </Box>
+
+      {children}
+    </CardContent>
+  </Card>
+);
+
+/* =========================================================
+   CHART LEGEND
+========================================================= */
+
+const ChartLegend = ({
+  items,
+}) => (
+  <Box
+    sx={{
+      display: 'flex',
+      gap: 1.5,
+
+      flexWrap: 'wrap',
+
+      mb: 1,
+    }}
+  >
+    {items.map(
+      ({
+        color,
+        label,
+      }) => (
+        <Box
+          key={label}
+          sx={{
+            display:
+              'flex',
+
+            alignItems:
+              'center',
+
+            gap: 0.5,
+          }}
+        >
+          <Box
+            sx={{
+              width: 9,
+              height: 9,
+
+              borderRadius:
+                '2px',
+
+              bgcolor: color,
+            }}
+          />
+
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{
+              fontSize:
+                '0.7rem',
+            }}
+          >
+            {label}
+          </Typography>
+        </Box>
+      )
+    )}
+  </Box>
+);
+
+/* =========================================================
+   SEARCH HIGHLIGHT
+========================================================= */
+
+const HighlightText = ({
+  text,
+  search,
+}) => {
+  const value =
+    String(text);
+
+  const index =
+    value
+      .toLowerCase()
+      .indexOf(
+        search.toLowerCase()
+      );
+
+  if (index === -1) {
+    return <>{value}</>;
+  }
+
+  return (
+    <>
+      {value.slice(
+        0,
+        index
+      )}
+
+      <Box
+        component="mark"
+        sx={{
+          bgcolor:
+            `${TEAL}40`,
+
+          color:
+            'inherit',
+
+          borderRadius:
+            '3px',
+
+          px: '2px',
+
+          fontWeight: 700,
+        }}
+      >
+        {value.slice(
+          index,
+          index +
+            search.length
+        )}
+      </Box>
+
+      {value.slice(
+        index +
+          search.length
+      )}
+    </>
+  );
+};
+
+/* =========================================================
+   DETAIL DIALOG
+========================================================= */
+
+const DetailDialog = ({
+  open,
+  onClose,
+  cardKey,
+  summaryValue,
+  machineType,
+}) => {
+  const [allRows, setAllRows] =
     useState([]);
 
   const [loading, setLoading] =
     useState(false);
 
-  const [error, setError] =
+  const [search, setSearch] =
     useState('');
 
-  const [reportStartDate, setReportStartDate] =
-    useState(() => {
-      const now = new Date();
+  const [period, setPeriod] =
+    useState('all');
 
-      return toDateKey(
-        new Date(
-          now.getFullYear(),
-          now.getMonth(),
-          1
-        )
-      );
-    });
+  const config =
+    CARD_CONFIG[cardKey];
 
-  const [reportEndDate, setReportEndDate] =
-    useState(() =>
-      toDateKey(new Date())
+  const load =
+    useCallback(
+      async () => {
+        if (
+          !cardKey ||
+          !config
+        ) {
+          return;
+        }
+
+        setLoading(true);
+
+        try {
+          const response =
+            await config.fetch(
+              machineType
+            );
+
+          const data =
+            response?.data ??
+            response;
+
+          const rows =
+            config.extract(
+              data
+            );
+
+          setAllRows(
+            Array.isArray(
+              rows
+            )
+              ? rows
+              : []
+          );
+        } catch (
+          error
+        ) {
+          console.error(
+            'Failed to load details:',
+            error
+          );
+
+          setAllRows([]);
+        } finally {
+          setLoading(false);
+        }
+      },
+      [
+        cardKey,
+        machineType,
+      ]
     );
 
-  const machineLabel =
-    currentMachine === 'big'
-      ? 'Big Machine'
-      : 'Small Machine';
-
   useEffect(() => {
-    let cancelled = false;
+    if (open) {
+      setSearch('');
+      setPeriod('all');
 
-    const loadEmployees = async () => {
-      try {
-        setLoading(true);
-        setError('');
+      load();
+    } else {
+      setAllRows([]);
+      setSearch('');
+      setPeriod('all');
+    }
+  }, [
+    open,
+    load,
+  ]);
 
-        const data = await apiRequest(
-          `/users?machineType=${currentMachine}`
-        );
+  if (!config) {
+    return null;
+  }
 
-        const allUsers = extractList(
-          data,
-          [
-            'users',
-            'records',
-            'personalUsers',
-            'employees',
-            'data',
-          ]
-        );
+  /* -------------------------------------------------------
+     Period
+  ------------------------------------------------------- */
 
-        const list = allUsers.filter(
-          (item) => {
-            const type = String(
-              item?.type ||
-                item?.userType ||
-                item?.role ||
-                ''
-            )
-              .trim()
-              .toLowerCase();
+  const periodRows =
+    filterByPeriod(
+      allRows,
+      period
+    );
 
-            return (
-              type !== 'broker' &&
-              type !== 'partner'
+  /* -------------------------------------------------------
+     Search
+  ------------------------------------------------------- */
+
+  const filteredRows =
+    search.trim()
+      ? periodRows.filter(
+          (row) => {
+            const cells =
+              config.render(
+                row
+              );
+
+            return cells.some(
+              (cell) =>
+                String(
+                  cell
+                )
+                  .toLowerCase()
+                  .includes(
+                    search
+                      .toLowerCase()
+                  )
             );
           }
-        );
+        )
+      : periodRows;
 
-        if (!cancelled) {
-          setEmployees(list);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(
-            err?.message ||
-              'Unable to load employees.'
-          );
-          setEmployees([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    };
+  /* -------------------------------------------------------
+     Currency cards
+  ------------------------------------------------------- */
 
-    loadEmployees();
+  const isCurrencyCard =
+    [
+      'paidAmount',
+      'pendingAmount',
+      'discount',
+      'diesel',
+      'petrol',
+      'bit',
+      'hammer',
+    ].includes(
+      cardKey
+    );
 
-    return () => {
-      cancelled = true;
-    };
-  }, [currentMachine]);
+  /* -------------------------------------------------------
+     Filtered total
+  ------------------------------------------------------- */
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadSalaryData = async () => {
-      if (!employees.length) {
-        setAllEmployeeSalaryRows([]);
-        return;
-      }
-
-      setLoading(true);
-      setError('');
-
-      try {
-        const rows =
-          await Promise.all(
-            employees.map(
-              async (employee) => {
-                const employeeId =
-                  employee?._id;
-
-                try {
-                  const [
-                    attendanceData,
-                    advanceData,
-                  ] = await Promise.all([
-                    apiRequest(
-                      `/attendance?employeeId=${employeeId}&machineType=${currentMachine}&limit=500`
-                    ),
-                    apiRequest(
-                      `/salary-advances?employeeId=${employeeId}&machineType=${currentMachine}&limit=500`
-                    ),
-                  ]);
-
-                  const attendance =
-                    extractList(
-                      attendanceData,
-                      [
-                        'records',
-                        'attendance',
-                        'data',
-                        'items',
-                      ]
-                    ).map(
-                      normalizeAttendanceRecord
-                    );
-
-                  const advances =
-                    extractList(
-                      advanceData,
-                      [
-                        'records',
-                        'advances',
-                        'data',
-                        'items',
-                      ]
-                    );
-
-                  return {
-                    employee,
-                    attendance,
-                    advances,
-                    failed: false,
-                  };
-                } catch (err) {
-                  console.warn(
-                    `Unable to load salary data for ${
-                      employee?.name ||
-                      'employee'
-                    }:`,
-                    err?.message || err
-                  );
-
-                  return {
-                    employee,
-                    attendance: [],
-                    advances: [],
-                    failed: true,
-                  };
-                }
-              }
+  const filteredTotal =
+    filteredRows.reduce(
+      (sum, row) => {
+        if (
+          cardKey ===
+          'paidAmount'
+        ) {
+          return (
+            sum +
+            getPaidAmount(
+              row
             )
           );
-
-        if (!cancelled) {
-          setAllEmployeeSalaryRows(rows);
         }
-      } catch (err) {
-        if (!cancelled) {
-          setError(
-            err?.message ||
-              'Unable to load salary report.'
+
+        if (
+          cardKey ===
+          'pendingAmount'
+        ) {
+          return (
+            sum +
+            getPendingAmount(
+              row
+            )
           );
-          setAllEmployeeSalaryRows([]);
         }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
+
+        if (
+          cardKey ===
+          'discount'
+        ) {
+          return (
+            sum +
+            getDiscount(
+              row
+            )
+          );
         }
-      }
-    };
 
-    loadSalaryData();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    employees,
-    currentMachine,
-    reportStartDate,
-    reportEndDate,
-  ]);
-
-  const reportRows = useMemo(() => {
-    return allEmployeeSalaryRows.map(
-      (row) => ({
-        ...row,
-        reportSalary:
-          calculateEmployeeRangeSalary(
-            row.employee,
-            row.attendance || [],
-            row.advances || [],
-            reportStartDate,
-            reportEndDate
-          ),
-      })
-    );
-  }, [
-    allEmployeeSalaryRows,
-    reportStartDate,
-    reportEndDate,
-  ]);
-
-  const reportTotals = useMemo(
-    () =>
-      reportRows.reduce(
-        (totals, row) => {
-          const salary =
-            row.reportSalary || {};
-
-          totals.totalDays +=
-            Number(salary.totalDays) || 0;
-
-          totals.presentDays +=
-            Number(salary.presentDays) || 0;
-
-          totals.absentDays +=
-            Number(salary.absentDays) || 0;
-
-          totals.grossSalary +=
-            Number(salary.grossSalary) || 0;
-
-          totals.monthlySalary +=
-            Number(row?.employee?.salary) ||
-            0;
-
-          totals.absentDeduction +=
-            Number(
-              salary.absentDeduction
-            ) || 0;
-
-          totals.totalAdvance +=
-            Number(
-              salary.totalAdvance
-            ) || 0;
-
-          totals.finalSalary +=
-            Number(salary.finalSalary) || 0;
-
-          return totals;
-        },
-        {
-          totalDays: 0,
-          presentDays: 0,
-          absentDays: 0,
-          grossSalary: 0,
-          monthlySalary: 0,
-          absentDeduction: 0,
-          totalAdvance: 0,
-          finalSalary: 0,
-        }
-      ),
-    [reportRows]
-  );
-
-  const reportPeriodValid =
-    Boolean(reportStartDate) &&
-    Boolean(reportEndDate) &&
-    reportEndDate >= reportStartDate;
-
-  const getReportPeriodLabel = () => {
-    const start = formatDate(
-      parseDateKey(reportStartDate)
-    );
-
-    const end = formatDate(
-      parseDateKey(reportEndDate)
-    );
-
-    return reportStartDate === reportEndDate
-      ? start
-      : `${start} to ${end}`;
-  };
-
-  const setQuickReportRange = (type) => {
-    const now = new Date();
-    const today = toDateKey(now);
-
-    const monthsBack = {
-      month: 0,
-      '2months': 1,
-      '6months': 5,
-      year: 11,
-    };
-
-    if (
-      monthsBack[type] !== undefined
-    ) {
-      setReportStartDate(
-        toDateKey(
-          new Date(
-            now.getFullYear(),
-            now.getMonth() -
-              monthsBack[type],
-            1
+        if (
+          [
+            'diesel',
+            'petrol',
+            'bit',
+            'hammer',
+          ].includes(
+            cardKey
           )
-        )
-      );
+        ) {
+          return (
+            sum +
+            safeNum(
+              row?.totalPrice
+            )
+          );
+        }
 
-      setReportEndDate(today);
-    }
-  };
-
-  const printSalaryReport = () => {
-    if (
-      !reportPeriodValid ||
-      !reportRows.length
-    ) {
-      setError(
-        'Please select a valid period and wait for employee data to load.'
-      );
-      return;
-    }
-
-    window.setTimeout(
-      () => window.print(),
-      50
+        return sum;
+      },
+      0
     );
-  };
+
+  /* -------------------------------------------------------
+     Search placeholder
+  ------------------------------------------------------- */
+
+  const searchPlaceholder =
+    {
+      totalBorewellPoints:
+        'Search by party, broker, status…',
+
+      paidAmount:
+        'Search by party, broker…',
+
+      pendingAmount:
+        'Search by party, broker…',
+
+      discount:
+        'Search by party, broker…',
+
+      diesel:
+        'Search diesel records…',
+
+      petrol:
+        'Search petrol records…',
+
+      bit:
+        'Search bit records…',
+
+      hammer:
+        'Search hammer records…',
+
+      totalEmployees:
+        'Search by name, phone…',
+    }[cardKey] ||
+    'Search…';
+
+  const periodLabel =
+    {
+      all: 'All time',
+
+      week: 'This week',
+
+      month: 'This month',
+
+      year: 'This year',
+    }[period];
 
   return (
-    <div className="salary-report-page">
-      <style>{`
-        * {
-          box-sizing: border-box;
-        }
-
-        .salary-report-page {
-          min-height: 100%;
-          padding: 32px;
-          background: #eef2f7;
-          color: #16283c;
-          font-family:
-            -apple-system,
-            BlinkMacSystemFont,
-            "Segoe UI",
-            Roboto,
-            sans-serif;
-        }
-
-        .salary-report-container {
-          max-width: 1400px;
-          margin: 0 auto;
-        }
-
-        .salary-report-card {
-          background: #ffffff;
-          border: 1px solid #dfe7ef;
-          border-radius: 16px;
-          padding: 28px 30px;
-          box-shadow:
-            0 8px 24px rgba(20, 43, 66, 0.05);
-        }
-
-        .salary-report-top {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          gap: 20px;
-          flex-wrap: wrap;
-        }
-
-        .salary-report-title {
-          margin: 0;
-          font-size: 24px;
-          line-height: 1.2;
-          font-weight: 850;
-          color: #102f4c;
-        }
-
-        .salary-report-subtitle {
-          margin-top: 8px;
-          color: #6b8197;
-          font-size: 14px;
-        }
-
-        .machine-badge {
-          padding: 8px 14px;
-          border-radius: 999px;
-          background: #ecfdf8;
-          border: 1px solid #b9eee2;
-          color: #087d73;
-          font-size: 12px;
-          font-weight: 800;
-          white-space: nowrap;
-        }
-
-        .report-controls {
-          display: grid;
-          grid-template-columns:
-            minmax(220px, 1fr)
-            minmax(220px, 1fr);
-          gap: 18px;
-          margin-top: 28px;
-        }
-
-        .report-field {
-          min-width: 0;
-        }
-
-        .text-label {
-          display: block;
-          margin-bottom: 8px;
-          color: #344f68;
-          font-size: 13px;
-          font-weight: 750;
-        }
-
-        .date-input {
-          width: 100%;
-          height: 58px;
-          border: 1px solid #ccd9e5;
-          border-radius: 12px;
-          padding: 0 16px;
-          color: #102f4c;
-          background: #fff;
-          font-size: 16px;
-          outline: none;
-        }
-
-        .date-input:focus {
-          border-color: #14b8a6;
-          box-shadow:
-            0 0 0 3px rgba(20, 184, 166, .12);
-        }
-
-        .quick-buttons {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 10px;
-          margin-top: 18px;
-        }
-
-        .quick-button {
-          min-height: 40px;
-          padding: 0 16px;
-          border: 1px solid #d3dee8;
-          border-radius: 10px;
-          background: #fff;
-          color: #23435f;
-          font-size: 13px;
-          font-weight: 750;
-          cursor: pointer;
-        }
-
-        .quick-button:hover {
-          background: #f5f9fb;
-          border-color: #9fb4c7;
-        }
-
-        .report-preview {
-          margin-top: 26px;
-          border: 1px solid #dce6ef;
-          border-radius: 14px;
-          overflow: hidden;
-          background: #fff;
-        }
-
-        .report-preview-header {
-          padding: 24px;
-          border-bottom: 1px solid #e5edf4;
-        }
-
-        .report-preview-header h2 {
-          margin: 0;
-          font-size: 28px;
-          font-weight: 850;
-          color: #10324f;
-        }
-
-        .report-period {
-          margin-top: 8px;
-          color: #64809a;
-          font-size: 14px;
-        }
-
-        .summary-grid {
-          display: grid;
-          grid-template-columns:
-            repeat(4, minmax(0, 1fr));
-          gap: 12px;
-          padding: 20px 24px 8px;
-        }
-
-        .summary-box {
-          min-width: 0;
-          border: 1px solid #d5dee7;
-          padding: 18px 16px;
-          background: #fff;
-        }
-
-        .summary-label {
-          color: #71859a;
-          font-size: 12px;
-          font-weight: 750;
-        }
-
-        .summary-value {
-          margin-top: 10px;
-          color: #102f4c;
-          font-size: 24px;
-          font-weight: 850;
-          overflow-wrap: anywhere;
-        }
-
-        .report-table-wrap {
-          width: 100%;
-          overflow-x: auto;
-          padding: 16px 24px 0;
-        }
-
-        .report-table {
-          width: 100%;
-          min-width: 920px;
-          border-collapse: collapse;
-          font-size: 14px;
-        }
-
-        .report-table th,
-        .report-table td {
-          border: 1px solid #cbd5df;
-          padding: 14px 12px;
-          text-align: left;
-          white-space: nowrap;
-        }
-
-        .report-table th {
-          background: #f6f8fa;
-          color: #0f2943;
-          font-size: 13px;
-          font-weight: 850;
-        }
-
-        .report-table td {
-          color: #24435f;
-        }
-
-        .report-table tbody tr:hover {
-          background: #fafcfd;
-        }
-
-        .report-total-row td {
-          background: #fbfbfb;
-          color: #102f4c;
-          font-weight: 850;
-        }
-
-        .report-actions {
-          display: flex;
-          justify-content: flex-start;
-          padding: 14px 24px 24px;
-        }
-
-        .print-button {
-          min-height: 48px;
-          padding: 0 22px;
-          border: 1px solid #d3dee8;
-          border-radius: 10px;
-          background: #fff;
-          color: #111;
-          font-size: 16px;
-          font-weight: 800;
-          cursor: pointer;
-        }
-
-        .print-button:hover {
-          background: #f4f7fa;
-        }
-
-        .loading-box,
-        .error-box,
-        .empty-box {
-          margin-top: 18px;
-          padding: 16px;
-          border-radius: 10px;
-          font-size: 14px;
-        }
-
-        .loading-box {
-          background: #f8fafc;
-          color: #64748b;
-        }
-
-        .error-box {
-          background: #fff1f1;
-          border: 1px solid #fecaca;
-          color: #b91c1c;
-        }
-
-        .empty-box {
-          background: #f8fafc;
-          color: #64748b;
-        }
-
-        .print-report {
-          display: none;
-        }
-
-        @media (max-width: 900px) {
-          .salary-report-page {
-            padding: 16px;
-          }
-
-          .salary-report-card {
-            padding: 22px 18px;
-          }
-
-          .report-controls {
-            grid-template-columns: 1fr;
-          }
-
-          .summary-grid {
-            grid-template-columns: repeat(2, 1fr);
-            padding-left: 18px;
-            padding-right: 18px;
-          }
-
-          .report-table-wrap {
-            padding-left: 18px;
-            padding-right: 18px;
-          }
-
-          .report-actions {
-            padding-left: 18px;
-            padding-right: 18px;
-          }
-        }
-
-        @media (max-width: 520px) {
-          .salary-report-title {
-            font-size: 21px;
-          }
-
-          .report-preview-header h2 {
-            font-size: 23px;
-          }
-
-          .summary-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .quick-button {
-            flex: 1 1 calc(50% - 10px);
-          }
-        }
-
-        @media print {
-          @page {
-            size: A4 landscape;
-            margin: 10mm;
-          }
-
-          body {
-            background: #fff !important;
-          }
-
-          .salary-report-page {
-            padding: 0 !important;
-            background: #fff !important;
-          }
-
-          .salary-report-container {
-            max-width: none !important;
-          }
-
-          .salary-report-card {
-            display: none !important;
-          }
-
-          .print-report {
-            display: block !important;
-            color: #111 !important;
-          }
-
-          .print-report-title {
-            margin: 0 0 6px;
-            text-align: center;
-            font-size: 22px;
-          }
-
-          .print-report-period {
-            margin-bottom: 14px;
-            text-align: center;
-            font-size: 12px;
-          }
-
-          .print-summary {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 8px;
-            margin-bottom: 14px;
-          }
-
-          .print-summary-box {
-            border: 1px solid #aaa;
-            padding: 9px;
-          }
-
-          .print-summary-label {
-            font-size: 10px;
-            font-weight: 700;
-          }
-
-          .print-summary-value {
-            margin-top: 4px;
-            font-size: 14px;
-            font-weight: 800;
-          }
-
-          .print-report table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 9px;
-          }
-
-          .print-report th,
-          .print-report td {
-            border: 1px solid #888;
-            padding: 5px;
-            text-align: left;
-          }
-
-          .print-report th {
-            background: #f2f2f2 !important;
-            font-weight: 800;
-          }
-
-          .print-total td {
-            font-weight: 800;
-            background: #f7f7f7 !important;
-          }
-        }
-      `}</style>
-
-      <div className="salary-report-container">
-        <div className="salary-report-card">
-          <div className="salary-report-top">
-            <div>
-              <h1 className="salary-report-title">
-                Employee Salary Report
-              </h1>
-
-              <div className="salary-report-subtitle">
-                Select a date range to view the complete salary report.
-              </div>
-            </div>
-
-            <div className="machine-badge">
-              {machineLabel}
-            </div>
-          </div>
-
-          <div className="report-controls">
-            <div className="report-field">
-              <label className="text-label">
-                From Date
-              </label>
-
-              <input
-                type="date"
-                className="date-input"
-                value={reportStartDate}
-                max={
-                  reportEndDate ||
-                  toDateKey(new Date())
-                }
-                onChange={(event) =>
-                  setReportStartDate(
-                    event.target.value
-                  )
-                }
-              />
-            </div>
-
-            <div className="report-field">
-              <label className="text-label">
-                To Date
-              </label>
-
-              <input
-                type="date"
-                className="date-input"
-                value={reportEndDate}
-                min={
-                  reportStartDate ||
-                  undefined
-                }
-                max={toDateKey(new Date())}
-                onChange={(event) =>
-                  setReportEndDate(
-                    event.target.value
-                  )
-                }
-              />
-            </div>
-          </div>
-
-          <div className="quick-buttons">
-            <button
-              type="button"
-              className="quick-button"
-              onClick={() =>
-                setQuickReportRange('month')
-              }
+    <Dialog
+      open={open}
+      onClose={onClose}
+      maxWidth="md"
+      fullWidth
+      PaperProps={{
+        sx: {
+          borderRadius:
+            '16px',
+
+          overflow:
+            'hidden',
+        },
+      }}
+    >
+      {/* =================================================
+          DIALOG HEADER
+      ================================================= */}
+
+      <DialogTitle
+        sx={{
+          bgcolor: '#0f172a',
+
+          color: '#0f172a',
+
+          p: 0,
+
+          borderBottom:
+            `3px solid ${config.color}`,
+        }}
+      >
+        <Box
+          sx={{
+            px: 3,
+            py: 2,
+
+            display: 'flex',
+
+            alignItems:
+              'center',
+
+            justifyContent:
+              'space-between',
+
+            gap: 2,
+          }}
+        >
+          {/* Left */}
+          <Box
+            sx={{
+              display:
+                'flex',
+
+              alignItems:
+                'center',
+
+              gap: 1.5,
+            }}
+          >
+            <Box
+              sx={{
+                width: 38,
+                height: 38,
+
+                borderRadius:
+                  '9px',
+
+                bgcolor:
+                  `${config.color}22`,
+
+                color:
+                  config.color,
+
+                display:
+                  'flex',
+
+                alignItems:
+                  'center',
+
+                justifyContent:
+                  'center',
+              }}
             >
-              This Month
-            </button>
+              {config.icon}
+            </Box>
 
-            <button
-              type="button"
-              className="quick-button"
-              onClick={() =>
-                setQuickReportRange('2months')
-              }
-            >
-              Last 2 Months
-            </button>
+            <Box>
+              <Typography
+                fontWeight={700}
+                fontSize="1rem"
+              >
+                {config.label}
+              </Typography>
 
-            <button
-              type="button"
-              className="quick-button"
-              onClick={() =>
-                setQuickReportRange('6months')
-              }
-            >
-              Last 6 Months
-            </button>
+              <Typography
+                sx={{
+                  color:
+                    'rgba(255,255,255,0.5)',
 
-            <button
-              type="button"
-              className="quick-button"
-              onClick={() =>
-                setQuickReportRange('year')
-              }
-            >
-              Last 12 Months
-            </button>
-          </div>
+                  fontSize:
+                    '0.75rem',
 
-          {!reportPeriodValid && (
-            <div className="error-box">
-              To Date cannot be before From Date.
-            </div>
-          )}
-
-          {loading && (
-            <div className="loading-box">
-              Loading employee salary details...
-            </div>
-          )}
-
-          {error && (
-            <div className="error-box">
-              {error}
-            </div>
-          )}
-
-          {reportPeriodValid &&
-            !loading &&
-            reportRows.length === 0 && (
-              <div className="empty-box">
-                No employee salary data available.
-              </div>
-            )}
-
-          {reportPeriodValid &&
-            reportRows.length > 0 && (
-              <div className="report-preview">
-                <div className="report-preview-header">
-                  <h2>
-                    Employee Salary Report
-                  </h2>
-
-                  <div className="report-period">
-                    Period: {getReportPeriodLabel()}
-                    {' • '}
-                    {machineLabel}
-                  </div>
-                </div>
-
-                <div className="summary-grid">
-                  <div className="summary-box">
-                    <div className="summary-label">
-                      Employees
-                    </div>
-
-                    <div className="summary-value">
-                      {reportRows.length}
-                    </div>
-                  </div>
-
-                  <div className="summary-box">
-                    <div className="summary-label">
-                      Present Days
-                    </div>
-
-                    <div className="summary-value">
-                      {reportTotals.presentDays}
-                    </div>
-                  </div>
-
-                  <div className="summary-box">
-                    <div className="summary-label">
-                      Absent Days
-                    </div>
-
-                    <div className="summary-value">
-                      {reportTotals.absentDays}
-                    </div>
-                  </div>
-
-                  <div className="summary-box">
-                    <div className="summary-label">
-                      Final Payable
-                    </div>
-
-                    <div className="summary-value">
-                      {formatMoney(
-                        reportTotals.finalSalary
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="report-table-wrap">
-                  <table className="report-table">
-                    <thead>
-                      <tr>
-                        <th>S.No</th>
-                        <th>Name</th>
-                        <th>Joining Date</th>
-                        <th>Total Days</th>
-                        <th>Present</th>
-                        <th>Absent</th>
-                        <th>Monthly Salary</th>
-                        <th>Total Advance</th>
-                        <th>Final Salary</th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {reportRows.map(
-                        (row, index) => {
-                          const item =
-                            row.employee;
-
-                          const salary =
-                            row.reportSalary ||
-                            {};
-
-                          return (
-                            <tr
-                              key={
-                                item?._id ||
-                                index
-                              }
-                            >
-                              <td>
-                                {index + 1}
-                              </td>
-
-                              <td>
-                                {item?.name ||
-                                  'Unnamed Employee'}
-                              </td>
-
-                              <td>
-                                {item?.date
-                                  ? formatDate(
-                                      new Date(
-                                        item.date
-                                      )
-                                    )
-                                  : '-'}
-                              </td>
-
-                              <td>
-                                {salary.totalDays}
-                              </td>
-
-                              <td>
-                                {salary.presentDays}
-                              </td>
-
-                              <td>
-                                {salary.absentDays}
-                              </td>
-
-                              <td>
-                                {formatMoney(
-                                  Number(
-                                    item?.salary
-                                  ) || 0
-                                )}
-                              </td>
-
-                              <td>
-                                {formatMoney(
-                                  salary.totalAdvance
-                                )}
-                              </td>
-
-                              <td>
-                                {formatMoney(
-                                  salary.finalSalary
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        }
-                      )}
-
-                      <tr className="report-total-row">
-                        <td colSpan={3}>
-                          TOTAL
-                        </td>
-
-                        <td>
-                          {reportTotals.totalDays}
-                        </td>
-
-                        <td>
-                          {reportTotals.presentDays}
-                        </td>
-
-                        <td>
-                          {reportTotals.absentDays}
-                        </td>
-
-                        <td>
-                          {formatMoney(
-                            reportTotals.monthlySalary
-                          )}
-                        </td>
-
-                        <td>
-                          {formatMoney(
-                            reportTotals.totalAdvance
-                          )}
-                        </td>
-
-                        <td>
-                          {formatMoney(
-                            reportTotals.finalSalary
-                          )}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="report-actions">
-                  <button
-                    type="button"
-                    className="print-button"
-                    onClick={
-                      printSalaryReport
-                    }
-                    disabled={loading}
-                  >
-                    Print / Save as PDF
-                  </button>
-                </div>
-              </div>
-            )}
-        </div>
-
-        {reportPeriodValid &&
-          reportRows.length > 0 && (
-            <div className="print-report">
-              <div
-                style={{
-                  textAlign: 'center',
-                  fontSize: '13px',
-                  fontWeight: 700,
-                  marginBottom: '8px',
+                  mt: 0.2,
                 }}
               >
-                Thalacauvery Borewell
-              </div>
+                {loading
+                  ? 'Loading…'
+                  : `${
+                      machineType ===
+                      'big'
+                        ? 'Big Machine'
+                        : 'Small Machine'
+                    } · ${
+                      filteredRows.length
+                    } of ${
+                      allRows.length
+                    } records · ${
+                      periodLabel
+                    }`}
+              </Typography>
+            </Box>
+          </Box>
 
-              <h1 className="print-report-title">
-                Employee Salary Report
-              </h1>
+          {/* Right */}
+          <Box
+            sx={{
+              display:
+                'flex',
 
-              <div className="print-report-period">
-                Period: {getReportPeriodLabel()}
-                {' • '}
-                {machineLabel}
-              </div>
+              alignItems:
+                'center',
 
-              <div className="print-summary">
-                <div className="print-summary-box">
-                  <div className="print-summary-label">
-                    Employees
-                  </div>
-                  <div className="print-summary-value">
-                    {reportRows.length}
-                  </div>
-                </div>
+              gap: 2,
+            }}
+          >
+            {summaryValue && (
+              <Typography
+                sx={{
+                  color:
+                    config.color,
 
-                <div className="print-summary-box">
-                  <div className="print-summary-label">
-                    Present Days
-                  </div>
-                  <div className="print-summary-value">
-                    {reportTotals.presentDays}
-                  </div>
-                </div>
+                  fontWeight: 800,
 
-                <div className="print-summary-box">
-                  <div className="print-summary-label">
-                    Absent Days
-                  </div>
-                  <div className="print-summary-value">
-                    {reportTotals.absentDays}
-                  </div>
-                </div>
+                  fontSize:
+                    '1.05rem',
+                }}
+              >
+                {summaryValue}
+              </Typography>
+            )}
 
-                <div className="print-summary-box">
-                  <div className="print-summary-label">
-                    Final Payable
-                  </div>
-                  <div className="print-summary-value">
-                    {formatMoney(
-                      reportTotals.finalSalary
-                    )}
-                  </div>
-                </div>
-              </div>
+            <IconButton
+              size="small"
+              onClick={onClose}
+              sx={{
+                color: '#0f172a',
+              }}
+            >
+              <CloseIcon />
+            </IconButton>
+          </Box>
+        </Box>
 
-              <table>
-                <thead>
-                  <tr>
-                    <th>S.No</th>
-                    <th>Name</th>
-                    <th>Joining Date</th>
-                    <th>Total Days</th>
-                    <th>Present</th>
-                    <th>Absent</th>
-                    <th>Monthly Salary</th>
-                    <th>Total Advance</th>
-                    <th>Final Salary</th>
-                  </tr>
-                </thead>
+        {/* =================================================
+            FILTERS
+        ================================================= */}
 
-                <tbody>
-                  {reportRows.map(
-                    (row, index) => {
-                      const item =
-                        row.employee;
+        <Box
+          sx={{
+            px: 3,
+            pb: 2,
 
-                      const salary =
-                        row.reportSalary ||
-                        {};
+            display:
+              'flex',
 
-                      return (
-                        <tr
-                          key={
-                            item?._id ||
-                            index
-                          }
-                        >
-                          <td>{index + 1}</td>
-                          <td>
-                            {item?.name ||
-                              'Unnamed Employee'}
-                          </td>
-                          <td>
-                            {item?.date
-                              ? formatDate(
-                                  new Date(
-                                    item.date
-                                  )
-                                )
-                              : '-'}
-                          </td>
-                          <td>
-                            {salary.totalDays}
-                          </td>
-                          <td>
-                            {salary.presentDays}
-                          </td>
-                          <td>
-                            {salary.absentDays}
-                          </td>
-                          <td>
-                            {formatMoney(
-                              Number(
-                                item?.salary
-                              ) || 0
-                            )}
-                          </td>
-                          <td>
-                            {formatMoney(
-                              salary.totalAdvance
-                            )}
-                          </td>
-                          <td>
-                            {formatMoney(
-                              salary.finalSalary
-                            )}
-                          </td>
-                        </tr>
-                      );
+            flexDirection:
+              'column',
+
+            gap: 1.5,
+          }}
+        >
+          {config.hasPeriodFilter && (
+            <ToggleButtonGroup
+              value={period}
+              exclusive
+              onChange={(
+                _,
+                value
+              ) => {
+                if (value) {
+                  setPeriod(
+                    value
+                  );
+                }
+              }}
+              size="small"
+              sx={{
+                bgcolor:
+                  'rgba(255,255,255,0.07)',
+
+                borderRadius:
+                  '8px',
+
+                width:
+                  'fit-content',
+
+                '& .MuiToggleButton-root':
+                  {
+                    color:
+                      'rgba(255,255,255,0.55)',
+
+                    border:
+                      'none',
+
+                    borderRadius:
+                      '7px !important',
+
+                    px: 2,
+
+                    py: 0.5,
+
+                    fontSize:
+                      '0.75rem',
+
+                    fontWeight: 600,
+
+                    textTransform:
+                      'none',
+
+                    '&.Mui-selected':
+                      {
+                        bgcolor:
+                          TEAL,
+
+                        color: '#0f172a',
+
+                        '&:hover':
+                          {
+                            bgcolor:
+                              TEAL_D,
+                          },
+                      },
+
+                    '&:hover':
+                      {
+                        bgcolor:
+                          'rgba(255,255,255,0.1)',
+                      },
+                  },
+              }}
+            >
+              {PERIOD_OPTIONS.map(
+                (option) => (
+                  <ToggleButton
+                    key={
+                      option.value
                     }
-                  )}
-
-                  <tr className="print-total">
-                    <td colSpan={3}>
-                      TOTAL
-                    </td>
-                    <td>
-                      {reportTotals.totalDays}
-                    </td>
-                    <td>
-                      {reportTotals.presentDays}
-                    </td>
-                    <td>
-                      {reportTotals.absentDays}
-                    </td>
-                    <td>
-                      {formatMoney(
-                        reportTotals.monthlySalary
-                      )}
-                    </td>
-                    <td>
-                      {formatMoney(
-                        reportTotals.totalAdvance
-                      )}
-                    </td>
-                    <td>
-                      {formatMoney(
-                        reportTotals.finalSalary
-                      )}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+                    value={
+                      option.value
+                    }
+                  >
+                    {
+                      option.label
+                    }
+                  </ToggleButton>
+                )
+              )}
+            </ToggleButtonGroup>
           )}
-      </div>
-    </div>
+
+          <TextField
+            fullWidth
+            size="small"
+            placeholder={
+              searchPlaceholder
+            }
+            value={search}
+            onChange={(e) =>
+              setSearch(
+                e.target.value
+              )
+            }
+            autoComplete="off"
+            InputProps={{
+              startAdornment:
+                (
+                  <InputAdornment position="start">
+                    <SearchIcon
+                      sx={{
+                        color:
+                          'rgba(255,255,255,0.5)',
+
+                        fontSize:
+                          18,
+                      }}
+                    />
+                  </InputAdornment>
+                ),
+
+              endAdornment:
+                search ? (
+                  <InputAdornment position="end">
+                    <IconButton
+                      size="small"
+                      onClick={() =>
+                        setSearch(
+                          ''
+                        )
+                      }
+                      sx={{
+                        color:
+                          'rgba(255,255,255,0.5)',
+                      }}
+                    >
+                      <CloseIcon
+                        fontSize="small"
+                      />
+                    </IconButton>
+                  </InputAdornment>
+                ) : null,
+            }}
+            sx={{
+              '& .MuiOutlinedInput-root':
+                {
+                  bgcolor:
+                    'rgba(255,255,255,0.08)',
+
+                  borderRadius:
+                    '8px',
+
+                  color: '#0f172a',
+
+                  '& fieldset':
+                    {
+                      borderColor:
+                        'rgba(255,255,255,0.15)',
+                    },
+
+                  '&:hover fieldset':
+                    {
+                      borderColor:
+                        'rgba(30,190,165,0.5)',
+                    },
+
+                  '&.Mui-focused fieldset':
+                    {
+                      borderColor:
+                        TEAL,
+                    },
+                },
+
+              '& input':
+                {
+                  color: '#0f172a',
+                },
+
+              '& input::placeholder':
+                {
+                  color:
+                    'rgba(255,255,255,0.35)',
+
+                  opacity: 1,
+                },
+            }}
+          />
+        </Box>
+      </DialogTitle>
+
+      {/* =================================================
+          TABLE
+      ================================================= */}
+
+      <DialogContent
+        sx={{
+          p: 0,
+
+          bgcolor:
+            'background.default',
+        }}
+      >
+        {loading ? (
+          <Box
+            sx={{
+              display:
+                'flex',
+
+              justifyContent:
+                'center',
+
+              py: 7,
+            }}
+          >
+            <CircularProgress
+              sx={{
+                color:
+                  TEAL,
+              }}
+            />
+          </Box>
+        ) : filteredRows.length ===
+          0 ? (
+          <Box
+            sx={{
+              textAlign:
+                'center',
+
+              py: 7,
+
+              px: 2,
+            }}
+          >
+            <Typography
+              color="text.secondary"
+              fontWeight={600}
+            >
+              {search
+                ? `No results for "${search}"`
+                : `No records for ${periodLabel.toLowerCase()}`}
+            </Typography>
+
+            <Typography
+              variant="caption"
+              color="text.secondary"
+            >
+              {search
+                ? 'Try a different search term'
+                : 'Try a different time period'}
+            </Typography>
+          </Box>
+        ) : (
+          <TableContainer
+            component={Paper}
+            sx={{
+              boxShadow:
+                'none',
+
+              borderRadius:
+                0,
+            }}
+          >
+            <Table
+              size="small"
+              stickyHeader
+            >
+              <TableHead>
+                <TableRow>
+                  <TableCell
+                    sx={{
+                      width: 40,
+                    }}
+                  >
+                    #
+                  </TableCell>
+
+                  {config.columns.map(
+                    (column) => (
+                      <TableCell
+                        key={
+                          column
+                        }
+                        sx={{
+                          fontWeight:
+                            700,
+                        }}
+                      >
+                        {column}
+                      </TableCell>
+                    )
+                  )}
+                </TableRow>
+              </TableHead>
+
+              <TableBody>
+                {filteredRows.map(
+                  (
+                    row,
+                    index
+                  ) => {
+                    const cells =
+                      config.render(
+                        row
+                      );
+
+                    return (
+                      <TableRow
+                        key={
+                          row?._id ||
+                          row?.id ||
+                          index
+                        }
+                        hover
+                      >
+                        <TableCell
+                          sx={{
+                            color:
+                              'text.secondary',
+
+                            fontSize:
+                              '0.78rem',
+                          }}
+                        >
+                          {index +
+                            1}
+                        </TableCell>
+
+                        {cells.map(
+                          (
+                            cell,
+                            cellIndex
+                          ) => (
+                            <TableCell
+                              key={
+                                cellIndex
+                              }
+                              sx={{
+                                fontSize:
+                                  '0.82rem',
+                              }}
+                            >
+                              {config.chipCol ===
+                              cellIndex ? (
+                                <Chip
+                                  label={
+                                    cell
+                                  }
+                                  size="small"
+                                  sx={{
+                                    ...statusColor(
+                                      cell
+                                    ),
+
+                                    fontWeight:
+                                      600,
+
+                                    fontSize:
+                                      '0.7rem',
+
+                                    height:
+                                      20,
+                                  }}
+                                />
+                              ) : search &&
+                                String(
+                                  cell
+                                )
+                                  .toLowerCase()
+                                  .includes(
+                                    search.toLowerCase()
+                                  ) ? (
+                                <HighlightText
+                                  text={String(
+                                    cell
+                                  )}
+                                  search={
+                                    search
+                                  }
+                                />
+                              ) : (
+                                cell
+                              )}
+                            </TableCell>
+                          )
+                        )}
+                      </TableRow>
+                    );
+                  }
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+
+        {/* =================================================
+            DIALOG FOOTER
+        ================================================= */}
+
+        {!loading &&
+          filteredRows.length >
+            0 && (
+            <Box
+              sx={{
+                px: 3,
+                py: 1.5,
+
+                display:
+                  'flex',
+
+                alignItems:
+                  'center',
+
+                justifyContent:
+                  'space-between',
+
+                bgcolor:
+                  'background.default',
+
+                borderTop: 1,
+
+                borderColor:
+                  'divider',
+              }}
+            >
+              <Typography
+                variant="caption"
+                color="text.secondary"
+              >
+                {filteredRows.length <
+                allRows.length
+                  ? `${filteredRows.length} of ${allRows.length} records`
+                  : `${allRows.length} total records`}
+              </Typography>
+
+              {isCurrencyCard && (
+                <Box
+                  sx={{
+                    bgcolor:
+                      NAVY,
+
+                    borderRadius:
+                      '10px',
+
+                    px: 3,
+                    py: 1.2,
+
+                    display:
+                      'flex',
+
+                    alignItems:
+                      'center',
+
+                    gap: 2,
+                  }}
+                >
+                  <Typography
+                    sx={{
+                      color:
+                        'rgba(255,255,255,0.6)',
+
+                      fontSize:
+                        '0.78rem',
+                    }}
+                  >
+                    {period !==
+                      'all' ||
+                    search
+                      ? 'Filtered Total'
+                      : 'Total'}
+                  </Typography>
+
+                  <Typography
+                    sx={{
+                      color:
+                        TEAL,
+
+                      fontWeight:
+                        800,
+
+                      fontSize:
+                        '1.05rem',
+                    }}
+                  >
+                    {period !==
+                      'all' ||
+                    search
+                      ? fmtSafe(
+                          filteredTotal
+                        )
+                      : summaryValue}
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          )}
+      </DialogContent>
+    </Dialog>
   );
 };
 
-export default SalaryReport;
+/* =========================================================
+   DASHBOARD
+========================================================= */
+
+const Dashboard = () => {
+  const dispatch =
+    useDispatch();
+
+  const {
+    stats,
+    charts,
+    loading,
+  } = useSelector(
+    (state) =>
+      state.dashboard
+  );
+
+  const [
+    activeCard,
+    setActiveCard,
+  ] = useState(null);
+
+  const [
+    dialogOpen,
+    setDialogOpen,
+  ] = useState(false);
+
+  const [
+    materialRows,
+    setMaterialRows,
+  ] = useState([]);
+
+  const [
+    pointRows,
+    setPointRows,
+  ] = useState([]);
+
+  const [
+    employeeRows,
+    setEmployeeRows,
+  ] = useState([]);
+
+  const [
+    salaryAdvanceRows,
+    setSalaryAdvanceRows,
+  ] = useState([]);
+
+  const [
+    employeeSalaryRows,
+    setEmployeeSalaryRows,
+  ] = useState([]);
+
+  const {
+    currentMachine,
+  } = useMachine();
+
+  const isBig = currentMachine === 'big';
+  const isSmall = currentMachine === 'small';
+
+  /* =======================================================
+     FETCH DASHBOARD STATS
+  ======================================================= */
+
+  useEffect(() => {
+    if (
+      currentMachine ===
+        'big' ||
+      currentMachine ===
+        'small'
+    ) {
+      dispatch(
+        fetchDashboardStats(
+          currentMachine
+        )
+      );
+    }
+  }, [
+    dispatch,
+    currentMachine,
+  ]);
+
+  /* =======================================================
+     FETCH MATERIALS
+  ======================================================= */
+
+  useEffect(() => {
+    if (
+      currentMachine !==
+        'big' &&
+      currentMachine !==
+        'small'
+    ) {
+      return;
+    }
+
+    const loadMaterials =
+      async () => {
+        try {
+          const response =
+            await api.get(
+              '/materials',
+            {
+              params: {
+                limit: 500,
+                machineType:
+                  currentMachine,
+              },
+            }
+          );
+
+          const data =
+            response?.data ??
+            response;
+
+          setMaterialRows(
+            data?.materials ||
+              []
+          );
+        } catch (
+          error
+        ) {
+          console.error(
+            'Failed to load materials:',
+            error
+          );
+
+          setMaterialRows(
+            []
+          );
+        }
+      };
+
+    loadMaterials();
+  }, [
+    currentMachine,
+  ]);
+
+  /* =======================================================
+     FETCH POINTS
+  ======================================================= */
+
+  useEffect(() => {
+    if (
+      currentMachine !==
+        'big' &&
+      currentMachine !==
+        'small'
+    ) {
+      return;
+    }
+
+    const loadPoints =
+      async () => {
+        try {
+          const response =
+            await api.get(
+              '/borewell-points',
+            {
+              params: {
+                limit: 500,
+                machineType:
+                  currentMachine,
+              },
+            }
+          );
+
+          const data =
+            response?.data ??
+            response;
+
+          setPointRows(
+            data?.points ||
+              []
+          );
+        } catch (
+          error
+        ) {
+          console.error(
+            'Failed to load points:',
+            error
+          );
+
+          setPointRows([]);
+        }
+      };
+
+    loadPoints();
+  }, [
+    currentMachine,
+  ]);
+
+  /* =======================================================
+     FETCH EMPLOYEES / SALARY ADVANCES / ATTENDANCE
+  ======================================================= */
+
+  useEffect(() => {
+    if (
+      currentMachine !==
+        'big' &&
+      currentMachine !==
+        'small'
+    ) {
+      setEmployeeRows([]);
+      setSalaryAdvanceRows([]);
+      setEmployeeSalaryRows([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadEmployeesAndSalary =
+      async () => {
+        try {
+          const [
+            employeeResponse,
+            advanceResponse,
+          ] = await Promise.all([
+            api.get(
+              '/users',
+              {
+                params: {
+                  type: 'Employee',
+                  limit: 500,
+                  machineType:
+                    currentMachine,
+                },
+              }
+            ),
+
+            api.get(
+              '/salary-advances',
+              {
+                params: {
+                  machineType:
+                    currentMachine,
+                  limit: 500,
+                },
+              }
+            ),
+          ]);
+
+          const employeeData =
+            employeeResponse?.data ??
+            employeeResponse;
+
+          const advanceData =
+            advanceResponse?.data ??
+            advanceResponse;
+
+          const users =
+            Array.isArray(
+              employeeData?.users
+            )
+              ? employeeData.users
+              : Array.isArray(
+                  employeeData
+                )
+              ? employeeData
+              : [];
+
+          const advances =
+            Array.isArray(
+              advanceData?.records
+            )
+              ? advanceData.records
+              : Array.isArray(
+                  advanceData?.advances
+                )
+              ? advanceData.advances
+              : Array.isArray(
+                  advanceData?.data
+                )
+              ? advanceData.data
+              : Array.isArray(
+                  advanceData?.items
+                )
+              ? advanceData.items
+              : Array.isArray(
+                  advanceData
+                )
+              ? advanceData
+              : [];
+
+          /*
+           * Load attendance separately for each employee because the
+           * attendance API is employee-specific. This is important:
+           * summing the monthly salary alone cannot account for
+           * different salaries or different absent days.
+           */
+          const salaryRows =
+            await Promise.all(
+              users.map(
+                async (employee) => {
+                  try {
+                    const employeeId =
+                      employee?._id ||
+                      employee?.id;
+
+                    if (!employeeId) {
+                      return calculateCurrentEmployeeSalary(
+                        employee,
+                        [],
+                        advances
+                      );
+                    }
+
+                    const attendanceResponse =
+                      await api.get(
+                        '/attendance',
+                        {
+                          params: {
+                            employeeId,
+                            machineType:
+                              currentMachine,
+                            limit: 500,
+                          },
+                        }
+                      );
+
+                    const attendanceData =
+                      attendanceResponse?.data ??
+                      attendanceResponse;
+
+                    const attendanceRecords =
+                      extractAttendanceRows(
+                        attendanceData
+                      );
+
+                    return calculateCurrentEmployeeSalary(
+                      employee,
+                      attendanceRecords,
+                      advances
+                    );
+                  } catch (attendanceError) {
+                    console.error(
+                      `Failed to load attendance for ${
+                        employee?.name ||
+                        'employee'
+                      }:`,
+                      attendanceError
+                    );
+
+                    /*
+                     * If attendance cannot be loaded, do not invent
+                     * absence days. Calculate the employee's current
+                     * salary using the available employee and
+                     * advance data only.
+                     */
+                    return calculateCurrentEmployeeSalary(
+                      employee,
+                      [],
+                      advances
+                    );
+                  }
+                }
+              )
+            );
+
+          if (cancelled) {
+            return;
+          }
+
+          setEmployeeRows(
+            users
+          );
+
+          setSalaryAdvanceRows(
+            advances
+          );
+
+          setEmployeeSalaryRows(
+            salaryRows
+          );
+        } catch (error) {
+          if (cancelled) {
+            return;
+          }
+
+          console.error(
+            'Failed to load employee/salary data:',
+            error
+          );
+
+          setEmployeeRows([]);
+          setSalaryAdvanceRows([]);
+          setEmployeeSalaryRows([]);
+        }
+      };
+
+    loadEmployeesAndSalary();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    currentMachine,
+  ]);
+
+  /* =======================================================
+     CARD CLICK
+  ======================================================= */
+
+  const handleCardClick =
+    (key) => {
+      setActiveCard(key);
+      setDialogOpen(true);
+    };
+
+  /* =======================================================
+     MACHINE NOT SELECTED
+  ======================================================= */
+
+  if (!currentMachine) {
+    return (
+      <Box
+        sx={{
+          display:
+            'flex',
+
+          justifyContent:
+            'center',
+
+          mt: 8,
+
+          px: 2,
+        }}
+      >
+        <Card
+          elevation={0}
+          sx={{
+            maxWidth: 520,
+
+            width: '100%',
+
+            border:
+              '1px solid #dbe3ec',
+
+            borderRadius:
+              '14px',
+          }}
+        >
+          <CardContent
+            sx={{
+              textAlign:
+                'center',
+
+              py: 5,
+            }}
+          >
+            <DashboardIcon
+              sx={{
+                fontSize: 42,
+
+                color: '#0f172a',
+
+                mb: 1,
+              }}
+            />
+
+            <Typography
+              variant="h6"
+              fontWeight={700}
+            >
+              Select a machine
+            </Typography>
+
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{
+                mt: 1,
+              }}
+            >
+              Select Big Machine
+              or Small Machine
+              to view its
+              dashboard.
+            </Typography>
+          </CardContent>
+        </Card>
+      </Box>
+    );
+  }
+
+  /* =======================================================
+     LOADING
+  ======================================================= */
+
+  if (
+    loading ||
+    !stats
+  ) {
+    return (
+      <Box
+        sx={{
+          display:
+            'flex',
+
+          justifyContent:
+            'center',
+
+          mt: 8,
+        }}
+      >
+        <CircularProgress
+          sx={{
+            color: '#0f172a',
+          }}
+        />
+      </Box>
+    );
+  }
+
+  /* =======================================================
+     DASHBOARD VALUES
+  ======================================================= */
+
+  const points =
+    stats?.totalBorewellPoints ??
+    stats?.points ??
+    0;
+
+  const paidAmount =
+    stats?.paidAmount ??
+    0;
+
+  const pendingAmount =
+    stats?.pendingAmount ??
+    0;
+
+  /* -------------------------------------------------------
+     Discount
+  ------------------------------------------------------- */
+
+  const discountFromStats =
+    stats?.discount ??
+    stats?.discountAmount;
+
+  const discount =
+    discountFromStats !=
+    null
+      ? safeNum(
+          discountFromStats
+        )
+      : pointRows.reduce(
+          (
+            sum,
+            point
+          ) =>
+            sum +
+            getDiscount(
+              point
+            ),
+          0
+        );
+
+  /* -------------------------------------------------------
+     Material TOTAL AMOUNTS
+  ------------------------------------------------------- */
+
+  const getMaterialTotal =
+    (type) =>
+      materialRows
+        .filter(
+          (material) =>
+            isMaterialType(
+              material,
+              type
+            )
+        )
+        .reduce(
+          (
+            sum,
+            material
+          ) =>
+            sum +
+            safeNum(
+              material?.totalPrice
+            ),
+          0
+        );
+
+  const diesel =
+    stats?.diesel !=
+    null
+      ? safeNum(
+          stats.diesel
+        )
+      : getMaterialTotal(
+          'diesel'
+        );
+
+  const petrol =
+    stats?.petrol !=
+    null
+      ? safeNum(
+          stats.petrol
+        )
+      : getMaterialTotal(
+          'petrol'
+        );
+
+  const bit =
+    stats?.bit !=
+    null
+      ? safeNum(
+          stats.bit
+        )
+      : getMaterialTotal(
+          'bit'
+        );
+
+  const hammer =
+    stats?.hammer !=
+    null
+      ? safeNum(
+          stats.hammer
+        )
+      : getMaterialTotal(
+          'hammer'
+        );
+
+  const getMaterialQuantity =
+    (type) =>
+      materialRows
+        .filter(
+          (material) =>
+            isMaterialType(
+              material,
+              type
+            )
+        )
+        .reduce(
+          (
+            sum,
+            material
+          ) =>
+            sum +
+            safeNum(
+              material?.quantity
+            ),
+          0
+        );
+
+  const bitQuantity =
+    getMaterialQuantity('bit');
+
+  const hammerQuantity =
+    getMaterialQuantity('hammer');
+
+  /*
+   * Current salary is the amount payable for the current month up to
+   * today, after each employee's own absent-day deduction and current
+   * salary advances.
+   *
+   * Do not use:
+   *   employeeRows.reduce((sum, employee) => sum + employee.salary)
+   *
+   * That only adds full monthly salaries and ignores attendance.
+   */
+  const totalSalary =
+    employeeSalaryRows.reduce(
+      (sum, row) =>
+        sum +
+        safeNum(
+          row?.currentSalary
+        ),
+      0
+    );
+
+  const totalMonthlySalary =
+    employeeRows.reduce(
+      (sum, employee) =>
+        sum +
+        safeNum(
+          employee?.salary
+        ),
+      0
+    );
+
+  const totalAbsentDeduction =
+    employeeSalaryRows.reduce(
+      (sum, row) =>
+        sum +
+        safeNum(
+          row?.absentDeduction
+        ),
+      0
+    );
+
+  const totalCurrentSalaryAdvance =
+    employeeSalaryRows.reduce(
+      (sum, row) =>
+        sum +
+        safeNum(
+          row?.advance
+        ),
+      0
+    );
+
+  /*
+   * Pending salary comes from Attendance & Salary.
+   * currentSalary is already calculated after absent deduction
+   * and the employee's current-month salary advances.
+   */
+  const salaryPendingAmount =
+    Math.max(
+      totalSalary,
+      0
+    );
+
+  /*
+   * Salary advances are separate from borewell customer
+   * payments. The old dashboard incorrectly displayed
+   * partial borewell payments as "Advance", which is why
+   * the Payment Summary showed 0 even when salary advances
+   * existed.
+   */
+  const employees =
+    employeeRows.length;
+
+  /* =======================================================
+     MACHINE SUMMARY
+  ======================================================= */
+
+  const sumPointField = (field) =>
+    pointRows.reduce(
+      (sum, point) =>
+        sum + safeNum(point?.[field]),
+      0
+    );
+
+  /*
+   * MACHINE PIPE STOCK / USAGE
+   *
+   * Materials stores the number of pipes purchased/available.
+   * Points stores the actual feet used. One pipe = 20 ft.
+   *
+   * Example:
+   *   Material stock = 17 pipes
+   *   Total feet used = 214 ft
+   *   Pipes used = ceil(214 / 20) = 11
+   *   Remaining = 17 - 11 = 6
+   *
+   * The dashboard intentionally shows the material stock in the
+   * card title and the remaining/used feet below it, matching the
+   * physical stock sheet used by the business.
+   */
+  const getPipeQuantity = (feet) =>
+    feet > 0
+      ? Math.ceil(feet / 20)
+      : 0;
+
+  const getPipeStockQuantity = (kind) => {
+    const aliases = {
+      outer: [
+        'pipe outer',
+        'outer pipe',
+        'outer',
+      ],
+      inner: [
+        'pipe inner',
+        'inner pipe',
+        'inner',
+      ],
+      smallInner: [
+        'pipe small',
+        'small pipe',
+        'small inner',
+        'small inner pipe',
+      ],
+      ji: [
+        'pipe j1',
+        'pipe ji',
+        'ji pipe',
+        'ji inner',
+        'ji',
+      ],
+    };
+
+    const names = aliases[kind] || [];
+
+    return materialRows
+      .filter((material) => {
+        const type = getMaterialType(material);
+
+        if (kind === 'inner') {
+          // Do not count Small Inner as normal Inner.
+          if (
+            type.includes('small inner') ||
+            type.includes('pipe small')
+          ) {
+            return false;
+          }
+        }
+
+        return names.some((name) =>
+          type === name ||
+          type.includes(name)
+        );
+      })
+      .reduce(
+        (sum, material) =>
+          sum + safeNum(material?.quantity),
+        0
+      );
+  };
+
+  const getPipeSummary = (feet, stockQuantity) => {
+    const usedPipes = getPipeQuantity(feet);
+    const remaining = Math.max(
+      safeNum(stockQuantity) - usedPipes,
+      0
+    );
+
+    return {
+      stockQuantity: safeNum(stockQuantity),
+      usedPipes,
+      remaining,
+    };
+  };
+
+  const outerFeet = isBig
+    ? sumPointField('plasticOuterFeet')
+    : sumPointField('outerPipeFeet');
+
+  const innerFeet = isBig
+    ? sumPointField('plasticInnerFeet')
+    : sumPointField('innerPipeFeet');
+
+  const smallInnerFeet =
+    sumPointField('smallPipeFeet');
+
+  const jiFeet =
+    sumPointField('jiInnerFeet');
+
+  const outerSummary =
+    getPipeSummary(
+      outerFeet,
+      getPipeStockQuantity('outer')
+    );
+
+  const innerSummary =
+    getPipeSummary(
+      innerFeet,
+      getPipeStockQuantity('inner')
+    );
+
+  const smallInnerSummary =
+    getPipeSummary(
+      smallInnerFeet,
+      getPipeStockQuantity('smallInner')
+    );
+
+  const jiSummary =
+    getPipeSummary(
+      jiFeet,
+      getPipeStockQuantity('ji')
+    );
+
+  const pipeCards = isBig
+    ? [
+        {
+          key: 'bigOuter',
+          title: `Outer (${outerSummary.stockQuantity})`,
+          usedPipes: outerSummary.usedPipes,
+          remaining: outerSummary.remaining,
+          totalFeet: outerFeet,
+          icon: <WaterDropIcon />,
+          color: '#0f172a',
+        },
+        {
+          key: 'bigInner',
+          title: `Inner (${innerSummary.stockQuantity})`,
+          usedPipes: innerSummary.usedPipes,
+          remaining: innerSummary.remaining,
+          totalFeet: innerFeet,
+          icon: <WaterDropIcon />,
+          color: '#0f172a',
+        },
+        {
+          key: 'bigJI',
+          title: `JI (${jiSummary.stockQuantity})`,
+          usedPipes: jiSummary.usedPipes,
+          remaining: jiSummary.remaining,
+          totalFeet: jiFeet,
+          icon: <WaterDropIcon />,
+          color: '#0f172a',
+        },
+      ]
+    : [
+        {
+          key: 'smallOuter',
+          title: `Outer (${outerSummary.stockQuantity})`,
+          usedPipes: outerSummary.usedPipes,
+          remaining: outerSummary.remaining,
+          totalFeet: outerFeet,
+          icon: <WaterDropIcon />,
+          color: '#0f172a',
+        },
+        {
+          key: 'smallInner',
+          title: `Inner (${innerSummary.stockQuantity})`,
+          usedPipes: innerSummary.usedPipes,
+          remaining: innerSummary.remaining,
+          totalFeet: innerFeet,
+          icon: <WaterDropIcon />,
+          color: '#0f172a',
+        },
+        {
+          key: 'smallInnerPipe',
+          title: `Small Inner (${smallInnerSummary.stockQuantity})`,
+          usedPipes: smallInnerSummary.usedPipes,
+          remaining: smallInnerSummary.remaining,
+          totalFeet: smallInnerFeet,
+          icon: <WaterDropIcon />,
+          color: '#0f172a',
+        },
+      ];
+
+  /* =======================================================
+     CHART DATA
+  ======================================================= */
+
+  const expenseData = {
+    labels:
+      charts?.monthlyExpense?.map(
+        (item) =>
+          item.month
+      ) || [],
+
+    datasets: [
+      {
+        label:
+          'Monthly Expense (₹)',
+
+        data:
+          charts?.monthlyExpense?.map(
+            (item) =>
+              item.amount
+          ) || [],
+
+        backgroundColor:
+          NAVY,
+
+        borderRadius: 5,
+      },
+    ],
+  };
+
+  const workData = {
+    labels:
+      charts?.borewellWork?.map(
+        (item) =>
+          item.month
+      ) || [],
+
+    datasets: [
+      {
+        label:
+          'Borewell Works',
+
+        data:
+          charts?.borewellWork?.map(
+            (item) =>
+              item.count
+          ) || [],
+
+        backgroundColor:
+          TEAL,
+
+        borderRadius: 5,
+      },
+    ],
+  };
+
+  const paymentData = {
+    labels:
+      charts?.paymentStatus?.map(
+        (item) =>
+          item.status
+      ) || [],
+
+    datasets: [
+      {
+        data:
+          charts?.paymentStatus?.map(
+            (item) =>
+              item.count
+          ) || [],
+
+        backgroundColor: [
+          '#4caf50',
+          '#ef4444',
+          '#f59e0b',
+        ],
+
+        borderWidth: 0,
+      },
+    ],
+  };
+
+  const barOptions =
+    (yFormatter) => ({
+      responsive: true,
+
+      maintainAspectRatio:
+        false,
+
+      plugins: {
+        legend: {
+          display: false,
+        },
+
+        tooltip: {
+          callbacks: {
+            label:
+              (context) =>
+                ` ${context.dataset.label}: ${context.parsed.y}`,
+          },
+        },
+      },
+
+      scales: {
+        x: {
+          grid: {
+            display: false,
+          },
+
+          ticks: {
+            font: {
+              size: 11,
+            },
+
+            autoSkip:
+              false,
+          },
+        },
+
+        y: {
+          beginAtZero: true,
+
+          grid: {
+            color: '#0f172a',
+          },
+
+          ticks: {
+            font: {
+              size: 11,
+            },
+
+            callback:
+              yFormatter,
+          },
+        },
+      },
+    });
+
+  const doughnutOptions =
+    {
+      responsive: true,
+
+      maintainAspectRatio:
+        false,
+
+      cutout: '65%',
+
+      plugins: {
+        legend: {
+          display: false,
+        },
+      },
+    };
+
+  /* =======================================================
+     CARD DATA
+  ======================================================= */
+
+  const firstRowCards = [
+    {
+      key:
+        'totalBorewellPoints',
+
+      title: 'Points',
+
+      value: points,
+
+      icon:
+        <WaterDropIcon />,
+
+      color: '#0f172a',
+    },
+
+    {
+      key:
+        'paidAmount',
+
+      title:
+        'Paid Amount',
+
+      value:
+        fmt(paidAmount),
+
+      icon:
+        <PaidIcon />,
+
+      color: '#0f172a',
+    },
+
+    {
+      key:
+        'pendingAmount',
+
+      title:
+        'Pending Amount',
+
+      value:
+        fmt(salaryPendingAmount),
+
+      icon:
+        <PendingActionsIcon />,
+
+      color: '#0f172a',
+    },
+
+    {
+      key:
+        'discount',
+
+      title:
+        'Discount',
+
+      value:
+        fmt(discount),
+
+      icon:
+        <DiscountIcon />,
+
+      color: '#0f172a',
+    },
+  ];
+
+  const secondRowCards = [
+    {
+      key: 'diesel',
+
+      title:
+        'Diesel',
+
+      value:
+        fmt(diesel),
+
+      icon:
+        <LocalGasStationIcon />,
+
+      color: '#0f172a',
+    },
+
+    {
+      key: 'petrol',
+
+      title:
+        'Petrol',
+
+      value:
+        fmt(petrol),
+
+      icon:
+        <LocalGasStationIcon />,
+
+      color: '#0f172a',
+    },
+
+    {
+      key: 'bit',
+
+      title:
+        `Bit (${bitQuantity})`,
+
+      value:
+        fmt(bit),
+
+      icon:
+        <ConstructionIcon />,
+
+      color: '#0f172a',
+    },
+
+    {
+      key: 'hammer',
+
+      title:
+        `Hammer (${hammerQuantity})`,
+
+      value:
+        fmt(hammer),
+
+      icon:
+        <BuildIcon />,
+
+      color: '#0f172a',
+    },
+  ];
+
+  /* =======================================================
+     RENDER
+  ======================================================= */
+
+  return (
+    <Box>
+      {/* =================================================
+          PAGE HEADER
+      ================================================= */}
+
+      {/* <PageHeader
+        title="Dashboard"
+        subtitle=""
+        icon={
+          <DashboardIcon />
+        }
+      /> */}
+
+      <Box
+        sx={{
+          width: '100%',
+        }}
+      >
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            mb: 1.5,
+          }}
+        >
+          <Typography
+            sx={{
+              fontSize: '1.25rem',
+              fontWeight: 800,
+              color: '#0f172a',
+            }}
+          >
+            Dashboard
+          </Typography>
+
+          <Chip
+            size="small"
+            label={isBig ? 'BIG MACHINE' : 'SMALL MACHINE'}
+            sx={{
+              bgcolor: `${TEAL}18`,
+              color: TEAL_D,
+              fontWeight: 800,
+              fontSize: '0.68rem',
+            }}
+          />
+        </Box>
+        {/* =================================================
+            ROW 1
+        ================================================= */}
+
+        <Grid
+          container
+          spacing={1.25}
+          sx={{
+            mb: 1.5,
+          }}
+        >
+          {firstRowCards.map(
+            (card) => (
+              <Grid
+                item
+                xs={12}
+                sm={6}
+                md={3}
+                key={
+                  card.key
+                }
+              >
+                <StatCard
+                  title={
+                    card.title
+                  }
+                  value={
+                    card.value
+                  }
+                  icon={
+                    card.icon
+                  }
+                  color={
+                    card.color
+                  }
+                  onClick={() =>
+                    handleCardClick(
+                      card.key
+                    )
+                  }
+                />
+              </Grid>
+            )
+          )}
+        </Grid>
+
+        {/* =================================================
+            ROW 2
+        ================================================= */}
+
+        <Grid
+          container
+          spacing={1.25}
+          sx={{
+            mb: 1.5,
+          }}
+        >
+          {secondRowCards.map(
+            (card) => (
+              <Grid
+                item
+                xs={12}
+                sm={6}
+                md={3}
+                key={
+                  card.key
+                }
+              >
+                <StatCard
+                  title={
+                    card.title
+                  }
+                  value={
+                    card.value
+                  }
+                  icon={
+                    card.icon
+                  }
+                  color={
+                    card.color
+                  }
+                  onClick={() =>
+                    handleCardClick(
+                      card.key
+                    )
+                  }
+                />
+              </Grid>
+            )
+          )}
+        </Grid>
+
+        {/* =================================================
+            MACHINE PIPE SUMMARY
+        ================================================= */}
+
+        <Grid
+          container
+          spacing={1.25}
+          sx={{
+            mb: 1.5,
+          }}
+        >
+          {pipeCards.map((card) => (
+            <Grid
+              item
+              xs={12}
+              sm={6}
+              md={3}
+              key={card.key}
+            >
+              <StatCard
+                title={card.title}
+                value={
+                  <Box>
+                    <Typography
+                      component="div"
+                      sx={{
+                        fontSize: '0.72rem',
+                        lineHeight: 1.35,
+                        fontWeight: 700,
+                        color: '#0f172a',
+                      }}
+                    >
+                      Done = {card.usedPipes}
+                    </Typography>
+
+                    <Typography
+                      component="div"
+                      sx={{
+                        fontSize: '0.72rem',
+                        lineHeight: 1.35,
+                        fontWeight: 700,
+                        color: '#0f172a',
+                      }}
+                    >
+                      Remaining = {card.remaining}
+                    </Typography>
+
+                    <Typography
+                      component="div"
+                      sx={{
+                        fontSize: '0.72rem',
+                        lineHeight: 1.35,
+                        fontWeight: 700,
+                        color: '#0f172a',
+                      }}
+                    >
+                      Total ft = {card.totalFeet}
+                    </Typography>
+                  </Box>
+                }
+                icon={card.icon}
+                color={card.color}
+                multiline
+              />
+            </Grid>
+          ))}
+
+          <Grid
+            item
+            xs={12}
+            sm={6}
+            md={3}
+          >
+            <Card
+              elevation={0}
+              sx={{
+                height: '100%',
+                border: '1px solid #dbe3ec',
+                borderRadius: '12px',
+                bgcolor: '#0f172a',
+              }}
+            >
+              <CardContent
+                sx={{
+                  p: '14px !important',
+                  minHeight: 74,
+                }}
+              >
+                <Typography
+                  sx={{
+                    color: '#0f172a',
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    mb: 0.8,
+                  }}
+                >
+                  Payment Summary
+                </Typography>
+
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns:
+                      'repeat(3, minmax(0, 1fr))',
+                    gap: 0.75,
+                  }}
+                >
+                  {/* TOTAL SALARY */}
+                  <Box>
+                    <Typography
+                      sx={{
+                        color: '#0f172a',
+                        fontSize: '0.6rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Current Salary
+                    </Typography>
+
+                    <Typography
+                      sx={{
+                        fontWeight: 800,
+                        fontSize: '0.74rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {fmt(totalSalary)}
+                    </Typography>
+                  </Box>
+
+                  {/* SALARY ADVANCE */}
+                  <Box>
+                    <Typography
+                      sx={{
+                        color: '#0f172a',
+                        fontSize: '0.6rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Advance
+                    </Typography>
+
+                    <Typography
+                      sx={{
+                        color: '#0f172a',
+                        fontWeight: 800,
+                        fontSize: '0.74rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {fmt(
+                        totalCurrentSalaryAdvance
+                      )}
+                    </Typography>
+                  </Box>
+
+                  {/* BOREWELL PAYMENT PENDING */}
+                  <Box>
+                    <Typography
+                      sx={{
+                        color: '#0f172a',
+                        fontSize: '0.6rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Pending
+                    </Typography>
+
+                    <Typography
+                      sx={{
+                        color: '#0f172a',
+                        fontWeight: 800,
+                        fontSize: '0.74rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {fmt(
+                        salaryPendingAmount
+                      )}
+                    </Typography>
+                  </Box>
+                </Box>
+
+                <Typography
+                  sx={{
+                    mt: 0.8,
+                    color: '#0f172a',
+                    fontSize: '0.62rem',
+                  }}
+                >
+                  Monthly: {fmt(totalMonthlySalary)} · Absent deduction: {fmt(totalAbsentDeduction)}
+                </Typography>
+
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+
+        {/* =================================================
+            ROW 3
+            EMPLOYEE CENTER
+        ================================================= */}
+
+
+
+        {/* =================================================
+            ANALYTICS
+        ================================================= */}
+
+        <Typography
+          variant="overline"
+          sx={{
+            fontSize:
+              '0.68rem',
+
+            color: '#0f172a',
+
+            letterSpacing:
+              '0.1em',
+
+            mb: 1,
+
+            display:
+              'block',
+          }}
+        >
+          Analytics
+        </Typography>
+
+        <Grid
+          container
+          spacing={1.5}
+        >
+          {/* =============================================
+              MONTHLY EXPENSE
+          ============================================= */}
+
+          <Grid
+            item
+            xs={12}
+            md={6}
+          >
+            <ChartCard
+              title="Monthly Expense"
+            >
+              <ChartLegend
+                items={[
+                  {
+                    color: '#0f172a',
+                    label:
+                      'Expense (₹)',
+                  },
+                ]}
+              />
+
+              <Box
+                sx={{
+                  position:
+                    'relative',
+
+                  height: 240,
+                }}
+              >
+                <Bar
+                  data={
+                    expenseData
+                  }
+                  options={barOptions(
+                    (value) =>
+                      `₹${Math.round(
+                        value /
+                          1000
+                      )}k`
+                  )}
+                />
+              </Box>
+            </ChartCard>
+          </Grid>
+
+          {/* =============================================
+              BOREWELL WORKS
+          ============================================= */}
+
+          <Grid
+            item
+            xs={12}
+            md={6}
+          >
+            <ChartCard
+              title="Borewell Works"
+            >
+              <ChartLegend
+                items={[
+                  {
+                    color: '#0f172a',
+                    label:
+                      'Work count',
+                  },
+                ]}
+              />
+
+              <Box
+                sx={{
+                  position:
+                    'relative',
+
+                  height: 240,
+                }}
+              >
+                <Bar
+                  data={
+                    workData
+                  }
+                  options={barOptions(
+                    (value) =>
+                      value
+                  )}
+                />
+              </Box>
+            </ChartCard>
+          </Grid>
+
+          {/* =============================================
+              PAYMENT STATUS
+          ============================================= */}
+
+          <Grid
+            item
+            xs={12}
+            md={6}
+          >
+            <ChartCard
+              title="Payment Status"
+            >
+              <ChartLegend
+                items={[
+                  {
+                    color: '#0f172a',
+                    label:
+                      'Paid',
+                  },
+
+                  {
+                    color: '#0f172a',
+                    label:
+                      'Unpaid',
+                  },
+
+                  {
+                    color: '#0f172a',
+                    label:
+                      'Partial',
+                  },
+                ]}
+              />
+
+              <Box
+                sx={{
+                  position:
+                    'relative',
+
+                  height: 240,
+
+                  display:
+                    'flex',
+
+                  justifyContent:
+                    'center',
+                }}
+              >
+                <Box
+                  sx={{
+                    width: 220,
+
+                    position:
+                      'relative',
+                  }}
+                >
+                  <Doughnut
+                    data={
+                      paymentData
+                    }
+                    options={
+                      doughnutOptions
+                    }
+                  />
+                </Box>
+              </Box>
+            </ChartCard>
+          </Grid>
+        </Grid>
+      </Box>
+
+      {/* =================================================
+          DETAIL DIALOG
+      ================================================= */}
+
+      <DetailDialog
+        open={
+          dialogOpen
+        }
+        onClose={() =>
+          setDialogOpen(
+            false
+          )
+        }
+        cardKey={
+          activeCard
+        }
+        machineType={
+          currentMachine
+        }
+        summaryValue={
+          activeCard ===
+          'totalBorewellPoints'
+            ? String(
+                points
+              )
+            : activeCard ===
+              'paidAmount'
+            ? fmt(
+                paidAmount
+              )
+            : activeCard ===
+              'pendingAmount'
+            ? fmt(
+                salaryPendingAmount
+              )
+            : activeCard ===
+              'discount'
+            ? fmt(
+                discount
+              )
+            : activeCard ===
+              'diesel'
+            ? fmt(
+                diesel
+              )
+            : activeCard ===
+              'petrol'
+            ? fmt(
+                petrol
+              )
+            : activeCard ===
+              'bit'
+            ? fmt(
+                bit
+              )
+            : activeCard ===
+              'hammer'
+            ? fmt(
+                hammer
+              )
+            : activeCard ===
+              'totalEmployees'
+            ? String(
+                employees
+              )
+            : null
+        }
+      />
+    </Box>
+  );
+};
+
+export default Dashboard;
