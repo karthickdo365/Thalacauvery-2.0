@@ -3900,17 +3900,47 @@ const Dashboard = () => {
               md={3}
               key={card.key}
             >
-              <StatCard
-                title={card.title}
-                value={
-                  <Box>
+              <Card
+                elevation={0}
+                sx={{
+                  height: '100%',
+                  border: '1px solid #dbe3ec',
+                  borderRadius: '12px',
+                  bgcolor: '#fff',
+                  boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
+                }}
+              >
+                <CardContent
+                  sx={{
+                    p: '14px !important',
+                    minHeight: 74,
+                  }}
+                >
+                  <Typography
+                    sx={{
+                      color: '#0f172a',
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      mb: 0.8,
+                    }}
+                  >
+                    {card.title}
+                  </Typography>
+
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 0.35,
+                    }}
+                  >
                     <Typography
                       component="div"
                       sx={{
-                        fontSize: '0.72rem',
+                        fontSize: '0.68rem',
                         lineHeight: 1.35,
                         fontWeight: 700,
-                        color: '#0f172a',
+                        color: '#64748b',
                       }}
                     >
                       Done = {card.usedPipes}
@@ -3919,10 +3949,10 @@ const Dashboard = () => {
                     <Typography
                       component="div"
                       sx={{
-                        fontSize: '0.72rem',
+                        fontSize: '0.68rem',
                         lineHeight: 1.35,
                         fontWeight: 700,
-                        color: '#0f172a',
+                        color: '#64748b',
                       }}
                     >
                       Total ft = {card.totalFeet}
@@ -3931,7 +3961,7 @@ const Dashboard = () => {
                     <Typography
                       component="div"
                       sx={{
-                        fontSize: '0.72rem',
+                        fontSize: '0.68rem',
                         lineHeight: 1.35,
                         fontWeight: 800,
                         color: '#dc2626',
@@ -3940,11 +3970,8 @@ const Dashboard = () => {
                       Stock = {card.remaining}
                     </Typography>
                   </Box>
-                }
-                icon={card.icon}
-                color={card.color}
-                multiline
-              />
+                </CardContent>
+              </Card>
             </Grid>
           ))}
         </Grid>
