@@ -15,6 +15,7 @@ import Bills from './pages/Bills';
 import Reports from './pages/Reports';
 import ActivityLogs from './pages/ActivityLogs';
 import Attendance from './pages/Attendance';
+import SalaryReport from './pages/SalaryReport';
 import Accounts from './pages/Accounts';
 
 function App() {
@@ -52,6 +53,7 @@ function App() {
         <Route path="/borewell-points" element={<BorewellPoints />} />
         <Route path="/bills" element={<Bills />} />
         <Route path="/attendance" element={<Attendance />} />
+        <Route path="/salary-report"element={<Protected><SalaryReport /> </Protected>}/>
         <Route path="/reports" element={<Reports />} />
         <Route path="/activity-logs" element={<PartnerRoute><ActivityLogs /></PartnerRoute>} />
         <Route path="/accounts" element={<PartnerRoute><Accounts /></PartnerRoute>} />
