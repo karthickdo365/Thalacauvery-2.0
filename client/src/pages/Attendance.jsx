@@ -417,19 +417,21 @@ const buildAbsenceShareText = ({
 const getEmployeePhone = (emp) => {
   if (!emp) return '';
 
+  // Personal Information may store the employee's number under
+  // any of these common field names. No separate number entry is
+  // needed on the Salary Bill.
   const raw =
     emp.phone ||
     emp.phoneNumber ||
     emp.mobile ||
     emp.mobileNumber ||
+    emp.whatsapp ||
+    emp.whatsappNumber ||
     emp.contact ||
     emp.contactNumber ||
     '';
 
-  return String(raw).replace(
-    /[^\d]/g,
-    ''
-  );
+  return String(raw).replace(/[^\d]/g, '');
 };
 
 const shareOnWhatsApp = (
@@ -543,9 +545,6 @@ export default function Attendance() {
     return toDateKey(new Date(now.getFullYear(), now.getMonth(), 1));
   });
   const [reportEndDate, setReportEndDate] = useState(() => toDateKey(new Date()));
-
-  // Number entered in the Salary Bill is used for direct WhatsApp sharing.
-  const [salaryWhatsAppNumber, setSalaryWhatsAppNumber] = useState('');
 
   const [
     error,
@@ -1534,13 +1533,8 @@ export default function Attendance() {
       return;
     }
 
-    if (!reportStartDate || !reportEndDate) {
-      setError('Please select both From Date and To Date.');
-      return;
-    }
-
-    if (reportEndDate < reportStartDate) {
-      setError('To Date cannot be before From Date.');
+    if (!reportPeriodValid) {
+      setError('Please select a valid From Date and To Date.');
       return;
     }
 
@@ -1549,24 +1543,25 @@ export default function Attendance() {
       return;
     }
 
-    const rawPhone = String(salaryWhatsAppNumber || '').trim();
-    const digits = rawPhone.replace(/\D/g, '');
+    const phone = getEmployeePhone(employee);
 
-    if (!digits) {
-      setError('Enter the employee WhatsApp number.');
+    if (!phone) {
+      setError(
+        'WhatsApp/mobile number is not available in Personal Information for this employee.'
+      );
       return;
     }
 
-    // Accept either a 10-digit Indian number or a number already entered
-    // with India's 91 country code.
-    let whatsappNumber = digits;
+    let whatsappNumber = phone;
 
-    if (digits.length === 10) {
-      whatsappNumber = `91${digits}`;
-    } else if (digits.length === 12 && digits.startsWith('91')) {
-      whatsappNumber = digits;
+    // Indian numbers: automatically add country code when the
+    // Personal Information record contains only the 10-digit number.
+    if (phone.length === 10) {
+      whatsappNumber = `91${phone}`;
+    } else if (phone.length === 12 && phone.startsWith('91')) {
+      whatsappNumber = phone;
     } else {
-      setError('Enter a valid 10-digit Indian WhatsApp number.');
+      setError('The employee WhatsApp/mobile number is not a valid Indian number.');
       return;
     }
 
@@ -1582,15 +1577,15 @@ export default function Attendance() {
         ? formatDate(startDate)
         : `${formatDate(startDate)} to ${formatDate(endDate)}`;
 
-    const joiningDate = employee?.date
-      ? formatDate(new Date(employee.date))
-      : '-';
-
     const message = [
       '*Salary Bill*',
       '',
       `Name : ${employee?.name || '-'}`,
-      `Joining Date: ${joiningDate}`,
+      `Joining Date: ${
+        employee?.date
+          ? formatDate(new Date(employee.date))
+          : '-'
+      }`,
       `Date : ${periodLabel}`,
       `Total Days: ${individualSalary.totalDays || 0}`,
       `Present Days: ${individualSalary.presentDays || 0}`,
@@ -1600,13 +1595,10 @@ export default function Attendance() {
       `Remaining: ${formatMoney(individualSalary.finalSalary || 0)}`,
     ].join('\n');
 
-    const whatsappUrl =
-      `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`;
+    shareOnWhatsApp(message, whatsappNumber);
 
-    window.open(
-      whatsappUrl,
-      '_blank',
-      'noopener,noreferrer'
+    setSuccess(
+      `Salary bill opened in WhatsApp for ${employee?.name || 'employee'}.`
     );
   };
 
@@ -2536,6 +2528,43 @@ export default function Attendance() {
           color:#d63b3b !important;
         }
 
+        .salary-whatsapp-number-field {
+          grid-column: 1 / -1;
+        }
+
+        .saved-whatsapp-number {
+          min-height: 46px;
+          display: flex;
+          align-items: center;
+          padding: 0 14px;
+          border: 1px solid #d3dce6;
+          border-radius: 10px;
+          background: #f8fafc;
+          color: #17324d;
+          font-size: 15px;
+          font-weight: 700;
+        }
+
+        .salary-whatsapp-action {
+          margin-top: 18px;
+          padding-top: 16px;
+          border-top: 1px solid #e8eef2;
+        }
+
+        .salary-whatsapp-button {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          padding: 11px 16px;
+          font-weight: 800;
+        }
+
+        .salary-whatsapp-button:disabled {
+          opacity: .55;
+          cursor: not-allowed;
+        }
+
         .whatsapp-button {
           background:#18a957 !important;
           color:white !important;
@@ -2550,37 +2579,6 @@ export default function Attendance() {
           margin-top:10px;
           color:#7a8d9f;
           font-size:12px;
-        }
-
-        .salary-whatsapp-field {
-          grid-column: 1 / -1;
-        }
-
-        .salary-whatsapp-action {
-          margin-top: 18px;
-          padding-top: 16px;
-          border-top: 1px solid #e8eef2;
-        }
-
-        .salary-whatsapp-button {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-          background: #25d366;
-          border-color: #25d366;
-          color: #fff;
-          font-weight: 800;
-        }
-
-        .salary-whatsapp-button:hover {
-          background: #1fb85a;
-          border-color: #1fb85a;
-        }
-
-        .salary-whatsapp-button:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
         }
 
         .individual-bill-empty {
@@ -2985,22 +2983,13 @@ export default function Attendance() {
               />
             </div>
 
-            <div className="report-field salary-whatsapp-field">
-              <label className="text-label">Employee WhatsApp Number</label>
-              <input
-                type="tel"
-                inputMode="numeric"
-                autoComplete="tel"
-                className="text-input"
-                value={salaryWhatsAppNumber}
-                placeholder="Enter 10-digit number"
-                maxLength={12}
-                onChange={(event) =>
-                  setSalaryWhatsAppNumber(
-                    event.target.value.replace(/[^0-9+\s-]/g, '')
-                  )
-                }
-              />
+            <div className="report-field salary-whatsapp-number-field">
+              <label className="text-label">WhatsApp Number</label>
+              <div className="saved-whatsapp-number">
+                {employee
+                  ? getEmployeePhone(employee) || 'Not available in Personal Information'
+                  : 'Select an employee above'}
+              </div>
             </div>
           </div>
 
@@ -3082,12 +3071,14 @@ export default function Attendance() {
                   type="button"
                   className="button whatsapp-button salary-whatsapp-button"
                   onClick={shareSalaryBillOnWhatsApp}
+                  disabled={!getEmployeePhone(employee)}
                 >
                   <WhatsAppIcon sx={{ fontSize: 20 }} />
                   Share Salary Bill on WhatsApp
                 </button>
+
                 <div className="whatsapp-note">
-                  The bill will open directly in WhatsApp for the entered number with the salary details filled in.
+                  The employee number is taken automatically from Personal Information.
                 </div>
               </div>
 
