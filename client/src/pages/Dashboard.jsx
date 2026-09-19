@@ -3943,7 +3943,7 @@ const Dashboard = () => {
                         color: '#64748b',
                       }}
                     >
-                      Done = {card.usedPipes}
+                      Done ({card.usedPipes})
                     </Typography>
 
                     <Typography
@@ -3955,7 +3955,7 @@ const Dashboard = () => {
                         color: '#64748b',
                       }}
                     >
-                      Total ft = {card.totalFeet}
+                      Total ft ({card.totalFeet})
                     </Typography>
 
                     <Typography
@@ -3967,7 +3967,7 @@ const Dashboard = () => {
                         color: '#dc2626',
                       }}
                     >
-                      Stock = {card.remaining}
+                      Stock ({card.remaining})
                     </Typography>
                   </Box>
                 </CardContent>
