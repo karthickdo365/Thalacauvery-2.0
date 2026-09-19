@@ -450,11 +450,8 @@ const calculateCurrentEmployeeSalary = (
     );
 
   const currentSalary =
-    Math.max(
-      salaryBeforeAdvance -
-        currentMonthAdvances,
-      0
-    );
+    salaryBeforeAdvance -
+    currentMonthAdvances;
 
   return {
     employee,
@@ -502,7 +499,7 @@ const PERIOD_OPTIONS = [
 const CARD_CONFIG = {
   totalBorewellPoints: {
     label: 'Points',
-    color: NAVY,
+    color: '#0f172a',
     icon: <WaterDropIcon />,
     hasPeriodFilter: true,
 
@@ -552,7 +549,7 @@ const CARD_CONFIG = {
 
   paidAmount: {
     label: 'Paid Amount',
-    color: '#2e7d32',
+    color: '#0f172a',
     icon: <PaidIcon />,
     hasPeriodFilter: true,
 
@@ -613,7 +610,7 @@ const CARD_CONFIG = {
 
   pendingAmount: {
     label: 'Pending Amount',
-    color: '#b91c1c',
+    color: '#0f172a',
     icon: <PendingActionsIcon />,
     hasPeriodFilter: true,
 
@@ -674,7 +671,7 @@ const CARD_CONFIG = {
 
   discount: {
     label: 'Discount',
-    color: '#7c3aed',
+    color: '#0f172a',
     icon: <DiscountIcon />,
     hasPeriodFilter: true,
 
@@ -726,7 +723,7 @@ const CARD_CONFIG = {
 
   diesel: {
     label: 'Diesel',
-    color: '#2563eb',
+    color: '#0f172a',
     icon: <LocalGasStationIcon />,
     hasPeriodFilter: true,
 
@@ -788,7 +785,7 @@ const CARD_CONFIG = {
 
   petrol: {
     label: 'Petrol',
-    color: '#ea580c',
+    color: '#0f172a',
     icon: <LocalGasStationIcon />,
     hasPeriodFilter: true,
 
@@ -850,7 +847,7 @@ const CARD_CONFIG = {
 
   bit: {
     label: 'Bit',
-    color: '#0891b2',
+    color: '#0f172a',
     icon: <ConstructionIcon />,
     hasPeriodFilter: true,
 
@@ -912,7 +909,7 @@ const CARD_CONFIG = {
 
   hammer: {
     label: 'Hammer',
-    color: '#92400e',
+    color: '#0f172a',
     icon: <BuildIcon />,
     hasPeriodFilter: true,
 
@@ -974,7 +971,7 @@ const CARD_CONFIG = {
 
   totalEmployees: {
     label: 'Employee',
-    color: '#059669',
+    color: '#0f172a',
     icon: <PeopleIcon />,
     hasPeriodFilter: false,
 
@@ -1096,7 +1093,7 @@ const StatCard = ({
 
       borderRadius: '12px',
 
-      bgcolor: '#fff',
+      bgcolor: '#0f172a',
 
       transition:
         'transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease',
@@ -1164,7 +1161,7 @@ const StatCard = ({
       >
         <Typography
           sx={{
-            color: '#64748b',
+            color: '#0f172a',
 
             fontSize:
               '0.72rem',
@@ -1223,7 +1220,7 @@ const StatCard = ({
       <ArrowForwardIosIcon
         sx={{
           fontSize: 12,
-          color: '#cbd5e1',
+          color: '#0f172a',
         }}
       />
     </CardContent>
@@ -1249,7 +1246,7 @@ const ChartCard = ({
       borderRadius:
         '14px',
 
-      bgcolor: '#fff',
+      bgcolor: '#0f172a',
     }}
   >
     <CardContent
@@ -1272,7 +1269,7 @@ const ChartCard = ({
             width: 3,
             height: 16,
 
-            bgcolor: TEAL,
+            bgcolor: '#0f172a',
 
             borderRadius: 1,
           }}
@@ -1706,9 +1703,9 @@ const DetailDialog = ({
 
       <DialogTitle
         sx={{
-          bgcolor: NAVY,
+          bgcolor: '#0f172a',
 
-          color: '#fff',
+          color: '#0f172a',
 
           p: 0,
 
@@ -1840,8 +1837,7 @@ const DetailDialog = ({
               size="small"
               onClick={onClose}
               sx={{
-                color:
-                  '#fff',
+                color: '#0f172a',
               }}
             >
               <CloseIcon />
@@ -1920,8 +1916,7 @@ const DetailDialog = ({
                         bgcolor:
                           TEAL,
 
-                        color:
-                          '#fff',
+                        color: '#0f172a',
 
                         '&:hover':
                           {
@@ -2017,8 +2012,7 @@ const DetailDialog = ({
                   borderRadius:
                     '8px',
 
-                  color:
-                    '#fff',
+                  color: '#0f172a',
 
                   '& fieldset':
                     {
@@ -2041,8 +2035,7 @@ const DetailDialog = ({
 
               '& input':
                 {
-                  color:
-                    '#fff',
+                  color: '#0f172a',
                 },
 
               '& input::placeholder':
@@ -2580,11 +2573,8 @@ const Dashboard = () => {
     const loadEmployeesAndSalary =
       async () => {
         try {
-          const [
-            employeeResponse,
-            advanceResponse,
-          ] = await Promise.all([
-            api.get(
+          const employeeResponse =
+            await api.get(
               '/users',
               {
                 params: {
@@ -2594,27 +2584,11 @@ const Dashboard = () => {
                     currentMachine,
                 },
               }
-            ),
-
-            api.get(
-              '/salary-advances',
-              {
-                params: {
-                  machineType:
-                    currentMachine,
-                  limit: 500,
-                },
-              }
-            ),
-          ]);
+            );
 
           const employeeData =
             employeeResponse?.data ??
             employeeResponse;
-
-          const advanceData =
-            advanceResponse?.data ??
-            advanceResponse;
 
           const users =
             Array.isArray(
@@ -2627,54 +2601,42 @@ const Dashboard = () => {
               ? employeeData
               : [];
 
-          const advances =
-            Array.isArray(
-              advanceData?.records
-            )
-              ? advanceData.records
-              : Array.isArray(
-                  advanceData?.advances
-                )
-              ? advanceData.advances
-              : Array.isArray(
-                  advanceData?.data
-                )
-              ? advanceData.data
-              : Array.isArray(
-                  advanceData?.items
-                )
-              ? advanceData.items
-              : Array.isArray(
-                  advanceData
-                )
-              ? advanceData
-              : [];
-
           /*
-           * Load attendance separately for each employee because the
-           * attendance API is employee-specific. This is important:
-           * summing the monthly salary alone cannot account for
-           * different salaries or different absent days.
+           * Attendance and salary advances are loaded separately for
+           * EACH employee. The previous dashboard loaded all advances
+           * for the machine once and then deducted that same advance
+           * total from every employee. That made the salary collapse
+           * to ₹0 when the combined advance amount was larger than an
+           * individual employee's salary.
+           *
+           * Attendance & Salary uses the employee-specific endpoints,
+           * so the dashboard must use the same rule.
            */
-          const salaryRows =
+          const salaryResults =
             await Promise.all(
               users.map(
                 async (employee) => {
-                  try {
-                    const employeeId =
-                      employee?._id ||
-                      employee?.id;
+                  const employeeId =
+                    employee?._id ||
+                    employee?.id;
 
-                    if (!employeeId) {
-                      return calculateCurrentEmployeeSalary(
+                  if (!employeeId) {
+                    return {
+                      salary: calculateCurrentEmployeeSalary(
                         employee,
                         [],
-                        advances
-                      );
-                    }
+                        []
+                      ),
+                      advances: [],
+                    };
+                  }
 
-                    const attendanceResponse =
-                      await api.get(
+                  try {
+                    const [
+                      attendanceResponse,
+                      advanceResponse,
+                    ] = await Promise.all([
+                      api.get(
                         '/attendance',
                         {
                           params: {
@@ -2684,45 +2646,102 @@ const Dashboard = () => {
                             limit: 500,
                           },
                         }
-                      );
+                      ),
+                      api.get(
+                        '/salary-advances',
+                        {
+                          params: {
+                            employeeId,
+                            machineType:
+                              currentMachine,
+                            limit: 500,
+                          },
+                        }
+                      ),
+                    ]);
 
                     const attendanceData =
                       attendanceResponse?.data ??
                       attendanceResponse;
+
+                    const advanceData =
+                      advanceResponse?.data ??
+                      advanceResponse;
 
                     const attendanceRecords =
                       extractAttendanceRows(
                         attendanceData
                       );
 
-                    return calculateCurrentEmployeeSalary(
-                      employee,
-                      attendanceRecords,
-                      advances
-                    );
-                  } catch (attendanceError) {
+                    const employeeAdvances =
+                      Array.isArray(
+                        advanceData?.records
+                      )
+                        ? advanceData.records
+                        : Array.isArray(
+                            advanceData?.advances
+                          )
+                        ? advanceData.advances
+                        : Array.isArray(
+                            advanceData?.data
+                          )
+                        ? advanceData.data
+                        : Array.isArray(
+                            advanceData?.items
+                          )
+                        ? advanceData.items
+                        : Array.isArray(
+                            advanceData
+                          )
+                        ? advanceData
+                        : [];
+
+                    return {
+                      salary:
+                        calculateCurrentEmployeeSalary(
+                          employee,
+                          attendanceRecords,
+                          employeeAdvances
+                        ),
+                      advances:
+                        employeeAdvances,
+                    };
+                  } catch (employeeSalaryError) {
                     console.error(
-                      `Failed to load attendance for ${
+                      `Failed to load salary data for ${
                         employee?.name ||
                         'employee'
                       }:`,
-                      attendanceError
+                      employeeSalaryError
                     );
 
                     /*
-                     * If attendance cannot be loaded, do not invent
-                     * absence days. Calculate the employee's current
-                     * salary using the available employee and
-                     * advance data only.
+                     * If the attendance/advance request fails, do not
+                     * invent deductions. Show the salary based on the
+                     * employee record and the dates we can calculate.
                      */
-                    return calculateCurrentEmployeeSalary(
-                      employee,
-                      [],
-                      advances
-                    );
+                    return {
+                      salary:
+                        calculateCurrentEmployeeSalary(
+                          employee,
+                          [],
+                          []
+                        ),
+                      advances: [],
+                    };
                   }
                 }
               )
+            );
+
+          const salaryRows =
+            salaryResults.map(
+              (result) => result.salary
+            );
+
+          const advances =
+            salaryResults.flatMap(
+              (result) => result.advances || []
             );
 
           if (cancelled) {
@@ -2820,7 +2839,7 @@ const Dashboard = () => {
               sx={{
                 fontSize: 42,
 
-                color: TEAL,
+                color: '#0f172a',
 
                 mb: 1,
               }}
@@ -2873,7 +2892,7 @@ const Dashboard = () => {
       >
         <CircularProgress
           sx={{
-            color: TEAL,
+            color: '#0f172a',
           }}
         />
       </Box>
@@ -3046,6 +3065,10 @@ const Dashboard = () => {
         ),
       0
     );
+
+  // Payment Salary = one-day salary for all employees (monthly salary / 30).
+  const totalDaySalary =
+    totalMonthlySalary / 30;
 
   const totalAbsentDeduction =
     employeeSalaryRows.reduce(
@@ -3236,7 +3259,7 @@ const Dashboard = () => {
           remaining: outerSummary.remaining,
           totalFeet: outerFeet,
           icon: <WaterDropIcon />,
-          color: NAVY,
+          color: '#0f172a',
         },
         {
           key: 'bigInner',
@@ -3245,7 +3268,7 @@ const Dashboard = () => {
           remaining: innerSummary.remaining,
           totalFeet: innerFeet,
           icon: <WaterDropIcon />,
-          color: TEAL,
+          color: '#0f172a',
         },
         {
           key: 'bigJI',
@@ -3254,7 +3277,7 @@ const Dashboard = () => {
           remaining: jiSummary.remaining,
           totalFeet: jiFeet,
           icon: <WaterDropIcon />,
-          color: '#0891b2',
+          color: '#0f172a',
         },
       ]
     : [
@@ -3265,7 +3288,7 @@ const Dashboard = () => {
           remaining: outerSummary.remaining,
           totalFeet: outerFeet,
           icon: <WaterDropIcon />,
-          color: NAVY,
+          color: '#0f172a',
         },
         {
           key: 'smallInner',
@@ -3274,7 +3297,7 @@ const Dashboard = () => {
           remaining: innerSummary.remaining,
           totalFeet: innerFeet,
           icon: <WaterDropIcon />,
-          color: TEAL,
+          color: '#0f172a',
         },
         {
           key: 'smallInnerPipe',
@@ -3283,7 +3306,7 @@ const Dashboard = () => {
           remaining: smallInnerSummary.remaining,
           totalFeet: smallInnerFeet,
           icon: <WaterDropIcon />,
-          color: '#0891b2',
+          color: '#0f172a',
         },
       ];
 
@@ -3410,8 +3433,7 @@ const Dashboard = () => {
           beginAtZero: true,
 
           grid: {
-            color:
-              '#f1f5f9',
+            color: '#0f172a',
           },
 
           ticks: {
@@ -3458,7 +3480,7 @@ const Dashboard = () => {
       icon:
         <WaterDropIcon />,
 
-      color: NAVY,
+      color: '#0f172a',
     },
 
     {
@@ -3474,7 +3496,7 @@ const Dashboard = () => {
       icon:
         <PaidIcon />,
 
-      color: '#2e7d32',
+      color: '#0f172a',
     },
 
     {
@@ -3490,7 +3512,7 @@ const Dashboard = () => {
       icon:
         <PendingActionsIcon />,
 
-      color: '#b91c1c',
+      color: '#0f172a',
     },
 
     {
@@ -3506,7 +3528,7 @@ const Dashboard = () => {
       icon:
         <DiscountIcon />,
 
-      color: '#7c3aed',
+      color: '#0f172a',
     },
   ];
 
@@ -3523,7 +3545,7 @@ const Dashboard = () => {
       icon:
         <LocalGasStationIcon />,
 
-      color: '#2563eb',
+      color: '#0f172a',
     },
 
     {
@@ -3538,7 +3560,7 @@ const Dashboard = () => {
       icon:
         <LocalGasStationIcon />,
 
-      color: '#ea580c',
+      color: '#0f172a',
     },
 
     {
@@ -3553,7 +3575,7 @@ const Dashboard = () => {
       icon:
         <ConstructionIcon />,
 
-      color: '#0891b2',
+      color: '#0f172a',
     },
 
     {
@@ -3568,7 +3590,7 @@ const Dashboard = () => {
       icon:
         <BuildIcon />,
 
-      color: '#92400e',
+      color: '#0f172a',
     },
   ];
 
@@ -3607,7 +3629,7 @@ const Dashboard = () => {
             sx={{
               fontSize: '1.25rem',
               fontWeight: 800,
-              color: NAVY,
+              color: '#0f172a',
             }}
           >
             Dashboard
@@ -3717,7 +3739,150 @@ const Dashboard = () => {
         </Grid>
 
         {/* =================================================
-            MACHINE PIPE SUMMARY
+            PAYMENT SUMMARY
+        ================================================= */}
+
+        <Grid
+          container
+          spacing={1.25}
+          sx={{
+            mb: 1.5,
+          }}
+        >
+          <Grid
+            item
+            xs={12}
+            sm={6}
+            md={3}
+          >
+            <Card
+              elevation={0}
+              sx={{
+                height: '100%',
+                border: '1px solid #dbe3ec',
+                borderRadius: '12px',
+                bgcolor: '#fff',
+              }}
+            >
+              <CardContent
+                sx={{
+                  p: '14px !important',
+                  minHeight: 74,
+                }}
+              >
+                <Typography
+                  sx={{
+                    color: '#0f172a',
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    mb: 0.8,
+                  }}
+                >
+                  Payment Summary
+                </Typography>
+
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns:
+                      'repeat(3, minmax(0, 1fr))',
+                    gap: 0.75,
+                  }}
+                >
+                  {/* PAYMENT SALARY / DAY SALARY */}
+                  <Box>
+                    <Typography
+                      sx={{
+                        color: '#64748b',
+                        fontSize: '0.6rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Payment Salary
+                    </Typography>
+
+                    <Typography
+                      sx={{
+                        fontWeight: 800,
+                        fontSize: '0.74rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {fmt(totalDaySalary)}
+                    </Typography>
+                  </Box>
+
+                  {/* CURRENT SALARY */}
+                  <Box>
+                    <Typography
+                      sx={{
+                        color: '#0f172a',
+                        fontSize: '0.6rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Current Salary
+                    </Typography>
+
+                    <Typography
+                      sx={{
+                        color:
+                          totalSalary < 0
+                            ? '#b91c1c'
+                            : '#0f172a',
+                        fontWeight: 800,
+                        fontSize: '0.74rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {fmt(totalSalary)}
+                    </Typography>
+                  </Box>
+
+                  {/* SALARY ADVANCE */}
+                  <Box>
+                    <Typography
+                      sx={{
+                        color: '#0f172a',
+                        fontSize: '0.6rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Advance
+                    </Typography>
+
+                    <Typography
+                      sx={{
+                        color: '#b45309',
+                        fontWeight: 800,
+                        fontSize: '0.74rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {fmt(
+                        totalCurrentSalaryAdvance
+                      )}
+                    </Typography>
+                  </Box>
+                </Box>
+
+                <Typography
+                  sx={{
+                    mt: 0.8,
+                    color: '#64748b',
+                    fontSize: '0.62rem',
+                  }}
+                >
+                  Monthly: {fmt(totalMonthlySalary)} · Absent deduction: {fmt(totalAbsentDeduction)}
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+
+        {/* =================================================
+            MACHINE PIPE STOCK / USAGE
+            STOCK IS THE LAST SUMMARY SECTION
         ================================================= */}
 
         <Grid
@@ -3760,7 +3925,7 @@ const Dashboard = () => {
                         color: '#0f172a',
                       }}
                     >
-                      Remaining = {card.remaining}
+                      Total ft = {card.totalFeet}
                     </Typography>
 
                     <Typography
@@ -3768,11 +3933,11 @@ const Dashboard = () => {
                       sx={{
                         fontSize: '0.72rem',
                         lineHeight: 1.35,
-                        fontWeight: 700,
-                        color: '#0f172a',
+                        fontWeight: 800,
+                        color: '#dc2626',
                       }}
                     >
-                      Total ft = {card.totalFeet}
+                      Stock = {card.remaining}
                     </Typography>
                   </Box>
                 }
@@ -3782,136 +3947,6 @@ const Dashboard = () => {
               />
             </Grid>
           ))}
-
-          <Grid
-            item
-            xs={12}
-            sm={6}
-            md={3}
-          >
-            <Card
-              elevation={0}
-              sx={{
-                height: '100%',
-                border: '1px solid #dbe3ec',
-                borderRadius: '12px',
-                bgcolor: '#fff',
-              }}
-            >
-              <CardContent
-                sx={{
-                  p: '14px !important',
-                  minHeight: 74,
-                }}
-              >
-                <Typography
-                  sx={{
-                    color: '#64748b',
-                    fontSize: '0.72rem',
-                    fontWeight: 700,
-                    mb: 0.8,
-                  }}
-                >
-                  Payment Summary
-                </Typography>
-
-                <Box
-                  sx={{
-                    display: 'grid',
-                    gridTemplateColumns:
-                      'repeat(3, minmax(0, 1fr))',
-                    gap: 0.75,
-                  }}
-                >
-                  {/* TOTAL SALARY */}
-                  <Box>
-                    <Typography
-                      sx={{
-                        color: '#64748b',
-                        fontSize: '0.6rem',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      Current Salary
-                    </Typography>
-
-                    <Typography
-                      sx={{
-                        fontWeight: 800,
-                        fontSize: '0.74rem',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {fmt(totalSalary)}
-                    </Typography>
-                  </Box>
-
-                  {/* SALARY ADVANCE */}
-                  <Box>
-                    <Typography
-                      sx={{
-                        color: '#64748b',
-                        fontSize: '0.6rem',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      Advance
-                    </Typography>
-
-                    <Typography
-                      sx={{
-                        color: '#b45309',
-                        fontWeight: 800,
-                        fontSize: '0.74rem',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {fmt(
-                        totalCurrentSalaryAdvance
-                      )}
-                    </Typography>
-                  </Box>
-
-                  {/* BOREWELL PAYMENT PENDING */}
-                  <Box>
-                    <Typography
-                      sx={{
-                        color: '#64748b',
-                        fontSize: '0.6rem',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      Pending
-                    </Typography>
-
-                    <Typography
-                      sx={{
-                        color: '#b91c1c',
-                        fontWeight: 800,
-                        fontSize: '0.74rem',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {fmt(
-                        salaryPendingAmount
-                      )}
-                    </Typography>
-                  </Box>
-                </Box>
-
-                <Typography
-                  sx={{
-                    mt: 0.8,
-                    color: '#64748b',
-                    fontSize: '0.62rem',
-                  }}
-                >
-                  Monthly: {fmt(totalMonthlySalary)} · Absent deduction: {fmt(totalAbsentDeduction)}
-                </Typography>
-
-              </CardContent>
-            </Card>
-          </Grid>
         </Grid>
 
         {/* =================================================
@@ -3931,8 +3966,7 @@ const Dashboard = () => {
             fontSize:
               '0.68rem',
 
-            color:
-              '#64748b',
+            color: '#0f172a',
 
             letterSpacing:
               '0.1em',
@@ -3965,7 +3999,7 @@ const Dashboard = () => {
               <ChartLegend
                 items={[
                   {
-                    color: NAVY,
+                    color: '#0f172a',
                     label:
                       'Expense (₹)',
                   },
@@ -4011,7 +4045,7 @@ const Dashboard = () => {
               <ChartLegend
                 items={[
                   {
-                    color: TEAL,
+                    color: '#0f172a',
                     label:
                       'Work count',
                   },
@@ -4054,22 +4088,19 @@ const Dashboard = () => {
               <ChartLegend
                 items={[
                   {
-                    color:
-                      '#4caf50',
+                    color: '#0f172a',
                     label:
                       'Paid',
                   },
 
                   {
-                    color:
-                      '#ef4444',
+                    color: '#0f172a',
                     label:
                       'Unpaid',
                   },
 
                   {
-                    color:
-                      '#f59e0b',
+                    color: '#0f172a',
                     label:
                       'Partial',
                   },
