@@ -3090,44 +3090,16 @@ const Dashboard = () => {
       ? Math.ceil(feet / 20)
       : 0;
 
-  /*
-   * Pipe feet now come from Materials.
-   *
-   * Small Machine:
-   *   Pipe Outer -> Outer feet
-   *   Pipe Inner -> Inner feet
-   *   Pipe Small -> Small Inner feet
-   *
-   * Big Machine:
-   *   Pipe Outer -> Outer feet
-   *   Pipe J1 -> Inner feet
-   */
-  const getMaterialFeet = (...types) =>
-    materialRows
-      .filter((material) =>
-        types.some((type) =>
-          isMaterialType(material, type)
-        )
-      )
-      .reduce(
-        (sum, material) =>
-          sum +
-          safeNum(
-            material?.quantity
-          ),
-        0
-      );
-
-  const outerFeet =
-    getMaterialFeet('pipe outer');
+  const outerFeet = isBig
+    ? sumPointField('plasticOuterFeet')
+    : sumPointField('outerPipeFeet');
 
   const innerFeet = isBig
-    ? getMaterialFeet('pipe j1')
-    : getMaterialFeet('pipe inner');
+    ? sumPointField('plasticInnerFeet')
+    : sumPointField('innerPipeFeet');
 
-  const smallInnerFeet = isBig
-    ? 0
-    : getMaterialFeet('pipe small');
+  const smallInnerFeet =
+    sumPointField('smallPipeFeet');
 
   const outerQuantity =
     getPipeQuantity(outerFeet);
