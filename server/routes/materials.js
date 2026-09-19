@@ -445,14 +445,23 @@ router.post(
       // TYPE VALIDATION
       // --------------------------------------------------------
 
-      const allowedTypes = [
-        'Diesel',
-        'Petrol',
-        'Pipe',
-        'Bit',
-        'Hammer',
-        'Others',
-      ];
+     const allowedTypes = [
+  'Diesel',
+  'Petrol',
+
+  // Big Machine
+  'Pipe Outer',
+  'Pipe J1',
+
+  // Small Machine
+  'Pipe Inner',
+  'Pipe Small',
+
+  'Pipe',
+  'Bit',
+  'Hammer',
+  'Others',
+];
 
       if (
         !allowedTypes.includes(
@@ -599,14 +608,23 @@ router.put(
       // TYPE VALIDATION
       // --------------------------------------------------------
 
-      const allowedTypes = [
-        'Diesel',
-        'Petrol',
-        'Pipe',
-        'Bit',
-        'Hammer',
-        'Others',
-      ];
+     const allowedTypes = [
+  'Diesel',
+  'Petrol',
+
+  // Big Machine
+  'Pipe Outer',
+  'Pipe J1',
+
+  // Small Machine
+  'Pipe Inner',
+  'Pipe Small',
+
+  'Pipe',
+  'Bit',
+  'Hammer',
+  'Others',
+];
 
       if (
         req.body.type &&
