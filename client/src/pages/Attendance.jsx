@@ -543,10 +543,6 @@ export default function Attendance() {
   });
   const [reportEndDate, setReportEndDate] = useState(() => toDateKey(new Date()));
 
-  // Employee salary data used to build the whole-employee report.
-  const [allEmployeeSalaryRows, setAllEmployeeSalaryRows] = useState([]);
-  const [allEmployeeSalaryLoading, setAllEmployeeSalaryLoading] = useState(false);
-
   const [
     error,
     setError,
@@ -775,103 +771,6 @@ export default function Attendance() {
     selectedEmployee,
     currentMachine,
   ]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadAllEmployeeSalary = async () => {
-      if (!employees.length) {
-        setAllEmployeeSalaryRows([]);
-        setAllEmployeeSalaryLoading(false);
-        return;
-      }
-
-      setAllEmployeeSalaryLoading(true);
-
-      const rows = await Promise.all(
-        employees.map(async (item) => {
-          const employeeId = item?._id;
-
-          try {
-            const [attendanceData, advanceData] =
-              await Promise.all([
-                apiRequest(
-                  `/attendance?employeeId=${employeeId}&machineType=${currentMachine}&limit=500`
-                ),
-                apiRequest(
-                  `/salary-advances?employeeId=${employeeId}&machineType=${currentMachine}&limit=500`
-                ),
-              ]);
-
-            const attendance = extractList(
-              attendanceData,
-              [
-                'records',
-                'attendance',
-                'data',
-                'items',
-              ]
-            ).map(normalizeAttendanceRecord);
-
-            const employeeAdvances =
-              extractList(
-                advanceData,
-                [
-                  'records',
-                  'advances',
-                  'data',
-                  'items',
-                ]
-              );
-
-            return {
-              employee: item,
-              salary: calculateEmployeeRangeSalary(
-                item,
-                attendance,
-                employeeAdvances,
-                reportStartDate,
-                reportEndDate
-              ),
-              attendance,
-              advances: employeeAdvances,
-              failed: false,
-            };
-          } catch (err) {
-            console.warn(
-              `Unable to load salary data for ${item?.name || 'employee'}:`,
-              err?.message || err
-            );
-
-            return {
-              employee: item,
-              salary: calculateEmployeeRangeSalary(
-                item,
-                [],
-                [],
-                reportStartDate,
-                reportEndDate
-              ),
-              attendance: [],
-              advances: [],
-              failed: true,
-            };
-          }
-        })
-      );
-
-      if (!cancelled) {
-        setAllEmployeeSalaryRows(rows);
-        setAllEmployeeSalaryLoading(false);
-      }
-    };
-
-    loadAllEmployeeSalary();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [employees, currentMachine, reportStartDate, reportEndDate]);
 
   useEffect(() => {
     setOptimisticAbsent({});
@@ -1625,55 +1524,6 @@ export default function Attendance() {
     }
   };
 
-
-  /*
-   |--------------------------------------------------------------------------
-   | Whole employee report
-   |--------------------------------------------------------------------------
-   */
-
-  const reportRows = useMemo(() => {
-    return allEmployeeSalaryRows.map((row) => ({
-      ...row,
-      reportSalary: calculateEmployeeRangeSalary(
-        row.employee,
-        row.attendance || [],
-        row.advances || [],
-        reportStartDate,
-        reportEndDate
-      ),
-    }));
-  }, [allEmployeeSalaryRows, reportStartDate, reportEndDate]);
-
-  const reportTotals = useMemo(() => reportRows.reduce((totals, row) => {
-    const salary = row.reportSalary || {};
-    totals.totalDays += Number(salary.totalDays) || 0;
-    totals.presentDays += Number(salary.presentDays) || 0;
-    totals.absentDays += Number(salary.absentDays) || 0;
-    totals.grossSalary += Number(salary.grossSalary) || 0;
-    totals.monthlySalary += Number(row?.employee?.salary) || 0;
-    totals.absentDeduction += Number(salary.absentDeduction) || 0;
-    totals.totalAdvance += Number(salary.totalAdvance) || 0;
-    totals.finalSalary += Number(salary.finalSalary) || 0;
-    return totals;
-  }, {
-    totalDays: 0, presentDays: 0, absentDays: 0, grossSalary: 0,
-    monthlySalary: 0, absentDeduction: 0, totalAdvance: 0, finalSalary: 0,
-  }), [reportRows]);
-
-  const getReportPeriodLabel = () => {
-    const start = formatDate(parseDateKey(reportStartDate));
-    const end = formatDate(parseDateKey(reportEndDate));
-    return reportStartDate === reportEndDate ? start : `${start} to ${end}`;
-  };
-
-  const printWholeEmployeeReport = () => {
-    if (!reportPeriodValid || !reportRows.length) {
-      setError('Please select a valid period and wait for employee data to load.');
-      return;
-    }
-    window.setTimeout(() => window.print(), 50);
-  };
 
 /*
    |--------------------------------------------------------------------------
