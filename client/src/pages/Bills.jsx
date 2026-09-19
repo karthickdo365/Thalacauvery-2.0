@@ -1945,28 +1945,6 @@ const BorewellBills = () => {
                   />
                 </Grid>
 
-                <Grid
-                  item
-                  xs={12}
-                  sm={6}
-                  md={3}
-                >
-                  <TextField
-                    fullWidth
-                    size="small"
-                    type="number"
-                    label="Other Amount (₹)"
-                    placeholder="0"
-                    InputLabelProps={{
-                      shrink: true,
-                    }}
-                    {...register('otherAmount')}
-                    inputProps={{ min: 0 }}
-                    onWheel={(e) => e.target.blur()}
-                    helperText="Amount added to bill"
-                  />
-                </Grid>
-
                 {/* ==================================================
                     AMOUNT PAID
                 ================================================== */}
@@ -2010,6 +1988,32 @@ const BorewellBills = () => {
 
                 </Grid>
 
+
+                {/* ==================================================
+                    OTHER AMOUNT
+                ================================================== */}
+
+                <Grid
+                  item
+                  xs={12}
+                  sm={6}
+                  md={3}
+                >
+                  <TextField
+                    fullWidth
+                    size="small"
+                    type="number"
+                    label="Other Amount (₹)"
+                    placeholder="0"
+                    InputLabelProps={{
+                      shrink: true,
+                    }}
+                    {...register('otherAmount')}
+                    inputProps={{ min: 0 }}
+                    onWheel={(e) => e.target.blur()}
+                    helperText="Amount added to bill"
+                  />
+                </Grid>
 
                 {/* ==================================================
                     TOTAL
