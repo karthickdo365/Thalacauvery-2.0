@@ -3636,7 +3636,7 @@ const Dashboard = () => {
             label={isBig ? 'BIG MACHINE' : 'SMALL MACHINE'}
             sx={{
               bgcolor: `${TEAL}18`,
-              color: '#0f172a'_D,
+              color: TEAL_D,
               fontWeight: 800,
               fontSize: '0.68rem',
             }}
