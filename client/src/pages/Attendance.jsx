@@ -1643,6 +1643,73 @@ export default function Attendance() {
     return number;
   };
 
+  const shareEmployeeFromList = async (targetEmployee) => {
+    if (!targetEmployee?._id) return;
+
+    try {
+      setError('');
+
+      const [attendanceData, advanceData] = await Promise.all([
+        apiRequest(
+          `/attendance?employeeId=${targetEmployee._id}&machineType=${currentMachine}&limit=500`
+        ),
+        apiRequest(
+          `/salary-advances?employeeId=${targetEmployee._id}&machineType=${currentMachine}&limit=500`
+        ),
+      ]);
+
+      const targetAttendance = extractList(attendanceData, [
+        'records',
+        'attendance',
+        'data',
+        'items',
+      ]).map(normalizeAttendanceRecord);
+
+      const targetAdvances = extractList(advanceData, [
+        'records',
+        'advances',
+        'data',
+        'items',
+      ]);
+
+      const salary = calculateEmployeeRangeSalary(
+        targetEmployee,
+        targetAttendance,
+        targetAdvances,
+        reportStartDate,
+        reportEndDate
+      );
+
+      const whatsappNumber = await resolveEmployeeWhatsAppNumber(targetEmployee);
+      const startDate = parseDateKey(salary.startDate || reportStartDate);
+      const endDate = parseDateKey(salary.endDate || reportEndDate);
+      const periodLabel =
+        reportStartDate === reportEndDate
+          ? formatDate(startDate)
+          : `${formatDate(startDate)} to ${formatDate(endDate)}`;
+
+      const message = [
+        '*Salary Bill*',
+        '',
+        `Name : ${targetEmployee.name || '-'}`,
+        `Joining Date: ${targetEmployee.date ? formatDate(new Date(targetEmployee.date)) : '-'}`,
+        `Date : ${periodLabel}`,
+        `Total Days: ${salary.totalDays || 0}`,
+        `Present Days: ${salary.presentDays || 0}`,
+        `Absent Days: ${salary.absentDays || 0}`,
+        `Monthly Salary: ${formatMoney(Number(targetEmployee.salary) || 0)}`,
+        `Advance: ${formatMoney(salary.totalAdvance || 0)}`,
+        `Remaining: ${formatMoney(salary.finalSalary || 0)}`,
+      ].join('\n');
+
+      shareOnWhatsApp(message, whatsappNumber);
+      setSuccess(`Salary bill opened in WhatsApp for ${targetEmployee.name || 'employee'}.`);
+    } catch (err) {
+      console.error('Employee list WhatsApp share error:', err);
+      setError(err?.message || 'Unable to share this employee salary bill on WhatsApp.');
+    }
+  };
+
   const shareSalaryBillOnWhatsApp = async () => {
     if (!employee) {
       setError('Please select an employee first.');
@@ -1889,6 +1956,149 @@ export default function Attendance() {
           border: 1px solid #e1e8f0;
           border-radius: 16px;
           box-shadow: 0 1px 2px rgba(16, 35, 56, .04);
+        }
+
+        /* ---------------- Employee list ---------------- */
+
+        .employee-list-card {
+          margin-bottom: 20px;
+          overflow: hidden;
+        }
+
+        .employee-list-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+          padding: 20px 24px;
+          border-bottom: 1px solid #e8eef3;
+        }
+
+        .employee-list-subtitle {
+          margin-top: 4px;
+          color: #718397;
+          font-size: 13px;
+        }
+
+        .employee-count {
+          flex: 0 0 auto;
+          padding: 7px 11px;
+          border-radius: 999px;
+          background: #eef8f5;
+          color: #087d73;
+          font-size: 12px;
+          font-weight: 800;
+        }
+
+        .employee-list {
+          display: flex;
+          flex-direction: column;
+        }
+
+        .employee-list-row {
+          display: grid;
+          grid-template-columns: minmax(220px, 1.5fr) minmax(150px, 1fr) minmax(150px, 1fr) auto;
+          align-items: center;
+          gap: 18px;
+          padding: 16px 24px;
+          border-bottom: 1px solid #eef2f6;
+          cursor: pointer;
+          transition: background .15s, box-shadow .15s;
+        }
+
+        .employee-list-row:last-child {
+          border-bottom: 0;
+        }
+
+        .employee-list-row:hover {
+          background: #f8fcfb;
+        }
+
+        .employee-list-row.selected {
+          background: #eefbf7;
+          box-shadow: inset 4px 0 0 #14b8a6;
+        }
+
+        .employee-list-person {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          min-width: 0;
+        }
+
+        .employee-avatar {
+          width: 42px;
+          height: 42px;
+          flex: 0 0 42px;
+          display: grid;
+          place-items: center;
+          border-radius: 12px;
+          background: #e8f7f4;
+          color: #087d73;
+          font-size: 16px;
+          font-weight: 850;
+        }
+
+        .employee-list-name {
+          color: #162f48;
+          font-size: 15px;
+          font-weight: 850;
+        }
+
+        .employee-list-type {
+          margin-top: 3px;
+          color: #8a9aaa;
+          font-size: 11px;
+        }
+
+        .employee-list-detail span {
+          display: block;
+          color: #8494a4;
+          font-size: 10px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: .04em;
+        }
+
+        .employee-list-detail strong {
+          display: block;
+          margin-top: 4px;
+          color: #304a61;
+          font-size: 13px;
+          font-weight: 750;
+        }
+
+        .employee-list-detail.salary strong {
+          color: #087d73;
+        }
+
+        .employee-row-whatsapp {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+          min-width: 112px;
+          height: 38px;
+          padding: 0 13px;
+          border: 1px solid #bdeecb;
+          border-radius: 9px;
+          background: #eafcf1;
+          color: #0f8a4d;
+          font-size: 12px;
+          font-weight: 800;
+          cursor: pointer;
+        }
+
+        .employee-row-whatsapp:hover {
+          background: #d7f7e4;
+          border-color: #8fdfaa;
+        }
+
+        .employee-list-empty {
+          padding: 30px 24px;
+          text-align: center;
+          color: #718397;
+          font-size: 13px;
         }
 
         /* ---------------- Employee picker ---------------- */
@@ -2931,7 +3141,37 @@ export default function Attendance() {
           }
         }
 
+        @media (max-width: 900px) {
+          .employee-list-row {
+            grid-template-columns: minmax(200px, 1fr) minmax(140px, 1fr) auto;
+          }
+
+          .employee-list-detail.salary {
+            display: none;
+          }
+        }
+
         @media (max-width: 700px) {
+          .employee-list-header {
+            align-items: flex-start;
+            padding: 16px;
+          }
+
+          .employee-list-row {
+            grid-template-columns: 1fr auto;
+            gap: 12px;
+            padding: 14px 16px;
+          }
+
+          .employee-list-detail {
+            display: none;
+          }
+
+          .employee-row-whatsapp {
+            grid-column: 2;
+            grid-row: 1;
+          }
+
           .report-controls { grid-template-columns:1fr; }
           .individual-summary-grid { grid-template-columns:1fr 1fr; }
           .individual-bill-heading { flex-direction:column; }
@@ -4008,150 +4248,91 @@ export default function Attendance() {
         {/* ==========================================================
             EMPLOYEE SALARY BILL
             ========================================================== */}
-        <div className="card report-card">
-          <div className="report-header">
+        {/* Employee list */}
+        <div className="card employee-list-card">
+          <div className="employee-list-header">
             <div>
-              <h2 className="section-title">Salary Bill</h2>
-              <div className="section-subtitle">
-                Salary bill for the selected employee and period.
+              <h2 className="section-title">Employees</h2>
+              <div className="employee-list-subtitle">
+                Click an employee to view salary summary and attendance.
               </div>
             </div>
+            <span className="employee-count">
+              {employees.length} Employees
+            </span>
           </div>
 
-          <div className="report-controls individual-report-controls">
-            <div className="report-field">
-              <label className="text-label">Employee</label>
-              <div className="selected-report-person">
-                {employee?.name || 'Select an employee above'}
-              </div>
+          {employees.length === 0 ? (
+            <div className="employee-list-empty">
+              No employees available.
             </div>
+          ) : (
+            <div className="employee-list">
+              {employees.map((item) => {
+                const isSelected =
+                  String(item?._id) === String(selectedEmployee);
 
-            <div className="report-field">
-              <label className="text-label">From Date</label>
-              <input
-                type="date"
-                className="text-input"
-                value={reportStartDate}
-                max={reportEndDate || toDateKey(new Date())}
-                onChange={(event) => setReportStartDate(event.target.value)}
-              />
-            </div>
-
-            <div className="report-field">
-              <label className="text-label">To Date</label>
-              <input
-                type="date"
-                className="text-input"
-                value={reportEndDate}
-                min={reportStartDate || undefined}
-                max={getEmployeeEndDateKey(employee) || toDateKey(new Date())}
-                onChange={(event) => setReportEndDate(event.target.value)}
-              />
-            </div>
-
-          </div>
-
-          <div className="report-quick-buttons">
-            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('month')}>
-              This Month
-            </button>
-            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('2months')}>
-              Last 2 Months
-            </button>
-            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('6months')}>
-              Last 6 Months
-            </button>
-            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('year')}>
-              Last 12 Months
-            </button>
-          </div>
-
-          {employee && individualSalary && reportPeriodValid && (
-            <div className="individual-bill-preview">
-              <div className="individual-bill-heading">
-                <div>
-                  <h3>Salary Bill</h3>
-                  <div>
-                    Period: {formatDate(parseDateKey(individualSalary.startDate || reportStartDate))} to{' '}
-                    {formatDate(parseDateKey(individualSalary.endDate || reportEndDate))}
-                  </div>
-                  <div>
-                    Joining Date: {employee?.date
-                      ? formatDate(new Date(employee.date))
-                      : '-'}
-                  </div>
-                  {getEmployeeEndDateKey(employee) && (
-                    <div>
-                      End Date: {formatDate(parseDateKey(getEmployeeEndDateKey(employee)))}
+                return (
+                  <div
+                    key={item?._id}
+                    className={`employee-list-row ${isSelected ? 'selected' : ''}`}
+                    onClick={() => setSelectedEmployee(item?._id || '')}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        setSelectedEmployee(item?._id || '');
+                      }
+                    }}
+                  >
+                    <div className="employee-list-person">
+                      <div className="employee-avatar">
+                        {(item?.name || '?').trim().charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <div className="employee-list-name">
+                          {item?.name || 'Unnamed Employee'}
+                        </div>
+                        <div className="employee-list-type">
+                          {item?.type || item?.userType || 'Employee'}
+                        </div>
+                      </div>
                     </div>
-                  )}
-                </div>
 
-                <div className="individual-bill-machine">
-                  {currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}
-                </div>
-              </div>
+                    <div className="employee-list-detail">
+                      <span>Joining Date</span>
+                      <strong>
+                        {item?.date
+                          ? formatDate(new Date(item.date))
+                          : '-'}
+                      </strong>
+                    </div>
 
-              <div className="individual-summary-grid">
-                <div className="individual-summary-box">
-                  <span>Total Days</span>
-                  <strong>{individualSalary.totalDays}</strong>
-                </div>
-                <div className="individual-summary-box">
-                  <span>Present</span>
-                  <strong>{individualSalary.presentDays}</strong>
-                </div>
-                <div className="individual-summary-box absent">
-                  <span>Absent</span>
-                  <strong>{individualSalary.absentDays}</strong>
-                </div>
-                <div className="individual-summary-box final">
-                  <span>Final Salary</span>
-                  <strong>{formatMoney(individualSalary.finalSalary)}</strong>
-                </div>
-              </div>
+                    <div className="employee-list-detail salary">
+                      <span>Monthly Salary</span>
+                      <strong>{formatMoney(item?.salary)}</strong>
+                    </div>
 
-              <div className="individual-salary-lines">
-                <div>
-                  <span>Monthly Salary</span>
-                  <strong>{formatMoney(Number(employee?.salary) || 0)}</strong>
-                </div>
-                <div>
-                  <span>Salary Advance</span>
-                  <strong className="negative-value">
-                    {formatMoney(individualSalary.totalAdvance)}
-                  </strong>
-                </div>
-              </div>
-
-              <div className="salary-whatsapp-action">
-                <button
-                  type="button"
-                  className="button whatsapp-button salary-whatsapp-button"
-                  onClick={shareSalaryBillOnWhatsApp}
-                >
-                  <WhatsAppIcon sx={{ fontSize: 20 }} />
-                  Share Salary Bill on WhatsApp
-                </button>
-
-                <div className="whatsapp-note">
-                  The mobile number is taken automatically from Personal Information.
-                </div>
-              </div>
-
-            </div>
-          )}
-
-          {!employee && (
-            <div className="individual-bill-empty">
-              Select one employee to prepare the salary bill.
+                    <button
+                      type="button"
+                      className="employee-row-whatsapp"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        shareEmployeeFromList(item);
+                      }}
+                      title={`Share ${item?.name || 'employee'} salary bill on WhatsApp`}
+                      aria-label={`Share ${item?.name || 'employee'} salary bill on WhatsApp`}
+                    >
+                      <WhatsAppIcon sx={{ fontSize: 19 }} />
+                      <span>WhatsApp</span>
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
-
-
-
-
 
         {!employee ? (
           <div className="card empty-state">
