@@ -502,7 +502,7 @@ const PERIOD_OPTIONS = [
 const CARD_CONFIG = {
   totalBorewellPoints: {
     label: 'Points',
-    color: NAVY,
+    color: '#0f172a',
     icon: <WaterDropIcon />,
     hasPeriodFilter: true,
 
@@ -552,7 +552,7 @@ const CARD_CONFIG = {
 
   paidAmount: {
     label: 'Paid Amount',
-    color: '#2e7d32',
+    color: '#0f172a',
     icon: <PaidIcon />,
     hasPeriodFilter: true,
 
@@ -613,7 +613,7 @@ const CARD_CONFIG = {
 
   pendingAmount: {
     label: 'Pending Amount',
-    color: '#b91c1c',
+    color: '#0f172a',
     icon: <PendingActionsIcon />,
     hasPeriodFilter: true,
 
@@ -674,7 +674,7 @@ const CARD_CONFIG = {
 
   discount: {
     label: 'Discount',
-    color: '#7c3aed',
+    color: '#0f172a',
     icon: <DiscountIcon />,
     hasPeriodFilter: true,
 
@@ -726,7 +726,7 @@ const CARD_CONFIG = {
 
   diesel: {
     label: 'Diesel',
-    color: '#2563eb',
+    color: '#0f172a',
     icon: <LocalGasStationIcon />,
     hasPeriodFilter: true,
 
@@ -788,7 +788,7 @@ const CARD_CONFIG = {
 
   petrol: {
     label: 'Petrol',
-    color: '#ea580c',
+    color: '#0f172a',
     icon: <LocalGasStationIcon />,
     hasPeriodFilter: true,
 
@@ -850,7 +850,7 @@ const CARD_CONFIG = {
 
   bit: {
     label: 'Bit',
-    color: '#0891b2',
+    color: '#0f172a',
     icon: <ConstructionIcon />,
     hasPeriodFilter: true,
 
@@ -912,7 +912,7 @@ const CARD_CONFIG = {
 
   hammer: {
     label: 'Hammer',
-    color: '#92400e',
+    color: '#0f172a',
     icon: <BuildIcon />,
     hasPeriodFilter: true,
 
@@ -974,7 +974,7 @@ const CARD_CONFIG = {
 
   totalEmployees: {
     label: 'Employee',
-    color: '#059669',
+    color: '#0f172a',
     icon: <PeopleIcon />,
     hasPeriodFilter: false,
 
@@ -1096,7 +1096,7 @@ const StatCard = ({
 
       borderRadius: '12px',
 
-      bgcolor: '#fff',
+      bgcolor: '#0f172a',
 
       transition:
         'transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease',
@@ -1164,7 +1164,7 @@ const StatCard = ({
       >
         <Typography
           sx={{
-            color: '#64748b',
+            color: '#0f172a',
 
             fontSize:
               '0.72rem',
@@ -1223,7 +1223,7 @@ const StatCard = ({
       <ArrowForwardIosIcon
         sx={{
           fontSize: 12,
-          color: '#cbd5e1',
+          color: '#0f172a',
         }}
       />
     </CardContent>
@@ -1249,7 +1249,7 @@ const ChartCard = ({
       borderRadius:
         '14px',
 
-      bgcolor: '#fff',
+      bgcolor: '#0f172a',
     }}
   >
     <CardContent
@@ -1272,7 +1272,7 @@ const ChartCard = ({
             width: 3,
             height: 16,
 
-            bgcolor: TEAL,
+            bgcolor: '#0f172a',
 
             borderRadius: 1,
           }}
@@ -1706,9 +1706,9 @@ const DetailDialog = ({
 
       <DialogTitle
         sx={{
-          bgcolor: NAVY,
+          bgcolor: '#0f172a',
 
-          color: '#fff',
+          color: '#0f172a',
 
           p: 0,
 
@@ -1840,8 +1840,7 @@ const DetailDialog = ({
               size="small"
               onClick={onClose}
               sx={{
-                color:
-                  '#fff',
+                color: '#0f172a',
               }}
             >
               <CloseIcon />
@@ -1920,8 +1919,7 @@ const DetailDialog = ({
                         bgcolor:
                           TEAL,
 
-                        color:
-                          '#fff',
+                        color: '#0f172a',
 
                         '&:hover':
                           {
@@ -2017,8 +2015,7 @@ const DetailDialog = ({
                   borderRadius:
                     '8px',
 
-                  color:
-                    '#fff',
+                  color: '#0f172a',
 
                   '& fieldset':
                     {
@@ -2041,8 +2038,7 @@ const DetailDialog = ({
 
               '& input':
                 {
-                  color:
-                    '#fff',
+                  color: '#0f172a',
                 },
 
               '& input::placeholder':
@@ -2820,7 +2816,7 @@ const Dashboard = () => {
               sx={{
                 fontSize: 42,
 
-                color: TEAL,
+                color: '#0f172a',
 
                 mb: 1,
               }}
@@ -2873,7 +2869,7 @@ const Dashboard = () => {
       >
         <CircularProgress
           sx={{
-            color: TEAL,
+            color: '#0f172a',
           }}
         />
       </Box>
@@ -3236,7 +3232,7 @@ const Dashboard = () => {
           remaining: outerSummary.remaining,
           totalFeet: outerFeet,
           icon: <WaterDropIcon />,
-          color: NAVY,
+          color: '#0f172a',
         },
         {
           key: 'bigInner',
@@ -3245,7 +3241,7 @@ const Dashboard = () => {
           remaining: innerSummary.remaining,
           totalFeet: innerFeet,
           icon: <WaterDropIcon />,
-          color: TEAL,
+          color: '#0f172a',
         },
         {
           key: 'bigJI',
@@ -3254,7 +3250,7 @@ const Dashboard = () => {
           remaining: jiSummary.remaining,
           totalFeet: jiFeet,
           icon: <WaterDropIcon />,
-          color: '#0891b2',
+          color: '#0f172a',
         },
       ]
     : [
@@ -3265,7 +3261,7 @@ const Dashboard = () => {
           remaining: outerSummary.remaining,
           totalFeet: outerFeet,
           icon: <WaterDropIcon />,
-          color: NAVY,
+          color: '#0f172a',
         },
         {
           key: 'smallInner',
@@ -3274,7 +3270,7 @@ const Dashboard = () => {
           remaining: innerSummary.remaining,
           totalFeet: innerFeet,
           icon: <WaterDropIcon />,
-          color: TEAL,
+          color: '#0f172a',
         },
         {
           key: 'smallInnerPipe',
@@ -3283,7 +3279,7 @@ const Dashboard = () => {
           remaining: smallInnerSummary.remaining,
           totalFeet: smallInnerFeet,
           icon: <WaterDropIcon />,
-          color: '#0891b2',
+          color: '#0f172a',
         },
       ];
 
@@ -3410,8 +3406,7 @@ const Dashboard = () => {
           beginAtZero: true,
 
           grid: {
-            color:
-              '#f1f5f9',
+            color: '#0f172a',
           },
 
           ticks: {
@@ -3458,7 +3453,7 @@ const Dashboard = () => {
       icon:
         <WaterDropIcon />,
 
-      color: NAVY,
+      color: '#0f172a',
     },
 
     {
@@ -3474,7 +3469,7 @@ const Dashboard = () => {
       icon:
         <PaidIcon />,
 
-      color: '#2e7d32',
+      color: '#0f172a',
     },
 
     {
@@ -3490,7 +3485,7 @@ const Dashboard = () => {
       icon:
         <PendingActionsIcon />,
 
-      color: '#b91c1c',
+      color: '#0f172a',
     },
 
     {
@@ -3506,7 +3501,7 @@ const Dashboard = () => {
       icon:
         <DiscountIcon />,
 
-      color: '#7c3aed',
+      color: '#0f172a',
     },
   ];
 
@@ -3523,7 +3518,7 @@ const Dashboard = () => {
       icon:
         <LocalGasStationIcon />,
 
-      color: '#2563eb',
+      color: '#0f172a',
     },
 
     {
@@ -3538,7 +3533,7 @@ const Dashboard = () => {
       icon:
         <LocalGasStationIcon />,
 
-      color: '#ea580c',
+      color: '#0f172a',
     },
 
     {
@@ -3553,7 +3548,7 @@ const Dashboard = () => {
       icon:
         <ConstructionIcon />,
 
-      color: '#0891b2',
+      color: '#0f172a',
     },
 
     {
@@ -3568,7 +3563,7 @@ const Dashboard = () => {
       icon:
         <BuildIcon />,
 
-      color: '#92400e',
+      color: '#0f172a',
     },
   ];
 
@@ -3607,7 +3602,7 @@ const Dashboard = () => {
             sx={{
               fontSize: '1.25rem',
               fontWeight: 800,
-              color: NAVY,
+              color: '#0f172a',
             }}
           >
             Dashboard
@@ -3618,7 +3613,7 @@ const Dashboard = () => {
             label={isBig ? 'BIG MACHINE' : 'SMALL MACHINE'}
             sx={{
               bgcolor: `${TEAL}18`,
-              color: TEAL_D,
+              color: '#0f172a'_D,
               fontWeight: 800,
               fontSize: '0.68rem',
             }}
@@ -3795,7 +3790,7 @@ const Dashboard = () => {
                 height: '100%',
                 border: '1px solid #dbe3ec',
                 borderRadius: '12px',
-                bgcolor: '#fff',
+                bgcolor: '#0f172a',
               }}
             >
               <CardContent
@@ -3806,7 +3801,7 @@ const Dashboard = () => {
               >
                 <Typography
                   sx={{
-                    color: '#64748b',
+                    color: '#0f172a',
                     fontSize: '0.72rem',
                     fontWeight: 700,
                     mb: 0.8,
@@ -3827,7 +3822,7 @@ const Dashboard = () => {
                   <Box>
                     <Typography
                       sx={{
-                        color: '#64748b',
+                        color: '#0f172a',
                         fontSize: '0.6rem',
                         whiteSpace: 'nowrap',
                       }}
@@ -3850,7 +3845,7 @@ const Dashboard = () => {
                   <Box>
                     <Typography
                       sx={{
-                        color: '#64748b',
+                        color: '#0f172a',
                         fontSize: '0.6rem',
                         whiteSpace: 'nowrap',
                       }}
@@ -3860,7 +3855,7 @@ const Dashboard = () => {
 
                     <Typography
                       sx={{
-                        color: '#b45309',
+                        color: '#0f172a',
                         fontWeight: 800,
                         fontSize: '0.74rem',
                         whiteSpace: 'nowrap',
@@ -3876,7 +3871,7 @@ const Dashboard = () => {
                   <Box>
                     <Typography
                       sx={{
-                        color: '#64748b',
+                        color: '#0f172a',
                         fontSize: '0.6rem',
                         whiteSpace: 'nowrap',
                       }}
@@ -3886,7 +3881,7 @@ const Dashboard = () => {
 
                     <Typography
                       sx={{
-                        color: '#b91c1c',
+                        color: '#0f172a',
                         fontWeight: 800,
                         fontSize: '0.74rem',
                         whiteSpace: 'nowrap',
@@ -3902,7 +3897,7 @@ const Dashboard = () => {
                 <Typography
                   sx={{
                     mt: 0.8,
-                    color: '#64748b',
+                    color: '#0f172a',
                     fontSize: '0.62rem',
                   }}
                 >
@@ -3931,8 +3926,7 @@ const Dashboard = () => {
             fontSize:
               '0.68rem',
 
-            color:
-              '#64748b',
+            color: '#0f172a',
 
             letterSpacing:
               '0.1em',
@@ -3965,7 +3959,7 @@ const Dashboard = () => {
               <ChartLegend
                 items={[
                   {
-                    color: NAVY,
+                    color: '#0f172a',
                     label:
                       'Expense (₹)',
                   },
@@ -4011,7 +4005,7 @@ const Dashboard = () => {
               <ChartLegend
                 items={[
                   {
-                    color: TEAL,
+                    color: '#0f172a',
                     label:
                       'Work count',
                   },
@@ -4054,22 +4048,19 @@ const Dashboard = () => {
               <ChartLegend
                 items={[
                   {
-                    color:
-                      '#4caf50',
+                    color: '#0f172a',
                     label:
                       'Paid',
                   },
 
                   {
-                    color:
-                      '#ef4444',
+                    color: '#0f172a',
                     label:
                       'Unpaid',
                   },
 
                   {
-                    color:
-                      '#f59e0b',
+                    color: '#0f172a',
                     label:
                       'Partial',
                   },
