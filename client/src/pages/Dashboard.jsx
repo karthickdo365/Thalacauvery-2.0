@@ -3943,7 +3943,7 @@ const Dashboard = () => {
                         color: '#64748b',
                       }}
                     >
-                      Done ({card.usedPipes})
+                      Executed ({card.usedPipes})
                     </Typography>
 
                     <Typography
