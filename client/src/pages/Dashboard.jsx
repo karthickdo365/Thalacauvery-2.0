@@ -194,6 +194,284 @@ const getPendingAmount = (point) => {
   );
 };
 
+
+const getEmployeeDateKey = (value) => {
+  if (!value) return '';
+
+  const date = dayjs(value);
+  return date.isValid()
+    ? date.format('YYYY-MM-DD')
+    : '';
+};
+
+const getEmployeeEndDateKey = (employee) => {
+  if (!employee) return '';
+
+  return getEmployeeDateKey(
+    employee?.endDate ||
+      employee?.terminationDate ||
+      employee?.lastWorkingDate ||
+      employee?.exitDate ||
+      employee?.terminatedOn ||
+      ''
+  );
+};
+
+const getAttendanceDateKey = (record) => {
+  return getEmployeeDateKey(
+    record?.date ||
+      record?.attendanceDate ||
+      record?.absenceDate ||
+      ''
+  );
+};
+
+const isAbsentAttendance = (record) => {
+  const status = String(
+    record?.status ||
+      record?.attendanceStatus ||
+      record?.state ||
+      ''
+  )
+    .trim()
+    .toLowerCase();
+
+  return status === 'absent';
+};
+
+const extractAttendanceRows = (data) => {
+  const rows =
+    data?.records ||
+    data?.attendance ||
+    data?.data ||
+    data?.items ||
+    [];
+
+  return Array.isArray(rows)
+    ? rows
+    : [];
+};
+
+/*
+ * Current-month salary calculation used by the dashboard.
+ *
+ * Salary is calculated per employee, not by adding the full monthly
+ * salary of every employee. The calculation follows the Attendance
+ * page rule:
+ *
+ *   daily salary = monthly salary / 30
+ *   gross salary = daily salary × eligible days
+ *   absent deduction = daily salary × absent days
+ *   current payable = gross salary - absent deduction - advances
+ *
+ * Every employee gets their own salary rate, joining date and absence
+ * records. Therefore employees with different salaries are calculated
+ * independently.
+ */
+const calculateCurrentEmployeeSalary = (
+  employee,
+  attendanceRecords = [],
+  advances = []
+) => {
+  if (!employee) {
+    return {
+      employee,
+      monthlySalary: 0,
+      totalDays: 0,
+      presentDays: 0,
+      absentDays: 0,
+      grossSalary: 0,
+      absentDeduction: 0,
+      advance: 0,
+      currentSalary: 0,
+    };
+  }
+
+  const today = dayjs().startOf('day');
+  const todayKey = today.format('YYYY-MM-DD');
+
+  const monthStartKey = today
+    .startOf('month')
+    .format('YYYY-MM-DD');
+
+  const joiningKey =
+    getEmployeeDateKey(employee?.date) ||
+    monthStartKey;
+
+  const employeeEndKey =
+    getEmployeeEndDateKey(employee);
+
+  let startKey =
+    joiningKey > monthStartKey
+      ? joiningKey
+      : monthStartKey;
+
+  let endKey = todayKey;
+
+  if (employeeEndKey && employeeEndKey < endKey) {
+    endKey = employeeEndKey;
+  }
+
+  if (endKey < startKey) {
+    return {
+      employee,
+      monthlySalary:
+        safeNum(employee?.salary),
+      totalDays: 0,
+      presentDays: 0,
+      absentDays: 0,
+      grossSalary: 0,
+      absentDeduction: 0,
+      advance: 0,
+      currentSalary: 0,
+    };
+  }
+
+  const rangeStart = dayjs(startKey);
+  const rangeEnd = dayjs(endKey);
+
+  const totalDays =
+    rangeEnd.diff(
+      rangeStart,
+      'day'
+    ) + 1;
+
+  const rangeSet = new Set();
+
+  for (
+    let date = rangeStart;
+    !date.isAfter(rangeEnd, 'day');
+    date = date.add(1, 'day')
+  ) {
+    rangeSet.add(
+      date.format('YYYY-MM-DD')
+    );
+  }
+
+  const absentKeys = new Set();
+
+  for (const record of attendanceRecords) {
+    if (isAbsentAttendance(record)) {
+      const key =
+        getAttendanceDateKey(record);
+
+      if (key && rangeSet.has(key)) {
+        absentKeys.add(key);
+      }
+    }
+
+    if (
+      Array.isArray(
+        record?.absentDates
+      )
+    ) {
+      for (
+        const item of record.absentDates
+      ) {
+        const key =
+          getEmployeeDateKey(
+            item?.date || item
+          );
+
+        if (
+          key &&
+          rangeSet.has(key)
+        ) {
+          absentKeys.add(key);
+        }
+      }
+    }
+  }
+
+  const absentDays =
+    absentKeys.size;
+
+  const presentDays = Math.max(
+    totalDays - absentDays,
+    0
+  );
+
+  const monthlySalary =
+    safeNum(employee?.salary);
+
+  const dailySalary =
+    monthlySalary / 30;
+
+  const grossSalary =
+    dailySalary * totalDays;
+
+  const absentDeduction =
+    dailySalary * absentDays;
+
+  const currentMonthAdvances =
+    advances.reduce(
+      (sum, item) => {
+        const rawDate =
+          item?.date ||
+          item?.advanceDate ||
+          item?.paymentDate ||
+          item?.transactionDate ||
+          item?.createdAt ||
+          null;
+
+        const advanceKey =
+          rawDate
+            ? getEmployeeDateKey(
+                rawDate
+              )
+            : item?.month
+              ? `${item.month}-01`
+              : '';
+
+        if (
+          advanceKey &&
+          advanceKey >= startKey &&
+          advanceKey <= endKey
+        ) {
+          return (
+            sum +
+            safeNum(
+              item?.advanceAmount ??
+                item?.amount
+            )
+          );
+        }
+
+        return sum;
+      },
+      0
+    );
+
+  const salaryBeforeAdvance =
+    Math.max(
+      grossSalary -
+        absentDeduction,
+      0
+    );
+
+  const currentSalary =
+    Math.max(
+      salaryBeforeAdvance -
+        currentMonthAdvances,
+      0
+    );
+
+  return {
+    employee,
+    monthlySalary,
+    totalDays,
+    presentDays,
+    absentDays,
+    grossSalary,
+    absentDeduction,
+    advance:
+      currentMonthAdvances,
+    currentSalary,
+    startDate: startKey,
+    endDate: endKey,
+  };
+};
+
 /* =========================================================
    PERIOD OPTIONS
 ========================================================= */
@@ -2124,6 +2402,11 @@ const Dashboard = () => {
     setSalaryAdvanceRows,
   ] = useState([]);
 
+  const [
+    employeeSalaryRows,
+    setEmployeeSalaryRows,
+  ] = useState([]);
+
   const {
     currentMachine,
   } = useMachine();
@@ -2264,7 +2547,7 @@ const Dashboard = () => {
   ]);
 
   /* =======================================================
-     FETCH EMPLOYEES / SALARY ADVANCES
+     FETCH EMPLOYEES / SALARY ADVANCES / ATTENDANCE
   ======================================================= */
 
   useEffect(() => {
@@ -2276,10 +2559,13 @@ const Dashboard = () => {
     ) {
       setEmployeeRows([]);
       setSalaryAdvanceRows([]);
+      setEmployeeSalaryRows([]);
       return;
     }
 
-    const loadEmployeesAndAdvances =
+    let cancelled = false;
+
+    const loadEmployeesAndSalary =
       async () => {
         try {
           const [
@@ -2309,13 +2595,6 @@ const Dashboard = () => {
               }
             ),
           ]);
-
-          /*
-           * api.js in this project returns response.data
-           * from the Axios interceptor. These fallbacks also
-           * support a normal Axios response, so the dashboard
-           * does not break if the interceptor changes.
-           */
 
           const employeeData =
             employeeResponse?.data ??
@@ -2359,6 +2638,85 @@ const Dashboard = () => {
               ? advanceData
               : [];
 
+          /*
+           * Load attendance separately for each employee because the
+           * attendance API is employee-specific. This is important:
+           * summing the monthly salary alone cannot account for
+           * different salaries or different absent days.
+           */
+          const salaryRows =
+            await Promise.all(
+              users.map(
+                async (employee) => {
+                  try {
+                    const employeeId =
+                      employee?._id ||
+                      employee?.id;
+
+                    if (!employeeId) {
+                      return calculateCurrentEmployeeSalary(
+                        employee,
+                        [],
+                        advances
+                      );
+                    }
+
+                    const attendanceResponse =
+                      await api.get(
+                        '/attendance',
+                        {
+                          params: {
+                            employeeId,
+                            machineType:
+                              currentMachine,
+                            limit: 500,
+                          },
+                        }
+                      );
+
+                    const attendanceData =
+                      attendanceResponse?.data ??
+                      attendanceResponse;
+
+                    const attendanceRecords =
+                      extractAttendanceRows(
+                        attendanceData
+                      );
+
+                    return calculateCurrentEmployeeSalary(
+                      employee,
+                      attendanceRecords,
+                      advances
+                    );
+                  } catch (attendanceError) {
+                    console.error(
+                      `Failed to load attendance for ${
+                        employee?.name ||
+                        'employee'
+                      }:`,
+                      attendanceError
+                    );
+
+                    /*
+                     * If attendance cannot be loaded, do not invent
+                     * absence days. Calculate the employee's current
+                     * salary using the available employee and
+                     * advance data only.
+                     */
+                    return calculateCurrentEmployeeSalary(
+                      employee,
+                      [],
+                      advances
+                    );
+                  }
+                }
+              )
+            );
+
+          if (cancelled) {
+            return;
+          }
+
           setEmployeeRows(
             users
           );
@@ -2367,9 +2725,14 @@ const Dashboard = () => {
             advances
           );
 
-        } catch (
-          error
-        ) {
+          setEmployeeSalaryRows(
+            salaryRows
+          );
+        } catch (error) {
+          if (cancelled) {
+            return;
+          }
+
           console.error(
             'Failed to load employee/salary data:',
             error
@@ -2377,11 +2740,15 @@ const Dashboard = () => {
 
           setEmployeeRows([]);
           setSalaryAdvanceRows([]);
+          setEmployeeSalaryRows([]);
         }
       };
 
-    loadEmployeesAndAdvances();
+    loadEmployeesAndSalary();
 
+    return () => {
+      cancelled = true;
+    };
   }, [
     currentMachine,
   ]);
@@ -2638,15 +3005,52 @@ const Dashboard = () => {
   const hammerQuantity =
     getMaterialQuantity('hammer');
 
+  /*
+   * Current salary is the amount payable for the current month up to
+   * today, after each employee's own absent-day deduction and current
+   * salary advances.
+   *
+   * Do not use:
+   *   employeeRows.reduce((sum, employee) => sum + employee.salary)
+   *
+   * That only adds full monthly salaries and ignores attendance.
+   */
   const totalSalary =
+    employeeSalaryRows.reduce(
+      (sum, row) =>
+        sum +
+        safeNum(
+          row?.currentSalary
+        ),
+      0
+    );
+
+  const totalMonthlySalary =
     employeeRows.reduce(
-      (
-        sum,
-        employee
-      ) =>
+      (sum, employee) =>
         sum +
         safeNum(
           employee?.salary
+        ),
+      0
+    );
+
+  const totalAbsentDeduction =
+    employeeSalaryRows.reduce(
+      (sum, row) =>
+        sum +
+        safeNum(
+          row?.absentDeduction
+        ),
+      0
+    );
+
+  const totalCurrentSalaryAdvance =
+    employeeSalaryRows.reduce(
+      (sum, row) =>
+        sum +
+        safeNum(
+          row?.advance
         ),
       0
     );
@@ -2658,20 +3062,6 @@ const Dashboard = () => {
    * the Payment Summary showed 0 even when salary advances
    * existed.
    */
-  const salaryAdvanceTotal =
-    salaryAdvanceRows.reduce(
-      (
-        sum,
-        advance
-      ) =>
-        sum +
-        safeNum(
-          advance?.advanceAmount ??
-          advance?.amount
-        ),
-      0
-    );
-
   const employees =
     employeeRows.length;
 
@@ -3276,7 +3666,7 @@ const Dashboard = () => {
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      Salary
+                      Current Salary
                     </Typography>
 
                     <Typography
@@ -3311,7 +3701,7 @@ const Dashboard = () => {
                       }}
                     >
                       {fmt(
-                        salaryAdvanceTotal
+                        totalCurrentSalaryAdvance
                       )}
                     </Typography>
                   </Box>
@@ -3342,6 +3732,16 @@ const Dashboard = () => {
                     </Typography>
                   </Box>
                 </Box>
+
+                <Typography
+                  sx={{
+                    mt: 0.8,
+                    color: '#64748b',
+                    fontSize: '0.62rem',
+                  }}
+                >
+                  Monthly: {fmt(totalMonthlySalary)} · Absent deduction: {fmt(totalAbsentDeduction)}
+                </Typography>
 
               </CardContent>
             </Card>
