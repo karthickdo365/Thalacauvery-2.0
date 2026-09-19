@@ -37,7 +37,7 @@ const menuItems = [
   { text: 'Agent Information',    icon: <ReceiptIcon />,    path: '/borewell-points' },
   { text: 'Points',               icon: <WaterDropIcon />,  path: '/bills' },
   { text: 'Attendance & Salary',  icon: <EventNoteIcon />,  path: '/attendance' },
-  { text: 'salARY REPort',          icon: <AssessmentIcon />, path: '/salary-report' },
+  { text: 'Salary Report',          icon: <AssessmentIcon />, path: '/salary-report' },
   { text: 'Reports',              icon: <AssessmentIcon />, path: '/reports' },
 ];
 
