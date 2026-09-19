@@ -301,7 +301,7 @@ const calculateEmployeeRangeSalary = (
   const requestedEnd = endKey || todayKey;
 
   if (!requestedStart || !requestedEnd || requestedEnd < requestedStart) {
-    return { totalDays: 0, presentDays: 0, absentDays: 0, grossSalary: 0, absentDeduction: 0, totalAdvance: 0, finalSalary: 0 };
+    return { totalDays: 0, presentDays: 0, absentDays: 0, monthlySalary: 0, dailySalary: 0, grossSalary: 0, workedSalary: 0, absentDeduction: 0, totalAdvance: 0, finalSalary: 0 };
   }
 
   const joiningKey = employee?.date ? toDateKey(new Date(employee.date)) : requestedStart;
@@ -314,7 +314,7 @@ const calculateEmployeeRangeSalary = (
   }
 
   if (effectiveEnd < effectiveStart) {
-    return { totalDays: 0, presentDays: 0, absentDays: 0, grossSalary: 0, absentDeduction: 0, totalAdvance: 0, finalSalary: 0 };
+    return { totalDays: 0, presentDays: 0, absentDays: 0, monthlySalary: 0, dailySalary: 0, grossSalary: 0, workedSalary: 0, absentDeduction: 0, totalAdvance: 0, finalSalary: 0 };
   }
 
   const rangeDates = getDateRange(effectiveStart, effectiveEnd);
@@ -342,6 +342,7 @@ const calculateEmployeeRangeSalary = (
   const monthlySalary = Number(employee?.salary) || 0;
   const dailySalary = monthlySalary / 30;
   const grossSalary = dailySalary * totalDays;
+  const workedSalary = dailySalary * presentDays;
   const absentDeduction = dailySalary * absentDays;
 
   const totalAdvance = advances.reduce((sum, item) => {
@@ -356,14 +357,17 @@ const calculateEmployeeRangeSalary = (
     return sum;
   }, 0);
 
-  const salaryBeforeAdvance = Math.max(grossSalary - absentDeduction, 0);
+  const salaryBeforeAdvance = workedSalary;
   const finalSalary = salaryBeforeAdvance - totalAdvance;
 
   return {
     totalDays,
     presentDays,
     absentDays,
+    monthlySalary,
+    dailySalary,
     grossSalary,
+    workedSalary,
     absentDeduction,
     totalAdvance,
     finalSalary,
@@ -926,7 +930,10 @@ export default function Attendance() {
         totalDays: 0,
         presentDays: 0,
         absentDays: 0,
+        monthlySalary: 0,
+        dailySalary: 0,
         grossSalary: 0,
+        workedSalary: 0,
         absentDeduction: 0,
         advance: 0,
         finalSalary: 0,
@@ -957,7 +964,10 @@ export default function Attendance() {
         totalDays: 0,
         presentDays: 0,
         absentDays: 0,
+        monthlySalary: 0,
+        dailySalary: 0,
         grossSalary: 0,
+        workedSalary: 0,
         absentDeduction: 0,
         advance: 0,
         finalSalary: 0,
@@ -979,6 +989,7 @@ export default function Attendance() {
     const monthlySalary = Number(employee.salary) || 0;
     const dailySalary = monthlySalary / 30;
     const grossSalary = dailySalary * totalDays;
+    const workedSalary = dailySalary * presentDays;
     const absentDeduction = dailySalary * absentDays;
 
     const totalAdvance = advances.reduce(
@@ -1003,10 +1014,9 @@ export default function Attendance() {
       0
     );
 
-    const salaryBeforeAdvance = Math.max(
-      grossSalary - absentDeduction,
-      0
-    );
+    // Salary is earned from actual worked/present days.
+    // One day's salary is always monthly salary / 30.
+    const salaryBeforeAdvance = workedSalary;
 
     const finalSalary =
       salaryBeforeAdvance - totalAdvance;
@@ -1028,7 +1038,10 @@ export default function Attendance() {
       totalDays,
       presentDays,
       absentDays,
+      monthlySalary,
+      dailySalary,
       grossSalary,
+      workedSalary,
       absentDeduction,
       advance: totalAdvance,
       finalSalary,
@@ -3378,7 +3391,7 @@ export default function Attendance() {
                 </h2>
 
                 <div className="section-subtitle">
-                  {employee.name}
+                  {employee.name} • Salary = Day Salary × Present Days
                 </div>
 
                 <div className="summary-grid">
@@ -3415,6 +3428,20 @@ export default function Attendance() {
                     <span>Monthly Salary</span>
                     <strong>
                       {formatMoney(Number(employee?.salary) || 0)}
+                    </strong>
+                  </div>
+
+                  <div className="salary-line">
+                    <span>Day Salary</span>
+                    <strong>
+                      {formatMoney(salarySummary.dailySalary)}
+                    </strong>
+                  </div>
+
+                  <div className="salary-line">
+                    <span>Worked Salary ({salarySummary.presentDays} days)</span>
+                    <strong>
+                      {formatMoney(salarySummary.workedSalary)}
                     </strong>
                   </div>
 
