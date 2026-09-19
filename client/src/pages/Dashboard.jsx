@@ -450,8 +450,11 @@ const calculateCurrentEmployeeSalary = (
     );
 
   const currentSalary =
-    salaryBeforeAdvance -
-    currentMonthAdvances;
+    Math.max(
+      salaryBeforeAdvance -
+        currentMonthAdvances,
+      0
+    );
 
   return {
     employee,
@@ -499,7 +502,7 @@ const PERIOD_OPTIONS = [
 const CARD_CONFIG = {
   totalBorewellPoints: {
     label: 'Points',
-    color: '#0f172a',
+    color: NAVY,
     icon: <WaterDropIcon />,
     hasPeriodFilter: true,
 
@@ -549,7 +552,7 @@ const CARD_CONFIG = {
 
   paidAmount: {
     label: 'Paid Amount',
-    color: '#0f172a',
+    color: '#2e7d32',
     icon: <PaidIcon />,
     hasPeriodFilter: true,
 
@@ -610,7 +613,7 @@ const CARD_CONFIG = {
 
   pendingAmount: {
     label: 'Pending Amount',
-    color: '#0f172a',
+    color: '#b91c1c',
     icon: <PendingActionsIcon />,
     hasPeriodFilter: true,
 
@@ -671,7 +674,7 @@ const CARD_CONFIG = {
 
   discount: {
     label: 'Discount',
-    color: '#0f172a',
+    color: '#7c3aed',
     icon: <DiscountIcon />,
     hasPeriodFilter: true,
 
@@ -723,7 +726,7 @@ const CARD_CONFIG = {
 
   diesel: {
     label: 'Diesel',
-    color: '#0f172a',
+    color: '#2563eb',
     icon: <LocalGasStationIcon />,
     hasPeriodFilter: true,
 
@@ -785,7 +788,7 @@ const CARD_CONFIG = {
 
   petrol: {
     label: 'Petrol',
-    color: '#0f172a',
+    color: '#ea580c',
     icon: <LocalGasStationIcon />,
     hasPeriodFilter: true,
 
@@ -847,7 +850,7 @@ const CARD_CONFIG = {
 
   bit: {
     label: 'Bit',
-    color: '#0f172a',
+    color: '#0891b2',
     icon: <ConstructionIcon />,
     hasPeriodFilter: true,
 
@@ -909,7 +912,7 @@ const CARD_CONFIG = {
 
   hammer: {
     label: 'Hammer',
-    color: '#0f172a',
+    color: '#92400e',
     icon: <BuildIcon />,
     hasPeriodFilter: true,
 
@@ -971,7 +974,7 @@ const CARD_CONFIG = {
 
   totalEmployees: {
     label: 'Employee',
-    color: '#0f172a',
+    color: '#059669',
     icon: <PeopleIcon />,
     hasPeriodFilter: false,
 
@@ -1093,7 +1096,7 @@ const StatCard = ({
 
       borderRadius: '12px',
 
-      bgcolor: '#0f172a',
+      bgcolor: '#fff',
 
       transition:
         'transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease',
@@ -1161,7 +1164,7 @@ const StatCard = ({
       >
         <Typography
           sx={{
-            color: '#0f172a',
+            color: '#64748b',
 
             fontSize:
               '0.72rem',
@@ -1220,7 +1223,7 @@ const StatCard = ({
       <ArrowForwardIosIcon
         sx={{
           fontSize: 12,
-          color: '#0f172a',
+          color: '#cbd5e1',
         }}
       />
     </CardContent>
@@ -1246,7 +1249,7 @@ const ChartCard = ({
       borderRadius:
         '14px',
 
-      bgcolor: '#0f172a',
+      bgcolor: '#fff',
     }}
   >
     <CardContent
@@ -1269,7 +1272,7 @@ const ChartCard = ({
             width: 3,
             height: 16,
 
-            bgcolor: '#0f172a',
+            bgcolor: TEAL,
 
             borderRadius: 1,
           }}
@@ -1703,9 +1706,9 @@ const DetailDialog = ({
 
       <DialogTitle
         sx={{
-          bgcolor: '#0f172a',
+          bgcolor: NAVY,
 
-          color: '#0f172a',
+          color: '#fff',
 
           p: 0,
 
@@ -1837,7 +1840,8 @@ const DetailDialog = ({
               size="small"
               onClick={onClose}
               sx={{
-                color: '#0f172a',
+                color:
+                  '#fff',
               }}
             >
               <CloseIcon />
@@ -1916,7 +1920,8 @@ const DetailDialog = ({
                         bgcolor:
                           TEAL,
 
-                        color: '#0f172a',
+                        color:
+                          '#fff',
 
                         '&:hover':
                           {
@@ -2012,7 +2017,8 @@ const DetailDialog = ({
                   borderRadius:
                     '8px',
 
-                  color: '#0f172a',
+                  color:
+                    '#fff',
 
                   '& fieldset':
                     {
@@ -2035,7 +2041,8 @@ const DetailDialog = ({
 
               '& input':
                 {
-                  color: '#0f172a',
+                  color:
+                    '#fff',
                 },
 
               '& input::placeholder':
@@ -2573,8 +2580,11 @@ const Dashboard = () => {
     const loadEmployeesAndSalary =
       async () => {
         try {
-          const employeeResponse =
-            await api.get(
+          const [
+            employeeResponse,
+            advanceResponse,
+          ] = await Promise.all([
+            api.get(
               '/users',
               {
                 params: {
@@ -2584,11 +2594,27 @@ const Dashboard = () => {
                     currentMachine,
                 },
               }
-            );
+            ),
+
+            api.get(
+              '/salary-advances',
+              {
+                params: {
+                  machineType:
+                    currentMachine,
+                  limit: 500,
+                },
+              }
+            ),
+          ]);
 
           const employeeData =
             employeeResponse?.data ??
             employeeResponse;
+
+          const advanceData =
+            advanceResponse?.data ??
+            advanceResponse;
 
           const users =
             Array.isArray(
@@ -2601,42 +2627,54 @@ const Dashboard = () => {
               ? employeeData
               : [];
 
+          const advances =
+            Array.isArray(
+              advanceData?.records
+            )
+              ? advanceData.records
+              : Array.isArray(
+                  advanceData?.advances
+                )
+              ? advanceData.advances
+              : Array.isArray(
+                  advanceData?.data
+                )
+              ? advanceData.data
+              : Array.isArray(
+                  advanceData?.items
+                )
+              ? advanceData.items
+              : Array.isArray(
+                  advanceData
+                )
+              ? advanceData
+              : [];
+
           /*
-           * Attendance and salary advances are loaded separately for
-           * EACH employee. The previous dashboard loaded all advances
-           * for the machine once and then deducted that same advance
-           * total from every employee. That made the salary collapse
-           * to ₹0 when the combined advance amount was larger than an
-           * individual employee's salary.
-           *
-           * Attendance & Salary uses the employee-specific endpoints,
-           * so the dashboard must use the same rule.
+           * Load attendance separately for each employee because the
+           * attendance API is employee-specific. This is important:
+           * summing the monthly salary alone cannot account for
+           * different salaries or different absent days.
            */
-          const salaryResults =
+          const salaryRows =
             await Promise.all(
               users.map(
                 async (employee) => {
-                  const employeeId =
-                    employee?._id ||
-                    employee?.id;
+                  try {
+                    const employeeId =
+                      employee?._id ||
+                      employee?.id;
 
-                  if (!employeeId) {
-                    return {
-                      salary: calculateCurrentEmployeeSalary(
+                    if (!employeeId) {
+                      return calculateCurrentEmployeeSalary(
                         employee,
                         [],
-                        []
-                      ),
-                      advances: [],
-                    };
-                  }
+                        advances
+                      );
+                    }
 
-                  try {
-                    const [
-                      attendanceResponse,
-                      advanceResponse,
-                    ] = await Promise.all([
-                      api.get(
+                    const attendanceResponse =
+                      await api.get(
                         '/attendance',
                         {
                           params: {
@@ -2646,102 +2684,45 @@ const Dashboard = () => {
                             limit: 500,
                           },
                         }
-                      ),
-                      api.get(
-                        '/salary-advances',
-                        {
-                          params: {
-                            employeeId,
-                            machineType:
-                              currentMachine,
-                            limit: 500,
-                          },
-                        }
-                      ),
-                    ]);
+                      );
 
                     const attendanceData =
                       attendanceResponse?.data ??
                       attendanceResponse;
-
-                    const advanceData =
-                      advanceResponse?.data ??
-                      advanceResponse;
 
                     const attendanceRecords =
                       extractAttendanceRows(
                         attendanceData
                       );
 
-                    const employeeAdvances =
-                      Array.isArray(
-                        advanceData?.records
-                      )
-                        ? advanceData.records
-                        : Array.isArray(
-                            advanceData?.advances
-                          )
-                        ? advanceData.advances
-                        : Array.isArray(
-                            advanceData?.data
-                          )
-                        ? advanceData.data
-                        : Array.isArray(
-                            advanceData?.items
-                          )
-                        ? advanceData.items
-                        : Array.isArray(
-                            advanceData
-                          )
-                        ? advanceData
-                        : [];
-
-                    return {
-                      salary:
-                        calculateCurrentEmployeeSalary(
-                          employee,
-                          attendanceRecords,
-                          employeeAdvances
-                        ),
-                      advances:
-                        employeeAdvances,
-                    };
-                  } catch (employeeSalaryError) {
+                    return calculateCurrentEmployeeSalary(
+                      employee,
+                      attendanceRecords,
+                      advances
+                    );
+                  } catch (attendanceError) {
                     console.error(
-                      `Failed to load salary data for ${
+                      `Failed to load attendance for ${
                         employee?.name ||
                         'employee'
                       }:`,
-                      employeeSalaryError
+                      attendanceError
                     );
 
                     /*
-                     * If the attendance/advance request fails, do not
-                     * invent deductions. Show the salary based on the
-                     * employee record and the dates we can calculate.
+                     * If attendance cannot be loaded, do not invent
+                     * absence days. Calculate the employee's current
+                     * salary using the available employee and
+                     * advance data only.
                      */
-                    return {
-                      salary:
-                        calculateCurrentEmployeeSalary(
-                          employee,
-                          [],
-                          []
-                        ),
-                      advances: [],
-                    };
+                    return calculateCurrentEmployeeSalary(
+                      employee,
+                      [],
+                      advances
+                    );
                   }
                 }
               )
-            );
-
-          const salaryRows =
-            salaryResults.map(
-              (result) => result.salary
-            );
-
-          const advances =
-            salaryResults.flatMap(
-              (result) => result.advances || []
             );
 
           if (cancelled) {
@@ -2839,7 +2820,7 @@ const Dashboard = () => {
               sx={{
                 fontSize: 42,
 
-                color: '#0f172a',
+                color: TEAL,
 
                 mb: 1,
               }}
@@ -2892,7 +2873,7 @@ const Dashboard = () => {
       >
         <CircularProgress
           sx={{
-            color: '#0f172a',
+            color: TEAL,
           }}
         />
       </Box>
@@ -3255,7 +3236,7 @@ const Dashboard = () => {
           remaining: outerSummary.remaining,
           totalFeet: outerFeet,
           icon: <WaterDropIcon />,
-          color: '#0f172a',
+          color: NAVY,
         },
         {
           key: 'bigInner',
@@ -3264,7 +3245,7 @@ const Dashboard = () => {
           remaining: innerSummary.remaining,
           totalFeet: innerFeet,
           icon: <WaterDropIcon />,
-          color: '#0f172a',
+          color: TEAL,
         },
         {
           key: 'bigJI',
@@ -3273,7 +3254,7 @@ const Dashboard = () => {
           remaining: jiSummary.remaining,
           totalFeet: jiFeet,
           icon: <WaterDropIcon />,
-          color: '#0f172a',
+          color: '#0891b2',
         },
       ]
     : [
@@ -3284,7 +3265,7 @@ const Dashboard = () => {
           remaining: outerSummary.remaining,
           totalFeet: outerFeet,
           icon: <WaterDropIcon />,
-          color: '#0f172a',
+          color: NAVY,
         },
         {
           key: 'smallInner',
@@ -3293,7 +3274,7 @@ const Dashboard = () => {
           remaining: innerSummary.remaining,
           totalFeet: innerFeet,
           icon: <WaterDropIcon />,
-          color: '#0f172a',
+          color: TEAL,
         },
         {
           key: 'smallInnerPipe',
@@ -3302,7 +3283,7 @@ const Dashboard = () => {
           remaining: smallInnerSummary.remaining,
           totalFeet: smallInnerFeet,
           icon: <WaterDropIcon />,
-          color: '#0f172a',
+          color: '#0891b2',
         },
       ];
 
@@ -3429,7 +3410,8 @@ const Dashboard = () => {
           beginAtZero: true,
 
           grid: {
-            color: '#0f172a',
+            color:
+              '#f1f5f9',
           },
 
           ticks: {
@@ -3476,7 +3458,7 @@ const Dashboard = () => {
       icon:
         <WaterDropIcon />,
 
-      color: '#0f172a',
+      color: NAVY,
     },
 
     {
@@ -3492,7 +3474,7 @@ const Dashboard = () => {
       icon:
         <PaidIcon />,
 
-      color: '#0f172a',
+      color: '#2e7d32',
     },
 
     {
@@ -3508,7 +3490,7 @@ const Dashboard = () => {
       icon:
         <PendingActionsIcon />,
 
-      color: '#0f172a',
+      color: '#b91c1c',
     },
 
     {
@@ -3524,7 +3506,7 @@ const Dashboard = () => {
       icon:
         <DiscountIcon />,
 
-      color: '#0f172a',
+      color: '#7c3aed',
     },
   ];
 
@@ -3541,7 +3523,7 @@ const Dashboard = () => {
       icon:
         <LocalGasStationIcon />,
 
-      color: '#0f172a',
+      color: '#2563eb',
     },
 
     {
@@ -3556,7 +3538,7 @@ const Dashboard = () => {
       icon:
         <LocalGasStationIcon />,
 
-      color: '#0f172a',
+      color: '#ea580c',
     },
 
     {
@@ -3571,7 +3553,7 @@ const Dashboard = () => {
       icon:
         <ConstructionIcon />,
 
-      color: '#0f172a',
+      color: '#0891b2',
     },
 
     {
@@ -3586,7 +3568,7 @@ const Dashboard = () => {
       icon:
         <BuildIcon />,
 
-      color: '#0f172a',
+      color: '#92400e',
     },
   ];
 
@@ -3625,7 +3607,7 @@ const Dashboard = () => {
             sx={{
               fontSize: '1.25rem',
               fontWeight: 800,
-              color: '#0f172a',
+              color: NAVY,
             }}
           >
             Dashboard
@@ -3778,7 +3760,7 @@ const Dashboard = () => {
                         color: '#0f172a',
                       }}
                     >
-                      Total ft = {card.totalFeet}
+                      Remaining = {card.remaining}
                     </Typography>
 
                     <Typography
@@ -3786,11 +3768,11 @@ const Dashboard = () => {
                       sx={{
                         fontSize: '0.72rem',
                         lineHeight: 1.35,
-                        fontWeight: 800,
-                        color: '#dc2626',
+                        fontWeight: 700,
+                        color: '#0f172a',
                       }}
                     >
-                      Stock = {card.remaining}
+                      Total ft = {card.totalFeet}
                     </Typography>
                   </Box>
                 }
@@ -3824,7 +3806,7 @@ const Dashboard = () => {
               >
                 <Typography
                   sx={{
-                    color: '#0f172a',
+                    color: '#64748b',
                     fontSize: '0.72rem',
                     fontWeight: 700,
                     mb: 0.8,
@@ -3868,7 +3850,7 @@ const Dashboard = () => {
                   <Box>
                     <Typography
                       sx={{
-                        color: '#0f172a',
+                        color: '#64748b',
                         fontSize: '0.6rem',
                         whiteSpace: 'nowrap',
                       }}
@@ -3890,16 +3872,16 @@ const Dashboard = () => {
                     </Typography>
                   </Box>
 
-                  {/* ATTENDANCE / SALARY PENDING */}
+                  {/* BOREWELL PAYMENT PENDING */}
                   <Box>
                     <Typography
                       sx={{
-                        color: '#0f172a',
+                        color: '#64748b',
                         fontSize: '0.6rem',
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      Pending Salary
+                      Pending
                     </Typography>
 
                     <Typography
@@ -3949,7 +3931,8 @@ const Dashboard = () => {
             fontSize:
               '0.68rem',
 
-            color: '#0f172a',
+            color:
+              '#64748b',
 
             letterSpacing:
               '0.1em',
@@ -3982,7 +3965,7 @@ const Dashboard = () => {
               <ChartLegend
                 items={[
                   {
-                    color: '#0f172a',
+                    color: NAVY,
                     label:
                       'Expense (₹)',
                   },
@@ -4028,7 +4011,7 @@ const Dashboard = () => {
               <ChartLegend
                 items={[
                   {
-                    color: '#0f172a',
+                    color: TEAL,
                     label:
                       'Work count',
                   },
@@ -4071,19 +4054,22 @@ const Dashboard = () => {
               <ChartLegend
                 items={[
                   {
-                    color: '#0f172a',
+                    color:
+                      '#4caf50',
                     label:
                       'Paid',
                   },
 
                   {
-                    color: '#0f172a',
+                    color:
+                      '#ef4444',
                     label:
                       'Unpaid',
                   },
 
                   {
-                    color: '#0f172a',
+                    color:
+                      '#f59e0b',
                     label:
                       'Partial',
                   },
