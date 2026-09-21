@@ -1135,8 +1135,8 @@ const StatCard = ({
 
           borderRadius: '10px',
 
-          bgcolor: `${color}18`,
-          color,
+          bgcolor: 'var(--stat-icon-bg, #f1f5f9)',
+          color: 'var(--stat-icon-color, #0f172a)',
 
           display: 'flex',
           alignItems: 'center',
@@ -1161,7 +1161,7 @@ const StatCard = ({
       >
         <Typography
           sx={{
-            color: '#92400e',
+            color: '#64748b',
 
             fontSize:
               '0.72rem',
@@ -1220,7 +1220,7 @@ const StatCard = ({
       <ArrowForwardIosIcon
         sx={{
           fontSize: 12,
-          color: '#0f172a',
+          color: '#cbd5e1',
         }}
       />
     </CardContent>
@@ -3672,6 +3672,26 @@ const Dashboard = () => {
           spacing={1.25}
           sx={{
             mb: 1.5,
+
+            '& > .MuiGrid-item:nth-of-type(1)': {
+              '--stat-icon-color': '#0f172a',
+              '--stat-icon-bg': '#eef0f2',
+            },
+
+            '& > .MuiGrid-item:nth-of-type(2)': {
+              '--stat-icon-color': '#16a34a',
+              '--stat-icon-bg': '#eaf6ed',
+            },
+
+            '& > .MuiGrid-item:nth-of-type(3)': {
+              '--stat-icon-color': '#dc2626',
+              '--stat-icon-bg': '#fdecec',
+            },
+
+            '& > .MuiGrid-item:nth-of-type(4)': {
+              '--stat-icon-color': '#7c3aed',
+              '--stat-icon-bg': '#f2eafd',
+            },
           }}
         >
           {firstRowCards.map(
@@ -3718,6 +3738,26 @@ const Dashboard = () => {
           spacing={1.25}
           sx={{
             mb: 1.5,
+
+            '& > .MuiGrid-item:nth-of-type(1)': {
+              '--stat-icon-color': '#2563eb',
+              '--stat-icon-bg': '#eaf1ff',
+            },
+
+            '& > .MuiGrid-item:nth-of-type(2)': {
+              '--stat-icon-color': '#ea580c',
+              '--stat-icon-bg': '#fff0e7',
+            },
+
+            '& > .MuiGrid-item:nth-of-type(3)': {
+              '--stat-icon-color': '#0891b2',
+              '--stat-icon-bg': '#e8f7fb',
+            },
+
+            '& > .MuiGrid-item:nth-of-type(4)': {
+              '--stat-icon-color': '#92400e',
+              '--stat-icon-bg': '#f5eee9',
+            },
           }}
         >
           {secondRowCards.map(
