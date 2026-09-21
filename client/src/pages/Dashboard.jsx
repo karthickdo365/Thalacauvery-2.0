@@ -1086,54 +1086,47 @@ const StatCard = ({
     elevation={0}
     sx={{
       height: '100%',
+      minHeight: 82,
       cursor: 'pointer',
 
-      border:
-        '1px solid #dbe3ec',
-
+      border: '1px solid #dbe3ec',
       borderRadius: '12px',
-
       bgcolor: '#fff',
 
       transition:
-        'transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease',
+        'box-shadow 0.18s ease, border-color 0.18s ease',
 
       '&:hover': {
-        transform:
-          'translateY(-3px)',
-
         boxShadow:
-          `0 8px 24px ${color}22`,
-
+          '0 4px 14px rgba(15, 23, 42, 0.08)',
         borderColor:
-          `${color}66`,
-      },
-
-      '&:active': {
-        transform:
-          'translateY(-1px)',
+          '#cbd5e1',
       },
     }}
   >
     <CardContent
       sx={{
+        minHeight: 82,
+        height: '100%',
+        boxSizing: 'border-box',
+
         display: 'flex',
         alignItems: 'center',
 
         gap: 1.5,
 
-        p: '14px !important',
-
-        minHeight: 74,
+        px: '14px !important',
+        py: '12px !important',
       }}
     >
       {/* Icon */}
       <Box
         sx={{
-          width: 46,
-          height: 46,
+          width: 48,
+          height: 48,
+          minWidth: 48,
 
-          borderRadius: '10px',
+          borderRadius: '11px',
 
           bgcolor: `${color}18`,
           color,
@@ -1145,7 +1138,7 @@ const StatCard = ({
           flexShrink: 0,
 
           '& svg': {
-            fontSize: 24,
+            fontSize: 25,
           },
         }}
       >
@@ -1157,24 +1150,26 @@ const StatCard = ({
         sx={{
           flex: 1,
           minWidth: 0,
+          overflow: 'hidden',
         }}
       >
         <Typography
           sx={{
-            color: '#0f172a',
+            color: '#64748b',
 
-            fontSize:
-              '0.72rem',
-
+            fontSize: '0.78rem',
+            lineHeight: 1.25,
             fontWeight: 500,
 
-            letterSpacing:
-              '0.02em',
+            letterSpacing: '0.01em',
 
             mb: 0.25,
 
-            textTransform:
-              'none',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+
+            textTransform: 'none',
           }}
         >
           {title}
@@ -1184,17 +1179,17 @@ const StatCard = ({
           sx={{
             color: '#0f172a',
 
-            fontWeight: 700,
+            fontWeight: 800,
 
             fontSize:
               multiline
-                ? '0.78rem'
-                : '1.05rem',
+                ? '0.82rem'
+                : '1.08rem',
 
             lineHeight:
               multiline
-                ? 1.35
-                : 1.2,
+                ? 1.3
+                : 1.15,
 
             whiteSpace:
               multiline
@@ -1219,8 +1214,9 @@ const StatCard = ({
       {/* Arrow */}
       <ArrowForwardIosIcon
         sx={{
-          fontSize: 12,
-          color: '#0f172a',
+          fontSize: 11,
+          color: '#cbd5e1',
+          flexShrink: 0,
         }}
       />
     </CardContent>
