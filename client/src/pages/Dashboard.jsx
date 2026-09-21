@@ -3756,7 +3756,8 @@ const Dashboard = () => {
         </Grid>
 
         {/* =================================================
-            PAYMENT SUMMARY
+            MACHINE PIPE STOCK / USAGE
+            STOCK IS THE LAST SUMMARY SECTION
         ================================================= */}
 
         <Grid
@@ -3764,13 +3765,112 @@ const Dashboard = () => {
           spacing={1.25}
           sx={{
             mb: 1.5,
+            display: 'grid',
+            gridTemplateColumns: {
+              xs: '1fr',
+              sm: 'repeat(2, minmax(0, 1fr))',
+              md: 'repeat(4, minmax(0, 1fr))',
+            },
+            alignItems: 'stretch',
           }}
         >
+          {pipeCards.map((card) => (
+            <Grid
+              item
+              xs={12}
+              sm={6}
+              md={3}
+              key={card.key}
+              sx={{
+                minWidth: 0,
+                width: '100%',
+              }}
+            >
+              <Card
+                elevation={0}
+                sx={{
+                  height: '100%',
+                  border: '1px solid #dbe3ec',
+                  borderRadius: '12px',
+                  bgcolor: '#fff',
+                  boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
+                }}
+              >
+                <CardContent
+                  sx={{
+                    p: '14px !important',
+                    minHeight: 74,
+                  }}
+                >
+                  <Typography
+                    sx={{
+                      color: '#0f172a',
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      mb: 0.8,
+                    }}
+                  >
+                    {card.title}
+                  </Typography>
+
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 0.35,
+                    }}
+                  >
+                    <Typography
+                      component="div"
+                      sx={{
+                        fontSize: '0.68rem',
+                        lineHeight: 1.35,
+                        fontWeight: 700,
+                        color: '#64748b',
+                      }}
+                    >
+                      Executed ({card.usedPipes})
+                    </Typography>
+
+                    <Typography
+                      component="div"
+                      sx={{
+                        fontSize: '0.68rem',
+                        lineHeight: 1.35,
+                        fontWeight: 700,
+                        color: '#64748b',
+                      }}
+                    >
+                      Total ft ({card.totalFeet})
+                    </Typography>
+
+                    <Typography
+                      component="div"
+                      sx={{
+                        fontSize: '0.68rem',
+                        lineHeight: 1.35,
+                        fontWeight: 800,
+                        color: '#dc2626',
+                      }}
+                    >
+                      Stock ({card.remaining})
+                    </Typography>
+                  </Box>
+                </CardContent>
+              </Card>
+            </Grid>
+          ))}
+
+
           <Grid
             item
             xs={12}
             sm={6}
             md={3}
+            sx={{
+              minWidth: 0,
+              width: '100%',
+            }}
           >
             <Card
               elevation={0}
@@ -3896,101 +3996,6 @@ const Dashboard = () => {
             </Card>
           </Grid>
         </Grid>
-
-        {/* =================================================
-            MACHINE PIPE STOCK / USAGE
-            STOCK IS THE LAST SUMMARY SECTION
-        ================================================= */}
-
-        <Grid
-          container
-          spacing={1.25}
-          sx={{
-            mb: 1.5,
-          }}
-        >
-          {pipeCards.map((card) => (
-            <Grid
-              item
-              xs={12}
-              sm={6}
-              md={3}
-              key={card.key}
-            >
-              <Card
-                elevation={0}
-                sx={{
-                  height: '100%',
-                  border: '1px solid #dbe3ec',
-                  borderRadius: '12px',
-                  bgcolor: '#fff',
-                  boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
-                }}
-              >
-                <CardContent
-                  sx={{
-                    p: '14px !important',
-                    minHeight: 74,
-                  }}
-                >
-                  <Typography
-                    sx={{
-                      color: '#0f172a',
-                      fontSize: '0.72rem',
-                      fontWeight: 700,
-                      mb: 0.8,
-                    }}
-                  >
-                    {card.title}
-                  </Typography>
-
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 0.35,
-                    }}
-                  >
-                    <Typography
-                      component="div"
-                      sx={{
-                        fontSize: '0.68rem',
-                        lineHeight: 1.35,
-                        fontWeight: 700,
-                        color: '#64748b',
-                      }}
-                    >
-                      Executed ({card.usedPipes})
-                    </Typography>
-
-                    <Typography
-                      component="div"
-                      sx={{
-                        fontSize: '0.68rem',
-                        lineHeight: 1.35,
-                        fontWeight: 700,
-                        color: '#64748b',
-                      }}
-                    >
-                      Total ft ({card.totalFeet})
-                    </Typography>
-
-                    <Typography
-                      component="div"
-                      sx={{
-                        fontSize: '0.68rem',
-                        lineHeight: 1.35,
-                        fontWeight: 800,
-                        color: '#dc2626',
-                      }}
-                    >
-                      Stock ({card.remaining})
-                    </Typography>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
         </Grid>
 
         {/* =================================================
