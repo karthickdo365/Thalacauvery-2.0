@@ -1,6 +1,14 @@
 import { useState } from 'react';
-import { Link as RouterLink, useNavigate } from 'react-router-dom';
-import { useDispatch, useSelector } from 'react-redux';
+import {
+  Link as RouterLink,
+  useNavigate,
+} from 'react-router-dom';
+
+import {
+  useDispatch,
+  useSelector,
+} from 'react-redux';
+
 import { useForm } from 'react-hook-form';
 
 import {
@@ -20,7 +28,11 @@ import {
 import Visibility from '@mui/icons-material/Visibility';
 import VisibilityOff from '@mui/icons-material/VisibilityOff';
 
-import { login, clearError } from '../redux/slices/authSlice';
+import {
+  login,
+  clearError,
+} from '../redux/slices/authSlice';
+
 import { toast } from 'react-toastify';
 
 import {
@@ -40,7 +52,8 @@ const Login = () => {
     error,
   } = useSelector((state) => state.auth);
 
-  const [showPassword, setShowPassword] = useState(false);
+  const [showPassword, setShowPassword] =
+    useState(false);
 
   const {
     register,
@@ -51,51 +64,115 @@ const Login = () => {
   const onSubmit = async (data) => {
     dispatch(clearError());
 
-    const result = await dispatch(login(data));
+    const result = await dispatch(
+      login(data)
+    );
 
     if (login.fulfilled.match(result)) {
       toast.success('Login successful!');
 
-      const username = String(data.username || '')
+      const username = String(
+        data.username || ''
+      )
         .trim()
         .toLowerCase();
 
       // ==========================================
-      // ADMIN LOGIN
+      // ADMIN
       // ==========================================
       if (username === 'admin') {
-        localStorage.removeItem('machineType');
+        localStorage.setItem(
+          'username',
+          'admin'
+        );
 
-        navigate('/dashboard');
+        localStorage.setItem(
+          'role',
+          'admin'
+        );
+
+        localStorage.removeItem(
+          'machineType'
+        );
+
+        navigate('/dashboard', {
+          replace: true,
+        });
+
         return;
       }
 
       // ==========================================
-      // BIG MACHINE LOGIN
+      // BIG MACHINE
       // ==========================================
       if (username === 'bigmachine') {
-        localStorage.setItem('machineType', 'big');
+        localStorage.setItem(
+          'username',
+          'bigmachine'
+        );
 
-        navigate('/big-machine');
+        localStorage.setItem(
+          'role',
+          'machine'
+        );
+
+        localStorage.setItem(
+          'machineType',
+          'big'
+        );
+
+        navigate('/big-machine', {
+          replace: true,
+        });
+
         return;
       }
 
       // ==========================================
-      // SMALL MACHINE LOGIN
+      // SMALL MACHINE
       // ==========================================
       if (username === 'smallmachine') {
-        localStorage.setItem('machineType', 'small');
+        localStorage.setItem(
+          'username',
+          'smallmachine'
+        );
 
-        navigate('/small-machine');
+        localStorage.setItem(
+          'role',
+          'machine'
+        );
+
+        localStorage.setItem(
+          'machineType',
+          'small'
+        );
+
+        navigate('/small-machine', {
+          replace: true,
+        });
+
         return;
       }
 
       // ==========================================
       // OTHER USERS
       // ==========================================
-      localStorage.removeItem('machineType');
+      localStorage.setItem(
+        'username',
+        username
+      );
 
-      navigate('/machine-selection');
+      localStorage.removeItem(
+        'role'
+      );
+
+      localStorage.removeItem(
+        'machineType'
+      );
+
+      navigate('/machine-selection', {
+        replace: true,
+      });
     }
   };
 
@@ -113,6 +190,7 @@ const Login = () => {
       }}
     >
       {/* Background decorative circles */}
+
       <Box
         sx={{
           position: 'absolute',
@@ -145,20 +223,23 @@ const Login = () => {
           width: '100%',
           borderRadius: '20px',
           overflow: 'hidden',
-          boxShadow: '0 32px 80px rgba(0,0,0,0.35)',
+          boxShadow:
+            '0 32px 80px rgba(0,0,0,0.35)',
           position: 'relative',
           zIndex: 1,
           border: 'none',
         }}
       >
         {/* Header */}
+
         <Box
           sx={{
             bgcolor: NAVY,
             color: 'white',
             p: 3,
             textAlign: 'center',
-            borderBottom: `3px solid ${TEAL}`,
+            borderBottom:
+              `3px solid ${TEAL}`,
           }}
         >
           <Box
@@ -167,7 +248,8 @@ const Login = () => {
               height: 72,
               borderRadius: '16px',
               overflow: 'hidden',
-              bgcolor: 'rgba(30,190,165,0.1)',
+              bgcolor:
+                'rgba(30,190,165,0.1)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -206,6 +288,8 @@ const Login = () => {
           </Typography>
         </Box>
 
+        {/* Login Form */}
+
         <CardContent sx={{ p: 4 }}>
           <Typography
             variant="h6"
@@ -229,40 +313,67 @@ const Login = () => {
 
           <Box
             component="form"
-            onSubmit={handleSubmit(onSubmit)}
+            onSubmit={handleSubmit(
+              onSubmit
+            )}
             noValidate
           >
             {/* Username */}
+
             <TextField
               fullWidth
               label="Username"
               margin="normal"
               autoComplete="username"
-              {...register('username', {
-                required: 'Username is required',
-              })}
-              error={!!errors.username}
-              helperText={errors.username?.message}
+              {...register(
+                'username',
+                {
+                  required:
+                    'Username is required',
+                }
+              )}
+              error={
+                !!errors.username
+              }
+              helperText={
+                errors.username?.message
+              }
             />
 
             {/* Password */}
+
             <TextField
               fullWidth
               label="Password"
               margin="normal"
-              type={showPassword ? 'text' : 'password'}
+              type={
+                showPassword
+                  ? 'text'
+                  : 'password'
+              }
               autoComplete="current-password"
-              {...register('password', {
-                required: 'Password is required',
-              })}
-              error={!!errors.password}
-              helperText={errors.password?.message}
+              {...register(
+                'password',
+                {
+                  required:
+                    'Password is required',
+                }
+              )}
+              error={
+                !!errors.password
+              }
+              helperText={
+                errors.password?.message
+              }
               InputProps={{
                 endAdornment: (
                   <InputAdornment position="end">
                     <IconButton
                       onClick={() =>
-                        setShowPassword((prev) => !prev)
+                        setShowPassword(
+                          (prev) =>
+                            !prev
+                        )
                       }
                       edge="end"
                       aria-label={
@@ -283,6 +394,7 @@ const Login = () => {
             />
 
             {/* Login Button */}
+
             <Button
               fullWidth
               type="submit"
@@ -295,14 +407,17 @@ const Login = () => {
                 bgcolor: TEAL,
                 borderRadius: '10px',
                 fontWeight: 600,
-                letterSpacing: '0.04em',
+                letterSpacing:
+                  '0.04em',
 
                 '&:hover': {
-                  bgcolor: TEAL_DARK,
+                  bgcolor:
+                    TEAL_DARK,
                 },
 
                 '&.Mui-disabled': {
-                  bgcolor: '#a7f3d0',
+                  bgcolor:
+                    '#a7f3d0',
                   color: '#fff',
                 },
               }}
@@ -319,6 +434,7 @@ const Login = () => {
           </Box>
 
           {/* Register */}
+
           <Box
             sx={{
               mt: 2,
@@ -330,13 +446,15 @@ const Login = () => {
               color="text.secondary"
             >
               Don&apos;t have an account?{' '}
+
               <Link
                 component={RouterLink}
                 to="/register"
                 sx={{
                   fontWeight: 600,
                   color: TEAL_DARK,
-                  textDecoration: 'none',
+                  textDecoration:
+                    'none',
                 }}
               >
                 Sign Up
