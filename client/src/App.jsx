@@ -9,6 +9,7 @@ import Layout from './components/Layout';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import MachineSelection from './pages/MachineSelection';
+
 import Dashboard from './pages/Dashboard';
 import PersonalInfo from './pages/PersonalInfo';
 import Materials from './pages/Materials';
@@ -20,12 +21,18 @@ import Attendance from './pages/Attendance';
 import SalaryReport from './pages/SalaryReport';
 import Accounts from './pages/Accounts';
 
+import BigMachine from './pages/BigMachine';
+import SmallMachine from './pages/SmallMachine';
+
 function App() {
   const { token } = useSelector((state) => state.auth);
 
   return (
     <Routes>
-      {/* Public */}
+      {/* =====================================================
+          PUBLIC ROUTES
+      ====================================================== */}
+
       <Route
         path="/login"
         element={
@@ -48,7 +55,10 @@ function App() {
         }
       />
 
-      {/* After login: machine selection */}
+      {/* =====================================================
+          MACHINE SELECTION
+      ====================================================== */}
+
       <Route
         path="/machine-selection"
         element={
@@ -58,38 +68,74 @@ function App() {
         }
       />
 
-      {/* Machine-aware protected routes */}
+      {/* =====================================================
+          BIG MACHINE
+      ====================================================== */}
+
+      <Route
+        path="/big-machine"
+        element={
+          <MachineProtectedRoute machineType="big">
+            <BigMachine />
+          </MachineProtectedRoute>
+        }
+      />
+
+      {/* =====================================================
+          SMALL MACHINE
+      ====================================================== */}
+
+      <Route
+        path="/small-machine"
+        element={
+          <MachineProtectedRoute machineType="small">
+            <SmallMachine />
+          </MachineProtectedRoute>
+        }
+      />
+
+      {/* =====================================================
+          ADMIN / NORMAL APPLICATION ROUTES
+      ====================================================== */}
+
       <Route
         element={
           <ProtectedRoute>
-            <MachineProtectedRoute>
-              <Layout />
-            </MachineProtectedRoute>
+            <Layout />
           </ProtectedRoute>
         }
       >
-        <Route path="/dashboard" element={<Dashboard />} />
+        {/* Dashboard */}
+        <Route
+          path="/dashboard"
+          element={<Dashboard />}
+        />
 
+        {/* Personal Info */}
         <Route
           path="/personal-info"
           element={<PersonalInfo />}
         />
 
+        {/* Materials */}
         <Route
           path="/materials"
           element={<Materials />}
         />
 
+        {/* Borewell Points */}
         <Route
           path="/borewell-points"
           element={<BorewellPoints />}
         />
 
+        {/* Bills */}
         <Route
           path="/bills"
           element={<Bills />}
         />
 
+        {/* Attendance */}
         <Route
           path="/attendance"
           element={<Attendance />}
@@ -101,11 +147,13 @@ function App() {
           element={<SalaryReport />}
         />
 
+        {/* Reports */}
         <Route
           path="/reports"
           element={<Reports />}
         />
 
+        {/* Activity Logs */}
         <Route
           path="/activity-logs"
           element={
@@ -115,6 +163,7 @@ function App() {
           }
         />
 
+        {/* Accounts */}
         <Route
           path="/accounts"
           element={
@@ -125,7 +174,10 @@ function App() {
         />
       </Route>
 
-      {/* Unknown route */}
+      {/* =====================================================
+          UNKNOWN ROUTES
+      ====================================================== */}
+
       <Route
         path="*"
         element={
