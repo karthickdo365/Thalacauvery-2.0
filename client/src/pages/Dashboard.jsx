@@ -3760,36 +3760,38 @@ const Dashboard = () => {
             STOCK IS THE LAST SUMMARY SECTION
         ================================================= */}
 
-        <Grid
-          container
-          spacing={1.25}
+        <Box
           sx={{
             mb: 1.5,
+            width: '100%',
             display: 'grid',
             gridTemplateColumns: {
               xs: '1fr',
               sm: 'repeat(2, minmax(0, 1fr))',
               md: 'repeat(4, minmax(0, 1fr))',
             },
+            gap: {
+              xs: 1,
+              sm: 1.25,
+              md: 1.25,
+            },
             alignItems: 'stretch',
           }}
         >
           {pipeCards.map((card) => (
-            <Grid
-              item
-              xs={12}
-              sm={6}
-              md={3}
+            <Box
               key={card.key}
               sx={{
                 minWidth: 0,
                 width: '100%',
+                display: 'flex',
               }}
             >
               <Card
                 elevation={0}
                 sx={{
                   height: '100%',
+                  width: '100%',
                   border: '1px solid #dbe3ec',
                   borderRadius: '12px',
                   bgcolor: '#fff',
@@ -3858,18 +3860,15 @@ const Dashboard = () => {
                   </Box>
                 </CardContent>
               </Card>
-            </Grid>
+            </Box>
           ))}
 
 
-          <Grid
-            item
-            xs={12}
-            sm={6}
-            md={3}
+          <Box
             sx={{
               minWidth: 0,
               width: '100%',
+              display: 'flex',
             }}
           >
             <Card
@@ -3994,8 +3993,8 @@ const Dashboard = () => {
                 </Typography>
               </CardContent>
             </Card>
-          </Grid>
-        </Grid>
+          </Box>
+        </Box>
 
         {/* =================================================
             ROW 3
