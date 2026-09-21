@@ -1,4 +1,9 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import {
+  Routes,
+  Route,
+  Navigate,
+} from 'react-router-dom';
+
 import { useSelector } from 'react-redux';
 
 import ProtectedRoute from './components/ProtectedRoute';
@@ -25,30 +30,43 @@ import BigMachine from './pages/BigMachine';
 import SmallMachine from './pages/SmallMachine';
 
 function App() {
-  const { token } = useSelector((state) => state.auth);
+  const { token } = useSelector(
+    (state) => state.auth
+  );
 
   return (
     <Routes>
+
       {/* =====================================================
-          PUBLIC ROUTES
+          LOGIN
       ====================================================== */}
 
       <Route
         path="/login"
         element={
           token ? (
-            <Navigate to="/machine-selection" replace />
+            <Navigate
+              to="/machine-selection"
+              replace
+            />
           ) : (
             <Login />
           )
         }
       />
 
+      {/* =====================================================
+          REGISTER
+      ====================================================== */}
+
       <Route
         path="/register"
         element={
           token ? (
-            <Navigate to="/machine-selection" replace />
+            <Navigate
+              to="/machine-selection"
+              replace
+            />
           ) : (
             <Register />
           )
@@ -69,33 +87,37 @@ function App() {
       />
 
       {/* =====================================================
-          BIG MACHINE
+          BIG MACHINE ONLY
       ====================================================== */}
 
       <Route
         path="/big-machine"
         element={
-          <MachineProtectedRoute machineType="big">
+          <MachineProtectedRoute
+            machineType="big"
+          >
             <BigMachine />
           </MachineProtectedRoute>
         }
       />
 
       {/* =====================================================
-          SMALL MACHINE
+          SMALL MACHINE ONLY
       ====================================================== */}
 
       <Route
         path="/small-machine"
         element={
-          <MachineProtectedRoute machineType="small">
+          <MachineProtectedRoute
+            machineType="small"
+          >
             <SmallMachine />
           </MachineProtectedRoute>
         }
       />
 
       {/* =====================================================
-          ADMIN / NORMAL APPLICATION ROUTES
+          ADMIN FULL ACCESS
       ====================================================== */}
 
       <Route
@@ -105,55 +127,65 @@ function App() {
           </ProtectedRoute>
         }
       >
+
         {/* Dashboard */}
+
         <Route
           path="/dashboard"
           element={<Dashboard />}
         />
 
         {/* Personal Info */}
+
         <Route
           path="/personal-info"
           element={<PersonalInfo />}
         />
 
         {/* Materials */}
+
         <Route
           path="/materials"
           element={<Materials />}
         />
 
         {/* Borewell Points */}
+
         <Route
           path="/borewell-points"
           element={<BorewellPoints />}
         />
 
         {/* Bills */}
+
         <Route
           path="/bills"
           element={<Bills />}
         />
 
         {/* Attendance */}
+
         <Route
           path="/attendance"
           element={<Attendance />}
         />
 
         {/* Salary Report */}
+
         <Route
           path="/salary-report"
           element={<SalaryReport />}
         />
 
         {/* Reports */}
+
         <Route
           path="/reports"
           element={<Reports />}
         />
 
         {/* Activity Logs */}
+
         <Route
           path="/activity-logs"
           element={
@@ -164,6 +196,7 @@ function App() {
         />
 
         {/* Accounts */}
+
         <Route
           path="/accounts"
           element={
@@ -172,21 +205,27 @@ function App() {
             </PartnerRoute>
           }
         />
+
       </Route>
 
       {/* =====================================================
-          UNKNOWN ROUTES
+          UNKNOWN ROUTE
       ====================================================== */}
 
       <Route
         path="*"
         element={
           <Navigate
-            to={token ? '/machine-selection' : '/login'}
+            to={
+              token
+                ? '/machine-selection'
+                : '/login'
+            }
             replace
           />
         }
       />
+
     </Routes>
   );
 }
