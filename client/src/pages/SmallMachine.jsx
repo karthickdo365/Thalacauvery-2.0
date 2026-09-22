@@ -9,13 +9,13 @@ import {
   Box,
   Button,
   Checkbox,
+  CircularProgress,
   FormControlLabel,
   Grid,
   MenuItem,
   Paper,
   TextField,
   Typography,
-  CircularProgress,
 } from '@mui/material';
 
 import MenuIcon from '@mui/icons-material/Menu';
@@ -49,22 +49,24 @@ const formatNumber = (value) => {
 };
 
 
-// The project's api helper may return response.data directly.
-// This keeps this page compatible with either shape.
+// Your api.js returns response.data directly.
+// This also supports normal Axios response format.
 const unwrapResponse = (response) => {
   return response?.data ?? response;
 };
 
 
 // ============================================================
-// DEFAULT AGENT
+// EMPTY AGENT
 // ============================================================
 
 const EMPTY_AGENT = {
   id: '',
   name: '',
-  jInner: '',
   outer: '',
+  inner: '',
+  smallInner: '',
+  jiInner: '',
   depth: '',
   trans: '',
   total: '',
@@ -72,7 +74,7 @@ const EMPTY_AGENT = {
 
 
 // ============================================================
-// DEFAULT ITEMS
+// EMPTY ITEMS
 // ============================================================
 
 const EMPTY_ITEMS = {
@@ -81,12 +83,17 @@ const EMPTY_ITEMS = {
     rate: '',
   },
 
-  jPipe: {
+  inner: {
     quantity: '',
     rate: '',
   },
 
   outer: {
+    quantity: '',
+    rate: '',
+  },
+
+  smallInner: {
     quantity: '',
     rate: '',
   },
@@ -109,13 +116,14 @@ const EMPTY_ITEMS = {
 
 
 // ============================================================
-// BIG MACHINE MATERIAL TYPES
+// SMALL MACHINE MATERIAL TYPES
 // ============================================================
 
 const MATERIAL_MAP = {
   diesel: 'Diesel',
-  jPipe: 'Pipe J1',
+  inner: 'Pipe Inner',
   outer: 'Pipe Outer',
+  smallInner: 'Pipe Small',
   bit: 'Bit',
   hammer: 'Hammer',
   other: 'Others',
@@ -126,7 +134,7 @@ const MATERIAL_MAP = {
 // COMPONENT
 // ============================================================
 
-const BigMachine = () => {
+const SmallMachine = () => {
 
   // ==========================================================
   // AGENTS
@@ -142,7 +150,7 @@ const BigMachine = () => {
 
 
   // ==========================================================
-  // AGENT INFORMATION
+  // SELECTED AGENT INFORMATION
   // ==========================================================
 
   const [agent, setAgent] =
@@ -158,7 +166,7 @@ const BigMachine = () => {
 
 
   // ==========================================================
-  // EMPLOYEES
+  // SMALL MACHINE EMPLOYEES
   // ==========================================================
 
   const [employees, setEmployees] =
@@ -193,7 +201,7 @@ const BigMachine = () => {
 
 
   // ==========================================================
-  // LOAD BIG MACHINE AGENTS
+  // LOAD SMALL MACHINE AGENT INFORMATION
   // ==========================================================
 
   const loadAgents = useCallback(
@@ -203,113 +211,229 @@ const BigMachine = () => {
 
         setAgentsLoading(true);
 
+        /*
+         * IMPORTANT:
+         *
+         * This page is SMALL MACHINE.
+         *
+         * Therefore the Agent Information API MUST use:
+         *
+         * machineType: 'small'
+         *
+         * The old version was using 'big', which is why the
+         * Small Machine agents were not appearing.
+         */
+
         const response = await api.get(
           '/points',
           {
             params: {
-              machineType: 'big',
+              machineType: 'small',
               page: 1,
               limit: 500,
             },
           }
         );
 
+
         const data =
           unwrapResponse(response);
 
-        const points =
-          Array.isArray(data?.points)
-            ? data.points
-            : [];
 
         /*
-         * One broker/agent can have more than one
-         * Agent Information rate-card record.
+         * Support all common response structures.
          *
-         * Keep only one dropdown entry per agent.
+         * Example:
+         *
+         * {
+         *   points: [...]
+         * }
+         *
+         * OR
+         *
+         * [...]
          */
+
+        let points = [];
+
+        if (Array.isArray(data)) {
+
+          points = data;
+
+        } else if (
+          Array.isArray(data?.points)
+        ) {
+
+          points = data.points;
+
+        } else if (
+          Array.isArray(data?.data)
+        ) {
+
+          points = data.data;
+
+        } else if (
+          Array.isArray(data?.items)
+        ) {
+
+          points = data.items;
+
+        }
+
+
+        console.log(
+          'SMALL MACHINE AGENT INFORMATION:',
+          points
+        );
+
+
+        /*
+         * Keep only Small Machine records.
+         */
+
+        const smallMachinePoints =
+          points.filter(
+            (point) => {
+
+              const machineType =
+                String(
+                  point?.machineType ||
+                  ''
+                )
+                  .trim()
+                  .toLowerCase();
+
+              return (
+                machineType === 'small'
+              );
+            }
+          );
+
+
+        /*
+         * One agent can have multiple
+         * Agent Information records.
+         *
+         * We only want one dropdown entry
+         * for each agent.
+         */
+
         const uniqueAgents =
           new Map();
 
-        points.forEach((point) => {
 
-          if (
-            !point ||
-            point.machineType !== 'big'
-          ) {
-            return;
-          }
+        smallMachinePoints.forEach(
+          (point) => {
 
-          const broker =
-            point.brokerId;
-
-          const id =
-            typeof broker === 'string'
-              ? broker
-              : broker?._id ||
-                broker?.id ||
-                point._id;
-
-          const name =
-            typeof broker === 'object'
-              ? (
-                  broker?.name ||
-                  broker?.fullName ||
-                  broker?.username
-                )
-              : (
-                  point?.brokerName ||
-                  point?.broker?.name ||
-                  point?.name ||
-                  ''
-                );
-
-          if (!id || !name) {
-            return;
-          }
-
-          /*
-           * Keep the complete point record.
-           * When the user selects the agent we can
-           * load all of its saved values.
-           */
-          uniqueAgents.set(
-            String(id),
-            {
-              ...point,
-              _agentId: String(id),
-              _agentName: name,
+            if (!point) {
+              return;
             }
-          );
-        });
+
+
+            const broker =
+              point?.brokerId;
+
+
+            /*
+             * Agent ID
+             */
+
+            const id =
+              typeof broker === 'string'
+                ? broker
+                : broker?._id ||
+                  broker?.id ||
+                  point?.broker?._id ||
+                  point?._id;
+
+
+            /*
+             * Agent Name
+             */
+
+            const name =
+              typeof broker === 'object'
+                ? (
+                    broker?.name ||
+                    broker?.fullName ||
+                    broker?.username ||
+                    ''
+                  )
+                : (
+                    point?.brokerName ||
+                    point?.broker?.name ||
+                    point?.agentName ||
+                    point?.name ||
+                    ''
+                  );
+
+
+            if (!id || !name) {
+              return;
+            }
+
+
+            /*
+             * Keep the entire point record.
+             *
+             * This is important because when the
+             * user selects the Agent, we need all
+             * of the saved Agent Information.
+             */
+
+            uniqueAgents.set(
+              String(id),
+              {
+                ...point,
+
+                _agentId:
+                  String(id),
+
+                _agentName:
+                  String(name),
+              }
+            );
+
+          }
+        );
+
 
         const list =
           Array.from(
             uniqueAgents.values()
-          ).sort((a, b) =>
-            String(
-              a._agentName
-            ).localeCompare(
+          ).sort(
+            (a, b) =>
               String(
-                b._agentName
+                a?._agentName || ''
+              ).localeCompare(
+                String(
+                  b?._agentName || ''
+                )
               )
-            )
           );
+
+
+        console.log(
+          'SMALL MACHINE AGENTS:',
+          list
+        );
+
 
         setAgents(list);
 
       } catch (error) {
 
         console.error(
-          'Load Big Machine agents error:',
+          'Load Small Machine Agent Information error:',
           error
         );
 
         setAgents([]);
 
         toast.error(
-          error.response?.data?.message ||
-          'Failed to load agents'
+          error?.response?.data?.message ||
+          error?.message ||
+          'Failed to load Small Machine Agent Information'
         );
 
       } finally {
@@ -334,13 +458,17 @@ const BigMachine = () => {
 
         setAttendanceLoading(true);
 
+
         /*
-         * You specifically requested
-         * Small Machine employees.
+         * Existing project employee data is under
+         * /users.
+         *
+         * This page needs Small Machine employees.
          */
+
         const response =
           await api.get(
-            '/attendance/employees',
+            '/users',
             {
               params: {
                 machineType: 'small',
@@ -348,35 +476,109 @@ const BigMachine = () => {
             }
           );
 
+
         const data =
           unwrapResponse(response);
 
-        const employeeList =
+
+        let employeeList = [];
+
+
+        if (Array.isArray(data)) {
+
+          employeeList = data;
+
+        } else if (
+          Array.isArray(data?.users)
+        ) {
+
+          employeeList = data.users;
+
+        } else if (
           Array.isArray(data?.employees)
-            ? data.employees
-            : [];
+        ) {
+
+          employeeList = data.employees;
+
+        } else if (
+          Array.isArray(data?.data)
+        ) {
+
+          employeeList = data.data;
+
+        } else if (
+          Array.isArray(data?.records)
+        ) {
+
+          employeeList = data.records;
+
+        }
+
+
+        /*
+         * Remove broker / partner records.
+         */
+
+        employeeList =
+          employeeList.filter(
+            (employee) => {
+
+              const role =
+                String(
+                  employee?.role ||
+                  employee?.type ||
+                  employee?.userType ||
+                  ''
+                )
+                  .trim()
+                  .toLowerCase();
+
+              return (
+                role !== 'broker' &&
+                role !== 'partner'
+              );
+
+            }
+          );
+
+
+        console.log(
+          'SMALL MACHINE EMPLOYEES:',
+          employeeList
+        );
+
 
         setEmployees(
           employeeList
         );
 
+
         /*
-         * All employees are PRESENT
-         * by default.
-         *
-         * User can uncheck anyone who is absent.
+         * Everyone is PRESENT by default.
          */
+
         const initialAttendance = {};
+
 
         employeeList.forEach(
           (employee) => {
 
-            initialAttendance[
-              String(employee._id)
-            ] = true;
+            const id =
+              employee?._id ||
+              employee?.id;
+
+
+            if (id) {
+
+              initialAttendance[
+                String(id)
+              ] = true;
+
+            }
 
           }
         );
+
 
         setAttendance(
           initialAttendance
@@ -385,7 +587,7 @@ const BigMachine = () => {
       } catch (error) {
 
         console.error(
-          'Load employees error:',
+          'Load Small Machine employees error:',
           error
         );
 
@@ -394,8 +596,9 @@ const BigMachine = () => {
         setAttendance({});
 
         toast.error(
-          error.response?.data?.message ||
-          'Failed to load employees'
+          error?.response?.data?.message ||
+          error?.message ||
+          'Failed to load Small Machine employees'
         );
 
       } finally {
@@ -410,7 +613,7 @@ const BigMachine = () => {
 
 
   // ==========================================================
-  // LOAD TODAY'S ATTENDANCE
+  // LOAD TODAY ATTENDANCE
   // ==========================================================
 
   const loadTodayAttendance =
@@ -423,6 +626,7 @@ const BigMachine = () => {
             dayjs().format(
               'YYYY-MM-DD'
             );
+
 
           const response =
             await api.get(
@@ -437,24 +641,49 @@ const BigMachine = () => {
               }
             );
 
+
           const data =
             unwrapResponse(response);
 
-          const records =
-            Array.isArray(
-              data?.records
-            )
-              ? data.records
-              : [];
+
+          let records = [];
+
+
+          if (Array.isArray(data)) {
+
+            records = data;
+
+          } else if (
+            Array.isArray(data?.records)
+          ) {
+
+            records = data.records;
+
+          } else if (
+            Array.isArray(data?.attendance)
+          ) {
+
+            records = data.attendance;
+
+          } else if (
+            Array.isArray(data?.data)
+          ) {
+
+            records = data.data;
+
+          }
+
 
           setAttendanceRecords(
             records
           );
 
+
           /*
            * Existing attendance overrides
-           * the default "Present" state.
+           * the default Present state.
            */
+
           if (records.length > 0) {
 
             setAttendance(
@@ -464,27 +693,40 @@ const BigMachine = () => {
                   ...previous,
                 };
 
+
                 records.forEach(
                   (record) => {
 
                     const employeeId =
-                      record.employeeId?._id ||
-                      record.employeeId;
+                      record?.employeeId?._id ||
+                      record?.employeeId ||
+                      record?.userId?._id ||
+                      record?.userId;
+
 
                     if (!employeeId) {
                       return;
                     }
 
+
+                    const status =
+                      String(
+                        record?.status ||
+                        record?.attendanceStatus ||
+                        ''
+                      )
+                        .trim()
+                        .toLowerCase();
+
+
                     next[
                       String(employeeId)
                     ] =
-                      String(
-                        record.status || ''
-                      ).toLowerCase() ===
-                      'present';
+                      status !== 'absent';
 
                   }
                 );
+
 
                 return next;
 
@@ -496,14 +738,13 @@ const BigMachine = () => {
         } catch (error) {
 
           console.error(
-            'Load today attendance error:',
+            'Load Small Machine attendance error:',
             error
           );
 
           /*
-           * Do not stop the Big Machine
-           * form if today's attendance
-           * cannot be loaded.
+           * Attendance loading should not
+           * stop Agent Information from working.
            */
 
         }
@@ -517,186 +758,224 @@ const BigMachine = () => {
   // INITIAL LOAD
   // ==========================================================
 
-  useEffect(() => {
+  useEffect(
+    () => {
 
-    loadAgents();
+      loadAgents();
 
-    loadEmployees();
+      loadEmployees();
 
-  }, [
-    loadAgents,
-    loadEmployees,
-  ]);
+    },
+    [
+      loadAgents,
+      loadEmployees,
+    ]
+  );
 
 
-  // Load today's existing attendance
-  // after employees have been loaded.
-  useEffect(() => {
+  // ==========================================================
+  // LOAD ATTENDANCE AFTER EMPLOYEES
+  // ==========================================================
 
-    if (employees.length > 0) {
-      loadTodayAttendance();
-    }
+  useEffect(
+    () => {
 
-  }, [
-    employees.length,
-    loadTodayAttendance,
-  ]);
+      if (
+        employees.length > 0
+      ) {
+
+        loadTodayAttendance();
+
+      }
+
+    },
+    [
+      employees.length,
+      loadTodayAttendance,
+    ]
+  );
 
 
   // ==========================================================
   // AGENT SELECTION
   // ==========================================================
 
-  const handleAgentSelect = (
-    event
-  ) => {
+  const handleAgentSelect =
+    (event) => {
 
-    const id =
-      event.target.value;
+      const id =
+        event.target.value;
 
-    setSelectedAgentId(id);
 
-    if (!id) {
-
-      setAgent(
-        EMPTY_AGENT
+      setSelectedAgentId(
+        id
       );
 
-      return;
 
-    }
+      if (!id) {
 
-    const selected =
-      agents.find(
-        (item) =>
-          String(
-            item._agentId
-          ) === String(id)
-      );
+        setAgent(
+          EMPTY_AGENT
+        );
 
-    if (!selected) {
-      return;
-    }
+        return;
 
-    /*
-     * Load values from the selected
-     * Agent Information record.
-     *
-     * Support both the actual Agent Information
-     * nested structure and the custom fields
-     * used by the Big Machine form.
-     */
+      }
 
-    const jInner =
-      selected?.jInner ??
-      selected?.jiInner?.rate ??
-      selected?.jiInner ??
-      '';
 
-    const outer =
-      selected?.outer ??
-      selected?.outerPipe?.rate ??
-      selected?.outerPipe ??
-      '';
+      const selected =
+        agents.find(
+          (item) =>
+            String(
+              item?._agentId
+            ) === String(id)
+        );
 
-    /*
-     * Depth:
-     *
-     * If a direct depth value exists,
-     * use it.
-     *
-     * Otherwise keep the depth rate-card
-     * information available as the sum of
-     * configured depth rates.
-     */
-    let depth =
-      selected?.depth ??
-      '';
 
-    if (
-      depth === '' ||
-      depth === null ||
-      depth === undefined
-    ) {
+      if (!selected) {
+        return;
+      }
+
+
+      /*
+       * --------------------------------------------------------
+       * SMALL MACHINE AGENT INFORMATION
+       * --------------------------------------------------------
+       *
+       * Existing Agent Information uses:
+       *
+       * outerPipe
+       * innerPipe
+       * smallInnerPipe
+       * jiInner
+       * depthDetails
+       *
+       * We support those structures here.
+       */
+
+
+      const outer =
+        selected?.outer ??
+        selected?.outerPipe?.rate ??
+        selected?.outerPipe ??
+        '';
+
+
+      const inner =
+        selected?.inner ??
+        selected?.innerPipe?.rate ??
+        selected?.innerPipe ??
+        '';
+
+
+      const smallInner =
+        selected?.smallInner ??
+        selected?.smallInnerPipe?.rate ??
+        selected?.smallInnerPipe ??
+        '';
+
+
+      const jiInner =
+        selected?.jiInner ??
+        selected?.jiInnerPipe?.rate ??
+        selected?.jiInnerPipe ??
+        '';
+
+
+      /*
+       * Depth can either be stored directly
+       * or inside depthDetails.
+       */
+
+      let depth =
+        selected?.depth ??
+        selected?.depthFeet ??
+        '';
+
+
+      /*
+       * Do NOT blindly add all depth rates if
+       * there is no direct depth value.
+       *
+       * Agent Information stores depth rate-card
+       * details. We only use the direct depth
+       * when it exists.
+       */
 
       if (
-        Array.isArray(
-          selected?.depthDetails
-        )
+        depth === null ||
+        depth === undefined
       ) {
-
-        depth =
-          selected.depthDetails.reduce(
-            (
-              sum,
-              item
-            ) =>
-              sum +
-              toNumber(
-                item?.rate
-              ),
-            0
-          );
-
-      } else {
 
         depth = '';
 
       }
 
-    }
 
-    const trans =
-      selected?.trans ??
-      selected?.transport ??
-      selected?.transportAmount ??
-      '';
+      const trans =
+        selected?.trans ??
+        selected?.transport ??
+        selected?.transportAmount ??
+        '';
 
-    /*
-     * If Agent Information has a saved
-     * total, use it.
-     *
-     * Otherwise calculate from the
-     * displayed values.
-     */
-    const savedTotal =
-      selected?.agentTotal ??
-      selected?.totalAmount ??
-      selected?.total ??
-      '';
 
-    const calculatedTotal =
-      toNumber(jInner) +
-      toNumber(outer) +
-      toNumber(depth) +
-      toNumber(trans);
+      /*
+       * Stored total.
+       */
 
-    const total =
-      savedTotal !== '' &&
-      savedTotal !== null &&
-      savedTotal !== undefined
-        ? savedTotal
-        : calculatedTotal;
+      const savedTotal =
+        selected?.agentTotal ??
+        selected?.totalAmount ??
+        selected?.total ??
+        '';
 
-    setAgent({
-      id:
-        selected._agentId,
 
-      name:
-        selected._agentName,
+      /*
+       * Fallback total.
+       */
 
-      jInner,
+      const calculatedTotal =
+        toNumber(outer) +
+        toNumber(inner) +
+        toNumber(smallInner) +
+        toNumber(jiInner) +
+        toNumber(depth) +
+        toNumber(trans);
 
-      outer,
 
-      depth,
+      const total =
+        savedTotal !== '' &&
+        savedTotal !== null &&
+        savedTotal !== undefined
+          ? savedTotal
+          : calculatedTotal;
 
-      trans,
 
-      total,
-    });
+      setAgent(
+        {
+          id:
+            selected?._agentId || '',
 
-  };
+          name:
+            selected?._agentName || '',
+
+          outer,
+
+          inner,
+
+          smallInner,
+
+          jiInner,
+
+          depth,
+
+          trans,
+
+          total,
+        }
+      );
+
+    };
 
 
   // ==========================================================
@@ -724,60 +1003,64 @@ const BigMachine = () => {
   // ==========================================================
 
   const agentTotal =
-    useMemo(() => {
+    useMemo(
+      () => {
 
-      /*
-       * If the selected Agent Information
-       * contains a saved total, preserve it.
-       *
-       * Otherwise calculate dynamically.
-       */
-      const calculated =
-        toNumber(agent.jInner) +
-        toNumber(agent.outer) +
-        toNumber(agent.depth) +
-        toNumber(agent.trans);
+        const calculated =
+          toNumber(agent.outer) +
+          toNumber(agent.inner) +
+          toNumber(agent.smallInner) +
+          toNumber(agent.jiInner) +
+          toNumber(agent.depth) +
+          toNumber(agent.trans);
 
-      if (
-        agent.total !== '' &&
-        agent.total !== null &&
-        agent.total !== undefined
-      ) {
 
         /*
-         * When the user changes one of
-         * the four fields manually, recalculate.
+         * If the selected Agent Information
+         * contains a saved total, preserve it
+         * until the user changes values.
          */
-        const originalTotal =
-          toNumber(agent.total);
 
-        const currentSum =
-          calculated;
-
-        /*
-         * If the stored total differs from
-         * the current editable values, use
-         * the current calculation.
-         */
         if (
-          currentSum !==
-          originalTotal
+          agent.total !== '' &&
+          agent.total !== null &&
+          agent.total !== undefined
         ) {
-          return currentSum;
+
+          const originalTotal =
+            toNumber(
+              agent.total
+            );
+
+
+          if (
+            calculated !==
+            originalTotal
+          ) {
+
+            return calculated;
+
+          }
+
+
+          return originalTotal;
+
         }
 
-        return originalTotal;
-      }
 
-      return calculated;
+        return calculated;
 
-    }, [
-      agent.jInner,
-      agent.outer,
-      agent.depth,
-      agent.trans,
-      agent.total,
-    ]);
+      },
+      [
+        agent.outer,
+        agent.inner,
+        agent.smallInner,
+        agent.jiInner,
+        agent.depth,
+        agent.trans,
+        agent.total,
+      ]
+    );
 
 
   // ==========================================================
@@ -812,10 +1095,9 @@ const BigMachine = () => {
   const getItemAmount =
     (item) => {
 
-      /*
-       * Other uses direct amount.
-       */
-      if (item === 'other') {
+      if (
+        item === 'other'
+      ) {
 
         return toNumber(
           items.other.amount
@@ -823,15 +1105,18 @@ const BigMachine = () => {
 
       }
 
+
       const quantity =
         toNumber(
           items[item]?.quantity
         );
 
+
       const rate =
         toNumber(
           items[item]?.rate
         );
+
 
       return (
         quantity * rate
@@ -845,18 +1130,22 @@ const BigMachine = () => {
   // ==========================================================
 
   const totalItemAmount =
-    useMemo(() => {
+    useMemo(
+      () => {
 
-      return (
-        getItemAmount('diesel') +
-        getItemAmount('jPipe') +
-        getItemAmount('outer') +
-        getItemAmount('bit') +
-        getItemAmount('hammer') +
-        getItemAmount('other')
-      );
+        return (
+          getItemAmount('diesel') +
+          getItemAmount('inner') +
+          getItemAmount('outer') +
+          getItemAmount('smallInner') +
+          getItemAmount('bit') +
+          getItemAmount('hammer') +
+          getItemAmount('other')
+        );
 
-    }, [items]);
+      },
+      [items]
+    );
 
 
   // ==========================================================
@@ -894,40 +1183,51 @@ const BigMachine = () => {
       const item =
         items[itemKey];
 
+
       const materialType =
         MATERIAL_MAP[itemKey];
+
 
       if (!materialType) {
         return;
       }
 
+
       /*
-       * OTHER
+       * OTHER MATERIAL
        */
+
       if (
         itemKey === 'other'
       ) {
 
         const amount =
           toNumber(
-            item.amount
+            item?.amount
           );
+
 
         const description =
           String(
-            item.value || ''
+            item?.value || ''
           ).trim();
+
+
+        /*
+         * Nothing entered.
+         */
 
         if (
           !description &&
           amount <= 0
         ) {
+
           return;
+
         }
 
-        if (
-          !description
-        ) {
+
+        if (!description) {
 
           throw new Error(
             'Other material description is required'
@@ -935,9 +1235,8 @@ const BigMachine = () => {
 
         }
 
-        if (
-          amount <= 0
-        ) {
+
+        if (amount <= 0) {
 
           throw new Error(
             'Other material amount is required'
@@ -945,122 +1244,163 @@ const BigMachine = () => {
 
         }
 
+
         const form =
           new FormData();
+
 
         form.append(
           'date',
           dayjs().toISOString()
         );
 
+
         form.append(
           'type',
           materialType
         );
 
+
+        /*
+         * SMALL MACHINE
+         */
+
         form.append(
           'machineType',
-          'big'
+          'small'
         );
+
 
         form.append(
           'description',
           description
         );
 
+
         form.append(
           'quantity',
           '0'
         );
+
 
         form.append(
           'costPerLiter',
           '0'
         );
 
+
         form.append(
           'amount',
           String(amount)
         );
+
 
         form.append(
           'totalPrice',
           String(amount)
         );
 
+
         await api.post(
           '/materials',
           form
         );
 
+
         return;
+
       }
 
 
       /*
        * NORMAL MATERIAL
        */
+
       const quantity =
         toNumber(
-          item.quantity
+          item?.quantity
         );
+
 
       const rate =
         toNumber(
-          item.rate
+          item?.rate
         );
+
+
+      /*
+       * If nothing entered, do not
+       * create an empty material.
+       */
 
       if (
         quantity <= 0
       ) {
+
         return;
+
       }
+
 
       const amount =
         quantity * rate;
 
+
       const form =
         new FormData();
+
 
       form.append(
         'date',
         dayjs().toISOString()
       );
 
+
       form.append(
         'type',
         materialType
       );
 
+
+      /*
+       * SMALL MACHINE
+       */
+
       form.append(
         'machineType',
-        'big'
+        'small'
       );
+
 
       form.append(
         'quantity',
         String(quantity)
       );
 
+
       form.append(
         'costPerLiter',
         String(rate)
       );
+
 
       form.append(
         'amount',
         String(amount)
       );
 
+
       form.append(
         'totalPrice',
         String(amount)
       );
 
+
       form.append(
         'description',
         ''
       );
+
 
       await api.post(
         '/materials',
@@ -1082,22 +1422,26 @@ const BigMachine = () => {
           'YYYY-MM-DD'
         );
 
+
       /*
-       * Existing record lookup.
+       * Existing records indexed by employee.
        */
+
       const existingByEmployee =
         new Map();
+
 
       attendanceRecords.forEach(
         (record) => {
 
           const employeeId =
-            record.employeeId?._id ||
-            record.employeeId;
+            record?.employeeId?._id ||
+            record?.employeeId ||
+            record?.userId?._id ||
+            record?.userId;
 
-          if (
-            employeeId
-          ) {
+
+          if (employeeId) {
 
             existingByEmployee.set(
               String(employeeId),
@@ -1109,14 +1453,29 @@ const BigMachine = () => {
         }
       );
 
+
       const requests =
         employees.map(
-          async (employee) => {
+          async (
+            employee
+          ) => {
 
             const employeeId =
               String(
-                employee._id
+                employee?._id ||
+                employee?.id
               );
+
+
+            if (
+              !employeeId ||
+              employeeId === 'undefined'
+            ) {
+
+              return;
+
+            }
+
 
             const status =
               attendance[
@@ -1125,10 +1484,12 @@ const BigMachine = () => {
                 ? 'present'
                 : 'absent';
 
+
             const existing =
               existingByEmployee.get(
                 employeeId
               );
+
 
             if (existing) {
 
@@ -1145,8 +1506,11 @@ const BigMachine = () => {
                 '/attendance',
                 {
                   employeeId,
+
                   date,
+
                   status,
+
                   machineType:
                     'small',
                 }
@@ -1156,6 +1520,7 @@ const BigMachine = () => {
 
           }
         );
+
 
       await Promise.all(
         requests
@@ -1175,17 +1540,23 @@ const BigMachine = () => {
 
         setSaving(true);
 
+
         /*
-         * 1. Save materials.
+         * ------------------------------------------------------
+         * 1. SAVE MATERIALS
+         * ------------------------------------------------------
          */
+
         const materialKeys = [
           'diesel',
-          'jPipe',
+          'inner',
           'outer',
+          'smallInner',
           'bit',
           'hammer',
           'other',
         ];
+
 
         for (
           const itemKey of materialKeys
@@ -1197,9 +1568,13 @@ const BigMachine = () => {
 
         }
 
+
         /*
-         * 2. Save attendance.
+         * ------------------------------------------------------
+         * 2. SAVE ATTENDANCE
+         * ------------------------------------------------------
          */
+
         if (
           employees.length > 0
         ) {
@@ -1208,7 +1583,9 @@ const BigMachine = () => {
             true
           );
 
+
           await saveAttendance();
+
 
           setAttendanceSaving(
             false
@@ -1216,12 +1593,17 @@ const BigMachine = () => {
 
         }
 
+
         /*
-         * 3. Final data for debugging /
-         *    future backend integration.
+         * ------------------------------------------------------
+         * 3. DATA OBJECT
+         * ------------------------------------------------------
          */
+
         const saveData = {
-          machineType: 'big',
+
+          machineType:
+            'small',
 
           date:
             dayjs().format(
@@ -1238,47 +1620,61 @@ const BigMachine = () => {
 
           attendance:
             employees.map(
-              (employee) => ({
-                employeeId:
-                  employee._id,
+              (employee) => {
 
-                employeeName:
-                  employee.name ||
-                  employee.fullName ||
-                  employee.username,
+                const employeeId =
+                  employee?._id ||
+                  employee?.id;
 
-                status:
-                  attendance[
-                    String(
-                      employee._id
-                    )
-                  ]
-                    ? 'present'
-                    : 'absent',
-              })
+
+                return {
+
+                  employeeId,
+
+                  employeeName:
+                    employee?.name ||
+                    employee?.fullName ||
+                    employee?.username ||
+                    'Employee',
+
+                  status:
+                    attendance[
+                      String(employeeId)
+                    ]
+                      ? 'present'
+                      : 'absent',
+
+                };
+
+              }
             ),
+
         };
 
+
         console.log(
-          'BIG MACHINE DATA:',
+          'SMALL MACHINE DATA:',
           saveData
         );
 
+
         toast.success(
-          'Big Machine data saved successfully'
+          'Small Machine data saved successfully'
         );
+
 
       } catch (error) {
 
         console.error(
-          'Big Machine save error:',
+          'Small Machine save error:',
           error
         );
 
+
         toast.error(
-          error.response?.data?.message ||
-          error.message ||
-          'Failed to save Big Machine data'
+          error?.response?.data?.message ||
+          error?.message ||
+          'Failed to save Small Machine data'
         );
 
       } finally {
@@ -1301,32 +1697,71 @@ const BigMachine = () => {
   const handleReset =
     () => {
 
-      setSelectedAgentId('');
+      setSelectedAgentId(
+        ''
+      );
+
 
       setAgent(
         EMPTY_AGENT
       );
 
+
       setItems(
-        EMPTY_ITEMS
+        {
+          ...EMPTY_ITEMS,
+          diesel: {
+            ...EMPTY_ITEMS.diesel,
+          },
+          inner: {
+            ...EMPTY_ITEMS.inner,
+          },
+          outer: {
+            ...EMPTY_ITEMS.outer,
+          },
+          smallInner: {
+            ...EMPTY_ITEMS.smallInner,
+          },
+          bit: {
+            ...EMPTY_ITEMS.bit,
+          },
+          hammer: {
+            ...EMPTY_ITEMS.hammer,
+          },
+          other: {
+            ...EMPTY_ITEMS.other,
+          },
+        }
       );
 
+
       /*
-       * All employees checked again.
+       * Everyone checked again.
        */
-      const resetAttendance = {};
+
+      const resetAttendance =
+        {};
+
 
       employees.forEach(
         (employee) => {
 
-          resetAttendance[
-            String(
-              employee._id
-            )
-          ] = true;
+          const id =
+            employee?._id ||
+            employee?.id;
+
+
+          if (id) {
+
+            resetAttendance[
+              String(id)
+            ] = true;
+
+          }
 
         }
       );
+
 
       setAttendance(
         resetAttendance
@@ -1336,134 +1771,190 @@ const BigMachine = () => {
 
 
   // ==========================================================
-  // STYLES
+  // COLORS
   // ==========================================================
 
   const colors = {
-    primary: '#1769e0',
-    primaryDark: '#12366b',
-    border: '#c9def7',
-    inputBg: '#ffffff',
-    amountBg: '#f0f6ff',
-    text: '#102f5f',
-    secondaryText: '#45658f',
+
+    primary:
+      '#1769e0',
+
+    primaryDark:
+      '#12366b',
+
+    border:
+      '#c9def7',
+
+    inputBg:
+      '#ffffff',
+
+    amountBg:
+      '#f0f6ff',
+
+    text:
+      '#102f5f',
+
+    secondaryText:
+      '#45658f',
+
   };
 
 
+  // ==========================================================
+  // SECTION STYLE
+  // ==========================================================
+
   const sectionStyle = {
+
     border:
       `1px solid ${colors.border}`,
 
-    borderRadius: '8px',
+    borderRadius:
+      '8px',
 
-    overflow: 'hidden',
+    overflow:
+      'hidden',
 
-    background: '#fff',
+    background:
+      '#fff',
 
-    marginBottom: '26px',
+    marginBottom:
+      '20px',
 
-    boxShadow: 'none',
+    boxShadow:
+      'none',
+
   };
 
 
   const sectionHeaderStyle = {
-    minHeight: '66px',
 
-    display: 'flex',
+    minHeight:
+      {
+        xs: '58px',
+        sm: '66px',
+      },
 
-    alignItems: 'center',
+    display:
+      'flex',
 
-    gap: '16px',
+    alignItems:
+      'center',
 
-    padding: '0 24px',
+    gap:
+      {
+        xs: '10px',
+        sm: '16px',
+      },
+
+    padding:
+      {
+        xs: '0 14px',
+        sm: '0 24px',
+      },
 
     background:
       'linear-gradient(90deg, #f2f8ff 0%, #f8fbff 100%)',
 
     borderBottom:
       `1px solid ${colors.border}`,
+
   };
 
 
   const sectionIconStyle = {
-    width: '36px',
-    height: '36px',
-    color: colors.primary,
-    fontSize: '36px',
+
+    width:
+      {
+        xs: '30px',
+        sm: '36px',
+      },
+
+    height:
+      {
+        xs: '30px',
+        sm: '36px',
+      },
+
+    color:
+      colors.primary,
+
   };
 
 
   const labelStyle = {
-    color: colors.text,
-    fontSize: '18px',
-    fontWeight: 600,
-    marginBottom: '7px',
+
+    color:
+      colors.text,
+
+    fontSize:
+      {
+        xs: '15px',
+        sm: '18px',
+      },
+
+    fontWeight:
+      600,
+
+    marginBottom:
+      '7px',
+
   };
 
 
   const inputStyle = {
+
+    width:
+      '100%',
+
     '& .MuiOutlinedInput-root': {
 
-      minHeight: '50px',
+      minHeight:
+        {
+          xs: '46px',
+          sm: '50px',
+        },
 
-      borderRadius: '6px',
+      borderRadius:
+        '6px',
 
       backgroundColor:
         colors.inputBg,
 
-      fontSize: '18px',
+      fontSize:
+        {
+          xs: '16px',
+          sm: '18px',
+        },
 
-      color: colors.text,
+      color:
+        colors.text,
 
       '& fieldset': {
-        borderColor: '#bfd4ee',
-        borderWidth: '1px',
+
+        borderColor:
+          '#bfd4ee',
+
+        borderWidth:
+          '1px',
+
       },
 
       '&:hover fieldset': {
+
         borderColor:
           colors.primary,
+
       },
 
       '&.Mui-focused fieldset': {
+
         borderColor:
           colors.primary,
 
-        borderWidth: '2px',
-      },
+        borderWidth:
+          '2px',
 
-    },
-
-    '& .MuiInputBase-input': {
-      padding: '12px 16px',
-      color: colors.text,
-    },
-  };
-
-
-  const amountStyle = {
-
-    '& .MuiOutlinedInput-root': {
-
-      minHeight: '50px',
-
-      borderRadius: '6px',
-
-      backgroundColor:
-        colors.amountBg,
-
-      '& fieldset': {
-        borderColor: '#cfe2f8',
-      },
-
-      '&:hover fieldset': {
-        borderColor:
-          colors.primary,
-      },
-
-      '&.Mui-focused fieldset': {
-        borderColor:
-          colors.primary,
       },
 
     },
@@ -1471,13 +1962,77 @@ const BigMachine = () => {
     '& .MuiInputBase-input': {
 
       padding:
-        '12px 16px',
+        {
+          xs: '10px 12px',
+          sm: '12px 16px',
+        },
+
+      color:
+        colors.text,
+
+    },
+
+  };
+
+
+  const amountStyle = {
+
+    width:
+      '100%',
+
+    '& .MuiOutlinedInput-root': {
+
+      minHeight:
+        {
+          xs: '46px',
+          sm: '50px',
+        },
+
+      borderRadius:
+        '6px',
+
+      backgroundColor:
+        colors.amountBg,
+
+      '& fieldset': {
+
+        borderColor:
+          '#cfe2f8',
+
+      },
+
+      '&:hover fieldset': {
+
+        borderColor:
+          colors.primary,
+
+      },
+
+      '&.Mui-focused fieldset': {
+
+        borderColor:
+          colors.primary,
+
+      },
+
+    },
+
+    '& .MuiInputBase-input': {
+
+      padding:
+        {
+          xs: '10px 12px',
+          sm: '12px 16px',
+        },
 
       color:
         colors.primary,
 
       fontSize:
-        '19px',
+        {
+          xs: '17px',
+          sm: '19px',
+        },
 
       fontWeight:
         700,
@@ -1487,24 +2042,47 @@ const BigMachine = () => {
   };
 
 
+  // ==========================================================
+  // ITEM ROW
+  // ==========================================================
+
   const itemRowStyle = {
-    display: 'grid',
 
-    gridTemplateColumns: {
-      xs: '1fr',
-      md: '1.1fr 1fr 1fr 1fr',
-    },
+    display:
+      'grid',
 
-    gap: {
-      xs: 1,
-      md: 0,
-    },
+    gridTemplateColumns:
+      {
+        xs: '1fr',
+        sm: '1.1fr 1fr 1fr 1fr',
+      },
 
-    alignItems: 'center',
+    gap:
+      {
+        xs: 1.5,
+        sm: 1,
+      },
 
-    minHeight: '82px',
+    alignItems:
+      'center',
 
-    px: 2,
+    minHeight:
+      {
+        xs: 'auto',
+        sm: '82px',
+      },
+
+    px:
+      {
+        xs: 1.5,
+        sm: 2,
+      },
+
+    py:
+      {
+        xs: 1.5,
+        sm: 0,
+      },
 
     borderLeft:
       '1px solid #d8e7f7',
@@ -1514,6 +2092,119 @@ const BigMachine = () => {
 
     borderBottom:
       '1px solid #d8e7f7',
+
+    background:
+      '#fff',
+
+  };
+
+
+  // ==========================================================
+  // ITEM COMPONENT
+  // ==========================================================
+
+  const renderNormalItem = (
+    itemKey,
+    label
+  ) => {
+
+    return (
+
+      <Box
+        sx={itemRowStyle}
+        key={itemKey}
+      >
+
+        <Typography
+          sx={{
+            fontSize:
+              {
+                xs: '17px',
+                sm: '19px',
+              },
+
+            fontWeight:
+              700,
+
+            color:
+              colors.text,
+
+            py:
+              {
+                xs: 0,
+                sm: 1,
+              },
+          }}
+        >
+          {label}
+        </Typography>
+
+
+        <TextField
+          label="Quantity"
+          type="number"
+          fullWidth
+          value={
+            items[itemKey]?.quantity || ''
+          }
+          onChange={
+            (e) =>
+              handleItemChange(
+                itemKey,
+                'quantity',
+                e.target.value
+              )
+          }
+          sx={
+            inputStyle
+          }
+        />
+
+
+        <TextField
+          label="Rate"
+          type="number"
+          fullWidth
+          value={
+            items[itemKey]?.rate || ''
+          }
+          onChange={
+            (e) =>
+              handleItemChange(
+                itemKey,
+                'rate',
+                e.target.value
+              )
+          }
+          sx={
+            inputStyle
+          }
+        />
+
+
+        <TextField
+          label="Amount"
+          fullWidth
+          value={
+            formatNumber(
+              getItemAmount(
+                itemKey
+              )
+            )
+          }
+          InputProps={{
+            readOnly:
+              true,
+          }}
+          sx={
+            amountStyle
+          }
+        />
+
+      </Box>
+
+    );
+
   };
 
 
@@ -1525,9 +2216,22 @@ const BigMachine = () => {
 
     <Box
       sx={{
-        minHeight: '100vh',
-        background: '#ffffff',
-        color: colors.text,
+
+        minHeight:
+          '100vh',
+
+        width:
+          '100%',
+
+        background:
+          '#ffffff',
+
+        color:
+          colors.text,
+
+        overflowX:
+          'hidden',
+
       }}
     >
 
@@ -1537,60 +2241,102 @@ const BigMachine = () => {
 
       <Box
         sx={{
-          height: '82px',
+
+          minHeight:
+            {
+              xs: '64px',
+              sm: '82px',
+            },
 
           borderBottom:
             '1px solid #dce9f7',
 
-          display: 'flex',
+          display:
+            'flex',
 
-          alignItems: 'center',
+          alignItems:
+            'center',
 
-          px: {
-            xs: 2,
-            md: 4,
-          },
+          px:
+            {
+              xs: 1.5,
+              sm: 4,
+            },
 
-          gap: 2,
+          gap:
+            {
+              xs: 1,
+              sm: 2,
+            },
 
-          background: '#ffffff',
+          background:
+            '#ffffff',
+
         }}
       >
 
         <Box
           sx={{
-            width: '42px',
-            height: '42px',
 
-            borderRadius: '7px',
+            width:
+              {
+                xs: '38px',
+                sm: '42px',
+              },
+
+            height:
+              {
+                xs: '38px',
+                sm: '42px',
+              },
+
+            flexShrink:
+              0,
+
+            borderRadius:
+              '7px',
 
             background:
               'linear-gradient(135deg, #2d86ee, #1769e0)',
 
-            display: 'flex',
+            display:
+              'flex',
 
-            alignItems: 'center',
+            alignItems:
+              'center',
 
-            justifyContent: 'center',
+            justifyContent:
+              'center',
 
-            color: '#fff',
+            color:
+              '#fff',
+
           }}
         >
+
           <MenuIcon />
+
         </Box>
 
 
         <Typography
           sx={{
-            fontSize: {
-              xs: '22px',
-              md: '28px',
-            },
 
-            fontWeight: 700,
+            fontSize:
+              {
+                xs: '19px',
+                sm: '28px',
+              },
+
+            fontWeight:
+              700,
 
             color:
               colors.primaryDark,
+
+            whiteSpace:
+              'nowrap',
+
           }}
         >
           Agent Details
@@ -1599,28 +2345,47 @@ const BigMachine = () => {
 
         <Box
           sx={{
-            width: '1px',
-            height: '28px',
-            background: '#a9c4e5',
-            mx: 1,
+
+            width:
+              '1px',
+
+            height:
+              '28px',
+
+            background:
+              '#a9c4e5',
+
+            mx:
+              {
+                xs: 0.5,
+                sm: 1,
+              },
+
           }}
         />
 
 
         <Typography
           sx={{
-            fontSize: {
-              xs: '17px',
-              md: '22px',
-            },
+
+            fontSize:
+              {
+                xs: '14px',
+                sm: '22px',
+              },
 
             color:
               colors.secondaryText,
 
-            fontWeight: 500,
+            fontWeight:
+              500,
+
+            whiteSpace:
+              'nowrap',
+
           }}
         >
-          Data Entry Form
+          Small Machine
         </Typography>
 
 
@@ -1636,24 +2401,30 @@ const BigMachine = () => {
             color:
               colors.secondaryText,
 
-            display: {
-              xs: 'none',
-              sm: 'block',
-            },
+            display:
+              {
+                xs: 'none',
+                sm: 'block',
+              },
           }}
         />
 
 
         <Typography
           sx={{
-            color: colors.text,
 
-            fontSize: '16px',
+            color:
+              colors.text,
 
-            display: {
-              xs: 'none',
-              sm: 'block',
-            },
+            fontSize:
+              '16px',
+
+            display:
+              {
+                xs: 'none',
+                sm: 'block',
+              },
+
           }}
         >
           {dayjs().format(
@@ -1664,23 +2435,45 @@ const BigMachine = () => {
 
         <Box
           sx={{
-            width: '40px',
-            height: '40px',
 
-            borderRadius: '50%',
+            width:
+              {
+                xs: '36px',
+                sm: '40px',
+              },
 
-            background: '#e8f1fc',
+            height:
+              {
+                xs: '36px',
+                sm: '40px',
+              },
 
-            display: 'flex',
+            borderRadius:
+              '50%',
 
-            alignItems: 'center',
+            background:
+              '#e8f1fc',
 
-            justifyContent: 'center',
+            display:
+              'flex',
 
-            color: '#55779e',
+            alignItems:
+              'center',
+
+            justifyContent:
+              'center',
+
+            color:
+              '#55779e',
+
+            flexShrink:
+              0,
+
           }}
         >
+
           <PersonIcon />
+
         </Box>
 
       </Box>
@@ -1692,28 +2485,47 @@ const BigMachine = () => {
 
       <Box
         sx={{
-          maxWidth: '1100px',
+
+          width:
+            '100%',
+
+          maxWidth:
+            '1100px',
 
           margin:
-            '28px auto',
+            '0 auto',
 
-          px: {
-            xs: 2,
-            md: 0,
-          },
+          px:
+            {
+              xs: 1.25,
+              sm: 2,
+              md: 0,
+            },
+
+          py:
+            {
+              xs: 1.5,
+              sm: 3.5,
+            },
+
         }}
       >
+
 
         {/* ====================================================
             AGENT INFORMATION
         ==================================================== */}
 
         <Paper
-          sx={sectionStyle}
+          sx={
+            sectionStyle
+          }
         >
 
           <Box
-            sx={sectionHeaderStyle}
+            sx={
+              sectionHeaderStyle
+            }
           >
 
             <PersonIcon
@@ -1722,11 +2534,22 @@ const BigMachine = () => {
               }
             />
 
+
             <Typography
               sx={{
-                fontSize: '26px',
-                fontWeight: 700,
-                color: colors.text,
+
+                fontSize:
+                  {
+                    xs: '19px',
+                    sm: '26px',
+                  },
+
+                fontWeight:
+                  700,
+
+                color:
+                  colors.text,
+
               }}
             >
               Agent Information
@@ -1735,15 +2558,26 @@ const BigMachine = () => {
           </Box>
 
 
-          <Box sx={{ p: 3 }}>
+          <Box
+            sx={{
+              p:
+                {
+                  xs: 1.5,
+                  sm: 3,
+                },
+            }}
+          >
 
-            {/* Agent Dropdown */}
+            {/* AGENT DROPDOWN */}
 
             <Typography
-              sx={labelStyle}
+              sx={
+                labelStyle
+              }
             >
               Agent
             </Typography>
+
 
             <TextField
               fullWidth
@@ -1757,14 +2591,19 @@ const BigMachine = () => {
               disabled={
                 agentsLoading
               }
-              sx={inputStyle}
+              sx={
+                inputStyle
+              }
             >
 
               <MenuItem value="">
                 {agentsLoading
-                  ? 'Loading agents...'
-                  : 'Select Agent'}
+                  ? 'Loading Small Machine agents...'
+                  : agents.length === 0
+                    ? 'No Small Machine agents found'
+                    : 'Select Agent'}
               </MenuItem>
+
 
               {agents.map(
                 (item) => (
@@ -1788,48 +2627,21 @@ const BigMachine = () => {
             </TextField>
 
 
-            {/* Agent Values */}
+            {/* AGENT VALUES */}
 
             <Grid
               container
-              spacing={3}
+              spacing={
+                {
+                  xs: 1.5,
+                  sm: 3,
+                }
+              }
               sx={{
-                mt: 0.5,
+                mt:
+                  0.5,
               }}
             >
-
-              {/* J INNER */}
-
-              <Grid
-                item
-                xs={12}
-                sm={6}
-                md={3}
-              >
-
-                <Typography
-                  sx={labelStyle}
-                >
-                  J Inner
-                </Typography>
-
-                <TextField
-                  fullWidth
-                  type="number"
-                  value={
-                    agent.jInner
-                  }
-                  onChange={(e) =>
-                    handleAgentChange(
-                      'jInner',
-                      e.target.value
-                    )
-                  }
-                  sx={inputStyle}
-                />
-
-              </Grid>
-
 
               {/* OUTER */}
 
@@ -1841,10 +2653,13 @@ const BigMachine = () => {
               >
 
                 <Typography
-                  sx={labelStyle}
+                  sx={
+                    labelStyle
+                  }
                 >
                   Outer
                 </Typography>
+
 
                 <TextField
                   fullWidth
@@ -1852,13 +2667,133 @@ const BigMachine = () => {
                   value={
                     agent.outer
                   }
-                  onChange={(e) =>
-                    handleAgentChange(
-                      'outer',
-                      e.target.value
-                    )
+                  onChange={
+                    (e) =>
+                      handleAgentChange(
+                        'outer',
+                        e.target.value
+                      )
                   }
-                  sx={inputStyle}
+                  sx={
+                    inputStyle
+                  }
+                />
+
+              </Grid>
+
+
+              {/* INNER */}
+
+              <Grid
+                item
+                xs={12}
+                sm={6}
+                md={3}
+              >
+
+                <Typography
+                  sx={
+                    labelStyle
+                  }
+                >
+                  Inner
+                </Typography>
+
+
+                <TextField
+                  fullWidth
+                  type="number"
+                  value={
+                    agent.inner
+                  }
+                  onChange={
+                    (e) =>
+                      handleAgentChange(
+                        'inner',
+                        e.target.value
+                      )
+                  }
+                  sx={
+                    inputStyle
+                  }
+                />
+
+              </Grid>
+
+
+              {/* SMALL INNER */}
+
+              <Grid
+                item
+                xs={12}
+                sm={6}
+                md={3}
+              >
+
+                <Typography
+                  sx={
+                    labelStyle
+                  }
+                >
+                  Small Inner
+                </Typography>
+
+
+                <TextField
+                  fullWidth
+                  type="number"
+                  value={
+                    agent.smallInner
+                  }
+                  onChange={
+                    (e) =>
+                      handleAgentChange(
+                        'smallInner',
+                        e.target.value
+                      )
+                  }
+                  sx={
+                    inputStyle
+                  }
+                />
+
+              </Grid>
+
+
+              {/* JI INNER */}
+
+              <Grid
+                item
+                xs={12}
+                sm={6}
+                md={3}
+              >
+
+                <Typography
+                  sx={
+                    labelStyle
+                  }
+                >
+                  JI Inner
+                </Typography>
+
+
+                <TextField
+                  fullWidth
+                  type="number"
+                  value={
+                    agent.jiInner
+                  }
+                  onChange={
+                    (e) =>
+                      handleAgentChange(
+                        'jiInner',
+                        e.target.value
+                      )
+                  }
+                  sx={
+                    inputStyle
+                  }
                 />
 
               </Grid>
@@ -1874,10 +2809,13 @@ const BigMachine = () => {
               >
 
                 <Typography
-                  sx={labelStyle}
+                  sx={
+                    labelStyle
+                  }
                 >
                   Depth
                 </Typography>
+
 
                 <TextField
                   fullWidth
@@ -1885,13 +2823,16 @@ const BigMachine = () => {
                   value={
                     agent.depth
                   }
-                  onChange={(e) =>
-                    handleAgentChange(
-                      'depth',
-                      e.target.value
-                    )
+                  onChange={
+                    (e) =>
+                      handleAgentChange(
+                        'depth',
+                        e.target.value
+                      )
                   }
-                  sx={inputStyle}
+                  sx={
+                    inputStyle
+                  }
                 />
 
               </Grid>
@@ -1907,10 +2848,13 @@ const BigMachine = () => {
               >
 
                 <Typography
-                  sx={labelStyle}
+                  sx={
+                    labelStyle
+                  }
                 >
                   Trans
                 </Typography>
+
 
                 <TextField
                   fullWidth
@@ -1918,13 +2862,16 @@ const BigMachine = () => {
                   value={
                     agent.trans
                   }
-                  onChange={(e) =>
-                    handleAgentChange(
-                      'trans',
-                      e.target.value
-                    )
+                  onChange={
+                    (e) =>
+                      handleAgentChange(
+                        'trans',
+                        e.target.value
+                      )
                   }
-                  sx={inputStyle}
+                  sx={
+                    inputStyle
+                  }
                 />
 
               </Grid>
@@ -1932,14 +2879,19 @@ const BigMachine = () => {
             </Grid>
 
 
-            {/* Total */}
+            {/* TOTAL */}
 
             <Box
               sx={{
-                mt: 3,
+
+                mt:
+                  2,
 
                 minHeight:
-                  '58px',
+                  {
+                    xs: '54px',
+                    sm: '58px',
+                  },
 
                 borderRadius:
                   '6px',
@@ -1956,20 +2908,30 @@ const BigMachine = () => {
                 alignItems:
                   'center',
 
-                px: 2,
+                px:
+                  {
+                    xs: 1.5,
+                    sm: 2,
+                  },
+
               }}
             >
 
               <Typography
                 sx={{
+
                   fontSize:
-                    '20px',
+                    {
+                      xs: '17px',
+                      sm: '20px',
+                    },
 
                   fontWeight:
                     700,
 
                   color:
                     colors.text,
+
                 }}
               >
                 Total
@@ -1985,14 +2947,19 @@ const BigMachine = () => {
 
               <Typography
                 sx={{
+
                   fontSize:
-                    '28px',
+                    {
+                      xs: '21px',
+                      sm: '28px',
+                    },
 
                   fontWeight:
                     700,
 
                   color:
                     colors.primary,
+
                 }}
               >
                 ₹
@@ -2013,11 +2980,15 @@ const BigMachine = () => {
         ==================================================== */}
 
         <Paper
-          sx={sectionStyle}
+          sx={
+            sectionStyle
+          }
         >
 
           <Box
-            sx={sectionHeaderStyle}
+            sx={
+              sectionHeaderStyle
+            }
           >
 
             <Inventory2Icon
@@ -2026,16 +2997,22 @@ const BigMachine = () => {
               }
             />
 
+
             <Typography
               sx={{
+
                 fontSize:
-                  '26px',
+                  {
+                    xs: '19px',
+                    sm: '26px',
+                  },
 
                 fontWeight:
                   700,
 
                 color:
                   colors.text,
+
               }}
             >
               Item Details
@@ -2044,16 +3021,26 @@ const BigMachine = () => {
           </Box>
 
 
-          <Box sx={{ p: 2 }}>
+          <Box
+            sx={{
+              p:
+                {
+                  xs: 1,
+                  sm: 2,
+                },
+            }}
+          >
 
-            {/* Table Header */}
+            {/* TABLE HEADER */}
 
             <Box
               sx={{
-                display: {
-                  xs: 'none',
-                  md: 'grid',
-                },
+
+                display:
+                  {
+                    xs: 'none',
+                    sm: 'grid',
+                  },
 
                 gridTemplateColumns:
                   '1.1fr 1fr 1fr 1fr',
@@ -2073,18 +3060,16 @@ const BigMachine = () => {
                 borderRadius:
                   '6px 6px 0 0',
 
-                px: 2,
+                px:
+                  2,
+
               }}
             >
 
               <Typography
                 sx={{
-                  fontSize:
-                    '18px',
-
                   fontWeight:
                     700,
-
                   color:
                     '#49688f',
                 }}
@@ -2095,12 +3080,8 @@ const BigMachine = () => {
 
               <Typography
                 sx={{
-                  fontSize:
-                    '18px',
-
                   fontWeight:
                     700,
-
                   color:
                     '#49688f',
                 }}
@@ -2111,12 +3092,8 @@ const BigMachine = () => {
 
               <Typography
                 sx={{
-                  fontSize:
-                    '18px',
-
                   fontWeight:
                     700,
-
                   color:
                     '#49688f',
                 }}
@@ -2127,12 +3104,8 @@ const BigMachine = () => {
 
               <Typography
                 sx={{
-                  fontSize:
-                    '18px',
-
                   fontWeight:
                     700,
-
                   color:
                     '#49688f',
                 }}
@@ -2143,16 +3116,118 @@ const BigMachine = () => {
             </Box>
 
 
-            {/* ==================================================
-                DIESEL
-            ================================================== */}
+            {/* DIESEL */}
 
-            <Box sx={itemRowStyle}>
+            {renderNormalItem(
+              'diesel',
+              'Diesel'
+            )}
+
+
+            {/* INNER */}
+
+            {renderNormalItem(
+              'inner',
+              'Inner'
+            )}
+
+
+            {/* OUTER */}
+
+            {renderNormalItem(
+              'outer',
+              'Outer'
+            )}
+
+
+            {/* SMALL INNER */}
+
+            {renderNormalItem(
+              'smallInner',
+              'Small Inner'
+            )}
+
+
+            {/* BIT */}
+
+            {renderNormalItem(
+              'bit',
+              'Bit'
+            )}
+
+
+            {/* HAMMER */}
+
+            {renderNormalItem(
+              'hammer',
+              'Hammer'
+            )}
+
+
+            {/* OTHER */}
+
+            <Box
+              sx={{
+
+                display:
+                  'grid',
+
+                gridTemplateColumns:
+                  {
+                    xs: '1fr',
+                    sm: '1.1fr 1fr 1fr 1fr',
+                  },
+
+                gap:
+                  {
+                    xs: 1.5,
+                    sm: 1,
+                  },
+
+                alignItems:
+                  'center',
+
+                minHeight:
+                  {
+                    xs: 'auto',
+                    sm: '82px',
+                  },
+
+                px:
+                  {
+                    xs: 1.5,
+                    sm: 2,
+                  },
+
+                py:
+                  {
+                    xs: 1.5,
+                    sm: 1,
+                  },
+
+                border:
+                  '1px solid #d8e7f7',
+
+                borderTop:
+                  'none',
+
+                borderRadius:
+                  {
+                    xs: '0 0 6px 6px',
+                    sm: '0 0 6px 6px',
+                  },
+
+              }}
+            >
 
               <Typography
                 sx={{
+
                   fontSize:
-                    '19px',
+                    {
+                      xs: '17px',
+                      sm: '19px',
+                    },
 
                   fontWeight:
                     700,
@@ -2160,387 +3235,6 @@ const BigMachine = () => {
                   color:
                     colors.text,
 
-                  py: 1,
-                }}
-              >
-                Diesel
-              </Typography>
-
-
-              <TextField
-                label="Quantity"
-                type="number"
-                value={
-                  items.diesel.quantity
-                }
-                onChange={(e) =>
-                  handleItemChange(
-                    'diesel',
-                    'quantity',
-                    e.target.value
-                  )
-                }
-                sx={inputStyle}
-              />
-
-
-              <TextField
-                label="Rate"
-                type="number"
-                value={
-                  items.diesel.rate
-                }
-                onChange={(e) =>
-                  handleItemChange(
-                    'diesel',
-                    'rate',
-                    e.target.value
-                  )
-                }
-                sx={inputStyle}
-              />
-
-
-              <TextField
-                label="Amount"
-                value={formatNumber(
-                  getItemAmount(
-                    'diesel'
-                  )
-                )}
-                InputProps={{
-                  readOnly: true,
-                }}
-                sx={
-                  amountStyle
-                }
-              />
-
-            </Box>
-
-
-            {/* ==================================================
-                JPIPE
-            ================================================== */}
-
-            <Box sx={itemRowStyle}>
-
-              <Typography
-                sx={{
-                  fontSize:
-                    '19px',
-
-                  fontWeight:
-                    700,
-
-                  color:
-                    colors.text,
-
-                  py: 1,
-                }}
-              >
-                JPipe
-              </Typography>
-
-
-              <TextField
-                label="Quantity"
-                type="number"
-                value={
-                  items.jPipe.quantity
-                }
-                onChange={(e) =>
-                  handleItemChange(
-                    'jPipe',
-                    'quantity',
-                    e.target.value
-                  )
-                }
-                sx={inputStyle}
-              />
-
-
-              <TextField
-                label="Rate"
-                type="number"
-                value={
-                  items.jPipe.rate
-                }
-                onChange={(e) =>
-                  handleItemChange(
-                    'jPipe',
-                    'rate',
-                    e.target.value
-                  )
-                }
-                sx={inputStyle}
-              />
-
-
-              <TextField
-                label="Amount"
-                value={formatNumber(
-                  getItemAmount(
-                    'jPipe'
-                  )
-                )}
-                InputProps={{
-                  readOnly: true,
-                }}
-                sx={
-                  amountStyle
-                }
-              />
-
-            </Box>
-
-
-            {/* ==================================================
-                OUTER
-            ================================================== */}
-
-            <Box sx={itemRowStyle}>
-
-              <Typography
-                sx={{
-                  fontSize:
-                    '19px',
-
-                  fontWeight:
-                    700,
-
-                  color:
-                    colors.text,
-
-                  py: 1,
-                }}
-              >
-                Outer
-              </Typography>
-
-
-              <TextField
-                label="Quantity"
-                type="number"
-                value={
-                  items.outer.quantity
-                }
-                onChange={(e) =>
-                  handleItemChange(
-                    'outer',
-                    'quantity',
-                    e.target.value
-                  )
-                }
-                sx={inputStyle}
-              />
-
-
-              <TextField
-                label="Rate"
-                type="number"
-                value={
-                  items.outer.rate
-                }
-                onChange={(e) =>
-                  handleItemChange(
-                    'outer',
-                    'rate',
-                    e.target.value
-                  )
-                }
-                sx={inputStyle}
-              />
-
-
-              <TextField
-                label="Amount"
-                value={formatNumber(
-                  getItemAmount(
-                    'outer'
-                  )
-                )}
-                InputProps={{
-                  readOnly: true,
-                }}
-                sx={
-                  amountStyle
-                }
-              />
-
-            </Box>
-
-
-            {/* ==================================================
-                BIT
-            ================================================== */}
-
-            <Box sx={itemRowStyle}>
-
-              <Typography
-                sx={{
-                  fontSize:
-                    '19px',
-
-                  fontWeight:
-                    700,
-
-                  color:
-                    colors.text,
-
-                  py: 1,
-                }}
-              >
-                Bit
-              </Typography>
-
-
-              <TextField
-                label="Quantity"
-                type="number"
-                value={
-                  items.bit.quantity
-                }
-                onChange={(e) =>
-                  handleItemChange(
-                    'bit',
-                    'quantity',
-                    e.target.value
-                  )
-                }
-                sx={inputStyle}
-              />
-
-
-              <TextField
-                label="Rate"
-                type="number"
-                value={
-                  items.bit.rate
-                }
-                onChange={(e) =>
-                  handleItemChange(
-                    'bit',
-                    'rate',
-                    e.target.value
-                  )
-                }
-                sx={inputStyle}
-              />
-
-
-              <TextField
-                label="Amount"
-                value={formatNumber(
-                  getItemAmount(
-                    'bit'
-                  )
-                )}
-                InputProps={{
-                  readOnly: true,
-                }}
-                sx={
-                  amountStyle
-                }
-              />
-
-            </Box>
-
-
-            {/* ==================================================
-                HAMMER
-            ================================================== */}
-
-            <Box sx={itemRowStyle}>
-
-              <Typography
-                sx={{
-                  fontSize:
-                    '19px',
-
-                  fontWeight:
-                    700,
-
-                  color:
-                    colors.text,
-
-                  py: 1,
-                }}
-              >
-                Hammer
-              </Typography>
-
-
-              <TextField
-                label="Quantity"
-                type="number"
-                value={
-                  items.hammer.quantity
-                }
-                onChange={(e) =>
-                  handleItemChange(
-                    'hammer',
-                    'quantity',
-                    e.target.value
-                  )
-                }
-                sx={inputStyle}
-              />
-
-
-              <TextField
-                label="Rate"
-                type="number"
-                value={
-                  items.hammer.rate
-                }
-                onChange={(e) =>
-                  handleItemChange(
-                    'hammer',
-                    'rate',
-                    e.target.value
-                  )
-                }
-                sx={inputStyle}
-              />
-
-
-              <TextField
-                label="Amount"
-                value={formatNumber(
-                  getItemAmount(
-                    'hammer'
-                  )
-                )}
-                InputProps={{
-                  readOnly: true,
-                }}
-                sx={
-                  amountStyle
-                }
-              />
-
-            </Box>
-
-
-            {/* ==================================================
-                OTHER
-            ================================================== */}
-
-            <Box sx={itemRowStyle}>
-
-              <Typography
-                sx={{
-                  fontSize:
-                    '19px',
-
-                  fontWeight:
-                    700,
-
-                  color:
-                    colors.text,
-
-                  py: 1,
                 }}
               >
                 Other
@@ -2550,23 +3244,26 @@ const BigMachine = () => {
               <TextField
                 label="Description"
                 placeholder="Balance"
+                fullWidth
                 value={
                   items.other.value
                 }
-                onChange={(e) =>
-                  handleItemChange(
-                    'other',
-                    'value',
-                    e.target.value
-                  )
+                onChange={
+                  (e) =>
+                    handleItemChange(
+                      'other',
+                      'value',
+                      e.target.value
+                    )
                 }
                 sx={{
                   ...inputStyle,
 
-                  gridColumn: {
-                    xs: 'auto',
-                    md: 'span 2',
-                  },
+                  gridColumn:
+                    {
+                      xs: 'auto',
+                      sm: 'span 2',
+                    },
                 }}
               />
 
@@ -2574,61 +3271,81 @@ const BigMachine = () => {
               <TextField
                 label="Amount"
                 type="number"
+                fullWidth
                 value={
                   items.other.amount
                 }
-                onChange={(e) =>
-                  handleItemChange(
-                    'other',
-                    'amount',
-                    e.target.value
-                  )
+                onChange={
+                  (e) =>
+                    handleItemChange(
+                      'other',
+                      'amount',
+                      e.target.value
+                    )
                 }
-                sx={amountStyle}
+                sx={
+                  amountStyle
+                }
               />
 
             </Box>
 
 
-            {/* ==================================================
-                AMT
-            ================================================== */}
+            {/* TOTAL AMOUNT */}
 
             <Box
               sx={{
-                display: 'grid',
 
-                gridTemplateColumns: {
-                  xs: '1fr',
-                  md: '1.1fr 1fr 1fr 1fr',
-                },
+                display:
+                  'grid',
+
+                gridTemplateColumns:
+                  {
+                    xs: '1fr',
+                    sm: '1.1fr 1fr 1fr 1fr',
+                  },
+
+                gap:
+                  {
+                    xs: 1,
+                    sm: 0,
+                  },
 
                 alignItems:
                   'center',
 
                 minHeight:
-                  '74px',
+                  {
+                    xs: '80px',
+                    sm: '74px',
+                  },
 
-                px: 2,
+                px:
+                  {
+                    xs: 1.5,
+                    sm: 2,
+                  },
 
-                borderLeft:
+                border:
                   '1px solid #d8e7f7',
 
-                borderRight:
-                  '1px solid #d8e7f7',
-
-                borderBottom:
-                  '1px solid #d8e7f7',
+                borderTop:
+                  'none',
 
                 borderRadius:
                   '0 0 6px 6px',
+
               }}
             >
 
               <Typography
                 sx={{
+
                   fontSize:
-                    '19px',
+                    {
+                      xs: '18px',
+                      sm: '19px',
+                    },
 
                   fontWeight:
                     700,
@@ -2636,10 +3353,12 @@ const BigMachine = () => {
                   color:
                     colors.text,
 
-                  gridColumn: {
-                    xs: 'auto',
-                    md: 'span 3',
-                  },
+                  gridColumn:
+                    {
+                      xs: 'auto',
+                      sm: 'span 3',
+                    },
+
                 }}
               >
                 AMT
@@ -2647,11 +3366,15 @@ const BigMachine = () => {
 
 
               <TextField
-                value={formatNumber(
-                  totalItemAmount
-                )}
+                fullWidth
+                value={
+                  formatNumber(
+                    totalItemAmount
+                  )
+                }
                 InputProps={{
-                  readOnly: true,
+                  readOnly:
+                    true,
                 }}
                 sx={
                   amountStyle
@@ -2670,11 +3393,15 @@ const BigMachine = () => {
         ==================================================== */}
 
         <Paper
-          sx={sectionStyle}
+          sx={
+            sectionStyle
+          }
         >
 
           <Box
-            sx={sectionHeaderStyle}
+            sx={
+              sectionHeaderStyle
+            }
           >
 
             <EventAvailableIcon
@@ -2683,16 +3410,22 @@ const BigMachine = () => {
               }
             />
 
+
             <Typography
               sx={{
+
                 fontSize:
-                  '26px',
+                  {
+                    xs: '19px',
+                    sm: '26px',
+                  },
 
                 fontWeight:
                   700,
 
                 color:
                   colors.text,
+
               }}
             >
               Attendance
@@ -2701,40 +3434,77 @@ const BigMachine = () => {
           </Box>
 
 
-          <Box sx={{ p: 2 }}>
+          <Box
+            sx={{
+              p:
+                {
+                  xs: 1.25,
+                  sm: 2,
+                },
+            }}
+          >
+
+            {/* ATTENDANCE INFO */}
 
             <Box
               sx={{
-                mb: 2,
 
-                p: 1.5,
+                mb:
+                  2,
 
-                borderRadius: '6px',
+                p:
+                  {
+                    xs: 1.25,
+                    sm: 1.5,
+                  },
+
+                borderRadius:
+                  '6px',
 
                 background:
                   '#f0f6fd',
 
                 border:
                   '1px solid #d7e7f8',
+
               }}
             >
 
               <Typography
                 sx={{
-                  fontWeight: 600,
+                  fontWeight:
+                    600,
+
                   color:
                     colors.text,
+
+                  fontSize:
+                    {
+                      xs: '15px',
+                      sm: '16px',
+                    },
                 }}
               >
                 Small Machine Employees
               </Typography>
 
+
               <Typography
                 variant="body2"
                 sx={{
-                  mt: 0.5,
+
+                  mt:
+                    0.5,
+
                   color:
                     colors.secondaryText,
+
+                  fontSize:
+                    {
+                      xs: '13px',
+                      sm: '14px',
+                    },
+
                 }}
               >
                 Checked = Present&nbsp;&nbsp;|&nbsp;&nbsp;
@@ -2744,26 +3514,38 @@ const BigMachine = () => {
             </Box>
 
 
+            {/* LOADING */}
+
             {attendanceLoading ? (
 
               <Box
                 sx={{
-                  display: 'flex',
+
+                  display:
+                    'flex',
+
                   justifyContent:
                     'center',
-                  py: 3,
+
+                  py:
+                    3,
+
                 }}
               >
+
                 <CircularProgress
                   size={28}
                 />
+
               </Box>
 
             ) : employees.length === 0 ? (
 
               <Typography
                 sx={{
-                  py: 2,
+                  py:
+                    2,
+
                   color:
                     'text.secondary',
                 }}
@@ -2775,19 +3557,23 @@ const BigMachine = () => {
 
               <Box
                 sx={{
+
                   display:
                     'grid',
 
-                  gridTemplateColumns: {
-                    xs:
-                      '1fr 1fr',
-                    sm:
-                      'repeat(3, 1fr)',
-                    md:
-                      'repeat(4, 1fr)',
-                  },
+                  gridTemplateColumns:
+                    {
+                      xs: '1fr',
+                      sm: 'repeat(2, 1fr)',
+                      md: 'repeat(4, 1fr)',
+                    },
 
-                  gap: 1,
+                  gap:
+                    {
+                      xs: 1,
+                      sm: 1.5,
+                    },
+
                 }}
               >
 
@@ -2796,14 +3582,25 @@ const BigMachine = () => {
 
                     const employeeId =
                       String(
-                        employee._id
+                        employee?._id ||
+                        employee?.id
                       );
 
+
                     const employeeName =
-                      employee.name ||
-                      employee.fullName ||
-                      employee.username ||
+                      employee?.name ||
+                      employee?.fullName ||
+                      employee?.username ||
                       'Employee';
+
+
+                    const present =
+                      Boolean(
+                        attendance[
+                          employeeId
+                        ]
+                      );
+
 
                     return (
 
@@ -2813,43 +3610,60 @@ const BigMachine = () => {
                         }
                         variant="outlined"
                         sx={{
-                          p: 1,
+
+                          p:
+                            {
+                              xs: 0.75,
+                              sm: 1,
+                            },
 
                           borderRadius:
                             '8px',
 
                           borderColor:
-                            attendance[
-                              employeeId
-                            ]
+                            present
                               ? '#b7e4c7'
                               : '#f3b4b4',
 
                           backgroundColor:
-                            attendance[
-                              employeeId
-                            ]
+                            present
                               ? '#f0fdf4'
                               : '#fff5f5',
+
+                          minWidth:
+                            0,
+
                         }}
                       >
 
                         <FormControlLabel
+                          sx={{
+                            width:
+                              '100%',
+
+                            m:
+                              0,
+
+                            '& .MuiFormControlLabel-label':
+                              {
+                                minWidth:
+                                  0,
+                              },
+                          }}
                           control={
+
                             <Checkbox
                               checked={
-                                Boolean(
-                                  attendance[
-                                    employeeId
-                                  ]
-                                )
+                                present
                               }
-                              onChange={() =>
-                                handleAttendanceChange(
-                                  employeeId
-                                )
+                              onChange={
+                                () =>
+                                  handleAttendanceChange(
+                                    employeeId
+                                  )
                               }
                               sx={{
+
                                 color:
                                   '#7c9bc0',
 
@@ -2858,27 +3672,44 @@ const BigMachine = () => {
                                     color:
                                       '#1769e0',
                                   },
+
                               }}
                             />
-                          }
 
+                          }
                           label={
+
                             <Typography
                               sx={{
+
                                 fontSize:
-                                  '15px',
+                                  {
+                                    xs: '14px',
+                                    sm: '15px',
+                                  },
 
                                 fontWeight:
                                   600,
 
                                 color:
                                   colors.text,
+
+                                overflow:
+                                  'hidden',
+
+                                textOverflow:
+                                  'ellipsis',
+
+                                whiteSpace:
+                                  'nowrap',
+
                               }}
                             >
                               {
                                 employeeName
                               }
                             </Typography>
+
                           }
                         />
 
@@ -2899,7 +3730,7 @@ const BigMachine = () => {
 
 
         {/* ====================================================
-            SAVE
+            SAVE BUTTON
         ==================================================== */}
 
         <Button
@@ -2914,17 +3745,25 @@ const BigMachine = () => {
           }
           startIcon={
             saving ? (
+
               <CircularProgress
                 size={20}
                 color="inherit"
               />
+
             ) : (
+
               <SaveIcon />
+
             )
           }
           sx={{
+
             height:
-              '62px',
+              {
+                xs: '54px',
+                sm: '62px',
+              },
 
             borderRadius:
               '7px',
@@ -2933,7 +3772,10 @@ const BigMachine = () => {
               'linear-gradient(90deg, #287ee7 0%, #1976e8 100%)',
 
             fontSize:
-              '21px',
+              {
+                xs: '18px',
+                sm: '21px',
+              },
 
             fontWeight:
               700,
@@ -2944,13 +3786,15 @@ const BigMachine = () => {
             boxShadow:
               'none',
 
-            '&:hover': {
-              background:
-                'linear-gradient(90deg, #1e70d7 0%, #1267d5 100%)',
+            '&:hover':
+              {
+                background:
+                  'linear-gradient(90deg, #1e70d7 0%, #1267d5 100%)',
 
-              boxShadow:
-                'none',
-            },
+                boxShadow:
+                  'none',
+              },
+
           }}
         >
           {saving
@@ -2959,7 +3803,9 @@ const BigMachine = () => {
         </Button>
 
 
-        {/* Reset */}
+        {/* ====================================================
+            RESET
+        ==================================================== */}
 
         <Button
           fullWidth
@@ -2971,21 +3817,50 @@ const BigMachine = () => {
             saving
           }
           sx={{
-            mt: 1.5,
-            height: '50px',
-            borderRadius: '7px',
-            textTransform: 'none',
-            fontWeight: 600,
+
+            mt:
+              1.5,
+
+            height:
+              {
+                xs: '48px',
+                sm: '50px',
+              },
+
+            borderRadius:
+              '7px',
+
+            textTransform:
+              'none',
+
+            fontWeight:
+              600,
+
           }}
         >
           Reset
         </Button>
 
+
+        {/* BOTTOM SPACE ON MOBILE */}
+
+        <Box
+          sx={{
+            height:
+              {
+                xs: '20px',
+                sm: '30px',
+              },
+          }}
+        />
+
       </Box>
 
     </Box>
+
   );
+
 };
 
 
-export default BigMachine;
+export default SmallMachine;
