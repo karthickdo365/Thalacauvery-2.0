@@ -1,1047 +1,440 @@
-import React, {
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 
+import {
+  Box,
+  Card,
+  CardContent,
+  Grid,
+  Typography,
+  CircularProgress,
+  Chip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  IconButton,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
+  TextField,
+  InputAdornment,
+  ToggleButtonGroup,
+  ToggleButton,
+} from '@mui/material';
+
+import PeopleIcon from '@mui/icons-material/People';
+import WaterDropIcon from '@mui/icons-material/WaterDrop';
+import PaidIcon from '@mui/icons-material/Paid';
+import PendingActionsIcon from '@mui/icons-material/PendingActions';
+import DiscountIcon from '@mui/icons-material/Discount';
+import LocalGasStationIcon from '@mui/icons-material/LocalGasStation';
+import ConstructionIcon from '@mui/icons-material/Construction';
+import BuildIcon from '@mui/icons-material/Build';
+
+import CloseIcon from '@mui/icons-material/Close';
+import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
+import SearchIcon from '@mui/icons-material/Search';
+import DashboardIcon from '@mui/icons-material/Dashboard';
+
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement,
+} from 'chart.js';
+
+import { Bar, Doughnut } from 'react-chartjs-2';
+
+import dayjs from 'dayjs';
+import isoWeek from 'dayjs/plugin/isoWeek';
+
+import { fetchDashboardStats } from '../redux/slices/dashboardSlice';
 import { useMachine } from '../context/MachineContext';
 
-const API_URL =
-  import.meta.env.VITE_API_URL ||
-  'http://localhost:5000/api';
+import api from '../utils/api';
+import PageHeader from '../components/PageHeader';
 
-/*
-|--------------------------------------------------------------------------
-| API helper
-|--------------------------------------------------------------------------
-*/
+import {
+  NAVY,
+  TEAL,
+  TEAL_DARK as TEAL_D,
+  toNum as safeNum,
+  fmtINR as fmtSafe,
+  statusColor,
+} from '../utils/constants';
 
-const getToken = () => {
-  return (
-    localStorage.getItem('token') ||
-    localStorage.getItem('accessToken') ||
-    localStorage.getItem('jwt') ||
-    ''
-  );
-};
+dayjs.extend(isoWeek);
 
-const apiRequest = async (
-  endpoint,
-  options = {}
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  ArcElement
+);
+
+const fmt = fmtSafe;
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+const filterByPeriod = (
+  rows,
+  period,
+  dateField = 'date'
 ) => {
-  const token = getToken();
-
-  const headers = {
-    'Content-Type': 'application/json',
-    ...(options.headers || {}),
-  };
-
-  if (token) {
-    headers.Authorization =
-      `Bearer ${token}`;
+  if (!period || period === 'all') {
+    return rows;
   }
 
-  const response = await fetch(
-    `${API_URL}${endpoint}`,
-    {
-      ...options,
-      headers,
+  const now = dayjs();
+
+  return rows.filter((row) => {
+    const date = dayjs(row?.[dateField]);
+
+    if (!date.isValid()) {
+      return true;
     }
-  );
 
-  let data = null;
-
-  try {
-    data = await response.json();
-  } catch {
-    data = null;
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      data?.message ||
-        `Request failed (${response.status})`
-    );
-  }
-
-  return data;
-};
-
-/*
- * Different backends shape list responses
- * differently — raw array, { users: [...] },
- * { records: [...] }, { data: [...] }, etc.
- * This tries the common key names first, then
- * falls back to the first array field found so
- * a mismatched key name doesn't silently render
- * an empty dropdown/calendar.
- */
-const extractList = (data, keys = []) => {
-  if (Array.isArray(data)) {
-    return data;
-  }
-
-  if (!data || typeof data !== 'object') {
-    return [];
-  }
-
-  for (const key of keys) {
-    if (Array.isArray(data[key])) {
-      return data[key];
+    if (period === 'week') {
+      return date.isSame(now, 'week');
     }
-  }
 
-  for (const key of Object.keys(data)) {
-    if (Array.isArray(data[key])) {
-      return data[key];
+    if (period === 'month') {
+      return date.isSame(now, 'month');
     }
-  }
 
-  if (Object.keys(data).length) {
-    console.warn(
-      'Attendance: expected an array in the API response but found none. Raw response:',
-      data
-    );
-  }
+    if (period === 'year') {
+      return date.isSame(now, 'year');
+    }
 
-  return [];
+    return true;
+  });
 };
 
-/*
-|--------------------------------------------------------------------------
-| Date helpers
-|--------------------------------------------------------------------------
-*/
-
-const pad = (value) =>
-  String(value).padStart(2, '0');
-
-const normalizeStatus = (value) => {
-  const status = String(value || '').trim().toLowerCase();
-  if (['absent', 'a', 'leave', 'on_leave'].includes(status)) return 'absent';
-  if (['present', 'p', 'working'].includes(status)) return 'present';
-  return status;
+const getMaterialType = (material) => {
+  return String(
+    material?.type ||
+      material?.materialType ||
+      material?.name ||
+      ''
+  )
+    .trim()
+    .toLowerCase();
 };
 
-const normalizeAttendanceRecord = (record) => ({
-  ...record,
-  status: normalizeStatus(record?.status),
-});
+const isMaterialType = (
+  material,
+  type
+) => {
+  const materialType =
+    getMaterialType(material);
 
-const toDateKey = (date) => {
-  if (!date) return '';
-
-  const d =
-    date instanceof Date
-      ? date
-      : new Date(date);
-
-  if (Number.isNaN(d.getTime())) {
-    return '';
-  }
-
-  return `${d.getFullYear()}-${pad(
-    d.getMonth() + 1
-  )}-${pad(d.getDate())}`;
-};
-
-const parseDateKey = (key) => {
-  if (!key) return null;
-
-  const [year, month, day] =
-    key.split('-').map(Number);
-
-  return new Date(
-    year,
-    month - 1,
-    day
+  return (
+    materialType === type ||
+    materialType.includes(type)
   );
 };
 
-const getDateRange = (startKey, endKey) => {
-  if (!startKey) return [];
-
-  const start = parseDateKey(startKey);
-  const end = parseDateKey(endKey || startKey);
-
-  if (!start || !end || end < start) {
-    return [];
-  }
-
-  const dates = [];
-  const cursor = new Date(start);
-
-  while (cursor <= end) {
-    dates.push(toDateKey(cursor));
-    cursor.setDate(cursor.getDate() + 1);
-  }
-
-  return dates;
+const getDiscount = (point) => {
+  return safeNum(
+    point?.discountAmount ??
+      point?.discount ??
+      point?.discountValue ??
+      point?.breakdown?.discountAmount ??
+      0
+  );
 };
 
-const monthKey = (date) => {
-  return `${date.getFullYear()}-${pad(
-    date.getMonth() + 1
-  )}`;
+const getPaidAmount = (point) => {
+  if (
+    point?.paymentStatus ===
+    'Paid'
+  ) {
+    return safeNum(
+      point?.totalAmount
+    );
+  }
+
+  return safeNum(
+    point?.paidAmount
+  );
+};
+
+const getPendingAmount = (point) => {
+  const total = safeNum(
+    point?.totalAmount
+  );
+
+  if (
+    point?.paymentStatus ===
+    'Unpaid'
+  ) {
+    return total;
+  }
+
+  const paid = safeNum(
+    point?.paidAmount
+  );
+
+  return Math.max(
+    0,
+    total - paid
+  );
+};
+
+
+const getEmployeeDateKey = (value) => {
+  if (!value) return '';
+
+  const date = dayjs(value);
+  return date.isValid()
+    ? date.format('YYYY-MM-DD')
+    : '';
 };
 
 const getEmployeeEndDateKey = (employee) => {
   if (!employee) return '';
 
-  const raw =
-    employee.endDate ||
-    employee.terminationDate ||
-    employee.lastWorkingDate ||
-    employee.exitDate ||
-    employee.terminatedOn ||
-    '';
-
-  return raw ? toDateKey(new Date(raw)) : '';
-};
-
-const formatDate = (date) => {
-  if (!date) return '';
-
-  return new Intl.DateTimeFormat(
-    'en-IN',
-    {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric',
-    }
-  ).format(date);
-};
-
-const formatDateShort = (date) => {
-  if (!date) return '';
-
-  return new Intl.DateTimeFormat(
-    'en-IN',
-    {
-      weekday: 'short',
-      day: '2-digit',
-      month: 'short',
-    }
-  ).format(date);
-};
-
-const formatMoney = (value) => {
-  return new Intl.NumberFormat(
-    'en-IN',
-    {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 2,
-    }
-  ).format(
-    Number(value) || 0
+  return getEmployeeDateKey(
+    employee?.endDate ||
+      employee?.terminationDate ||
+      employee?.lastWorkingDate ||
+      employee?.exitDate ||
+      employee?.terminatedOn ||
+      ''
   );
 };
 
-// Salary-advance APIs can return the transaction date under different
-// field names depending on the backend/model version. Normalize them in
-// one place so the UI does not randomly fall back to the month.
-const getAdvanceDateValue = (item) => {
-  if (!item) return null;
-
-  return (
-    item.date ||
-    item.advanceDate ||
-    item.paymentDate ||
-    item.transactionDate ||
-    item.createdAt ||
-    null
+const getAttendanceDateKey = (record) => {
+  return getEmployeeDateKey(
+    record?.date ||
+      record?.attendanceDate ||
+      record?.absenceDate ||
+      ''
   );
 };
 
-const formatAdvanceDate = (item) => {
-  const rawDate = getAdvanceDateValue(item);
+const isAbsentAttendance = (record) => {
+  const status = String(
+    record?.status ||
+      record?.attendanceStatus ||
+      record?.state ||
+      ''
+  )
+    .trim()
+    .toLowerCase();
 
-  if (rawDate) {
-    const parsed = new Date(rawDate);
-    if (!Number.isNaN(parsed.getTime())) {
-      return formatDate(parsed);
-    }
-  }
-
-  // Older records may only have a month. Keep the fallback readable.
-  if (item?.month) {
-    const parsedMonth = new Date(`${item.month}-01T00:00:00`);
-    if (!Number.isNaN(parsedMonth.getTime())) {
-      return formatDate(parsedMonth);
-    }
-    return item.month;
-  }
-
-  return 'Date not available';
+  return status === 'absent';
 };
 
+const extractAttendanceRows = (data) => {
+  const rows =
+    data?.records ||
+    data?.attendance ||
+    data?.data ||
+    data?.items ||
+    [];
+
+  return Array.isArray(rows)
+    ? rows
+    : [];
+};
 
 /*
-|--------------------------------------------------------------------------
-| All-employee salary summary helper
-|--------------------------------------------------------------------------
-*/
-
-/*
-|--------------------------------------------------------------------------
-| Date-range salary report helper
-|--------------------------------------------------------------------------
-*/
-const calculateEmployeeRangeSalary = (
+ * Current-month salary calculation used by the dashboard.
+ *
+ * Salary is calculated per employee, not by adding the full monthly
+ * salary of every employee. The calculation follows the Attendance
+ * page rule:
+ *
+ *   daily salary = monthly salary / 30
+ *   gross salary = daily salary × eligible days
+ *   absent deduction = daily salary × absent days
+ *   current payable = gross salary - absent deduction - advances
+ *
+ * Every employee gets their own salary rate, joining date and absence
+ * records. Therefore employees with different salaries are calculated
+ * independently.
+ */
+const calculateCurrentEmployeeSalary = (
   employee,
   attendanceRecords = [],
-  advances = [],
-  startKey,
-  endKey
+  advances = []
 ) => {
-  const todayKey = toDateKey(new Date());
-  const requestedStart = startKey || todayKey;
-  const requestedEnd = endKey || todayKey;
-
-  if (!requestedStart || !requestedEnd || requestedEnd < requestedStart) {
-    return { totalDays: 0, presentDays: 0, absentDays: 0, grossSalary: 0, workedSalary: 0, absentDeduction: 0, totalAdvance: 0, finalSalary: 0 };
+  if (!employee) {
+    return {
+      employee,
+      monthlySalary: 0,
+      totalDays: 0,
+      presentDays: 0,
+      absentDays: 0,
+      grossSalary: 0,
+      absentDeduction: 0,
+      advance: 0,
+      currentSalary: 0,
+    };
   }
 
-  const joiningKey = employee?.date ? toDateKey(new Date(employee.date)) : requestedStart;
-  const employeeEndKey = getEmployeeEndDateKey(employee);
-  const effectiveStart = joiningKey && joiningKey > requestedStart ? joiningKey : requestedStart;
+  const today = dayjs().startOf('day');
+  const todayKey = today.format('YYYY-MM-DD');
 
-  let effectiveEnd = requestedEnd > todayKey ? todayKey : requestedEnd;
-  if (employeeEndKey && employeeEndKey < effectiveEnd) {
-    effectiveEnd = employeeEndKey;
+  const monthStartKey = today
+    .startOf('month')
+    .format('YYYY-MM-DD');
+
+  const joiningKey =
+    getEmployeeDateKey(employee?.date) ||
+    monthStartKey;
+
+  const employeeEndKey =
+    getEmployeeEndDateKey(employee);
+
+  let startKey =
+    joiningKey > monthStartKey
+      ? joiningKey
+      : monthStartKey;
+
+  let endKey = todayKey;
+
+  if (employeeEndKey && employeeEndKey < endKey) {
+    endKey = employeeEndKey;
   }
 
-  if (effectiveEnd < effectiveStart) {
-    return { totalDays: 0, presentDays: 0, absentDays: 0, grossSalary: 0, workedSalary: 0, absentDeduction: 0, totalAdvance: 0, finalSalary: 0 };
+  if (endKey < startKey) {
+    return {
+      employee,
+      monthlySalary:
+        safeNum(employee?.salary),
+      totalDays: 0,
+      presentDays: 0,
+      absentDays: 0,
+      grossSalary: 0,
+      absentDeduction: 0,
+      advance: 0,
+      currentSalary: 0,
+    };
   }
 
-  const rangeDates = getDateRange(effectiveStart, effectiveEnd);
-  const rangeSet = new Set(rangeDates);
+  const rangeStart = dayjs(startKey);
+  const rangeEnd = dayjs(endKey);
+
+  const totalDays =
+    rangeEnd.diff(
+      rangeStart,
+      'day'
+    ) + 1;
+
+  const rangeSet = new Set();
+
+  for (
+    let date = rangeStart;
+    !date.isAfter(rangeEnd, 'day');
+    date = date.add(1, 'day')
+  ) {
+    rangeSet.add(
+      date.format('YYYY-MM-DD')
+    );
+  }
+
   const absentKeys = new Set();
 
   for (const record of attendanceRecords) {
-    if (normalizeStatus(record?.status) === 'absent') {
-      const rawDate = record?.date || record?.attendanceDate || record?.absenceDate;
-      const key = rawDate ? toDateKey(rawDate) : '';
-      if (key && rangeSet.has(key)) absentKeys.add(key);
-    }
+    if (isAbsentAttendance(record)) {
+      const key =
+        getAttendanceDateKey(record);
 
-    if (Array.isArray(record?.absentDates)) {
-      for (const item of record.absentDates) {
-        const key = toDateKey(item?.date || item);
-        if (key && rangeSet.has(key)) absentKeys.add(key);
+      if (key && rangeSet.has(key)) {
+        absentKeys.add(key);
       }
     }
-  }
 
-  const totalDays = rangeDates.length;
-  const absentDays = absentKeys.size;
-  const presentDays = Math.max(totalDays - absentDays, 0);
-  const monthlySalary = Number(employee?.salary) || 0;
-  const dailySalary = monthlySalary / 30;
-  const grossSalary = dailySalary * totalDays;
-  const absentDeduction = dailySalary * absentDays;
-
-  const totalAdvance = advances.reduce((sum, item) => {
-    const rawDate = getAdvanceDateValue(item);
-    const advanceKey = rawDate
-      ? toDateKey(new Date(rawDate))
-      : item?.month ? `${item.month}-01` : '';
-
-    if (advanceKey && advanceKey >= effectiveStart && advanceKey <= effectiveEnd) {
-      return sum + (Number(item?.advanceAmount) || 0);
-    }
-    return sum;
-  }, 0);
-
-  const workedSalary = Math.max(grossSalary - absentDeduction, 0);
-  const finalSalary = workedSalary - totalAdvance;
-
-  return {
-    totalDays,
-    presentDays,
-    absentDays,
-    grossSalary,
-    workedSalary,
-    absentDeduction,
-    totalAdvance,
-    finalSalary,
-    startDate: effectiveStart,
-    endDate: effectiveEnd,
-  };
-};
-
-/*
-|--------------------------------------------------------------------------
-| WhatsApp share helpers
-|--------------------------------------------------------------------------
-*/
-
-const buildAbsenceShareText = ({
-  employeeName,
-  unitLabel,
-  dateLabel,
-  reason,
-}) => {
-  const lines = [
-    '*Attendance Update*',
-    '',
-    `Employee: ${employeeName || '-'}`,
-  ];
-
-  if (unitLabel) {
-    lines.push(`Unit: ${unitLabel}`);
-  }
-
-  lines.push(`Date: ${dateLabel}`);
-  lines.push('Status: Absent');
-  lines.push(
-    `Reason: ${
-      reason && reason.trim()
-        ? reason.trim()
-        : 'Not specified'
-    }`
-  );
-
-  return lines.join('\n');
-};
-
-/*
- * Looks for a phone number under any of the
- * common field names your employee records
- * might use. Falls back to '' (which opens
- * WhatsApp's contact picker instead of a
- * specific chat) if none is found.
- */
-const getEmployeePhone = (emp) => {
-  if (!emp) return '';
-
-  const raw =
-    emp.phone ||
-    emp.phoneNumber ||
-    emp.mobile ||
-    emp.mobileNumber ||
-    emp.contact ||
-    emp.contactNumber ||
-    '';
-
-  return String(raw).replace(
-    /[^\d]/g,
-    ''
-  );
-};
-
-const shareOnWhatsApp = (
-  text,
-  phone
-) => {
-  const encoded =
-    encodeURIComponent(text);
-
-  const base = phone
-    ? `https://wa.me/${phone}`
-    : 'https://wa.me/';
-
-  window.open(
-    `${base}?text=${encoded}`,
-    '_blank',
-    'noopener,noreferrer'
-  );
-};
-
-const daysInMonth = (
-  year,
-  month
-) => {
-  return new Date(
-    year,
-    month + 1,
-    0
-  ).getDate();
-};
-
-const firstDayOfMonth = (
-  year,
-  month
-) => {
-  return new Date(
-    year,
-    month,
-    1
-  ).getDay();
-};
-
-/*
-|--------------------------------------------------------------------------
-| Component
-|--------------------------------------------------------------------------
-*/
-
-export default function Attendance() {
-  const {
-    currentMachine = 'big',
-  } = useMachine();
-
-  /*
-   * Employees
-   */
-  const [
-    employees,
-    setEmployees,
-  ] = useState([]);
-
-  const [
-    selectedEmployee,
-    setSelectedEmployee,
-  ] = useState('');
-
-  const [employeeEndDate, setEmployeeEndDate] = useState('');
-  const [savingEmployeeEndDate, setSavingEmployeeEndDate] = useState(false);
-
-  /*
-   * Current calendar month
-   */
-  const [
-    currentMonth,
-    setCurrentMonth,
-  ] = useState(
-    new Date()
-  );
-
-  /*
-   * All absence records
-   */
-  const [
-    attendanceRecords,
-    setAttendanceRecords,
-  ] = useState([]);
-
-  const [
-    loading,
-    setLoading,
-  ] = useState(false);
-
-  const [
-    confirmAbsentModal,
-    setConfirmAbsentModal,
-  ] = useState(false);
-
-  const [advances, setAdvances] = useState([]);
-  const [advanceModal, setAdvanceModal] = useState(false);
-  const [advanceAmount, setAdvanceAmount] = useState('');
-  const [advanceDate, setAdvanceDate] = useState(toDateKey(new Date()));
-  const [advancePaymentMode, setAdvancePaymentMode] = useState('cash');
-  const [advanceNotes, setAdvanceNotes] = useState('');
-  const [savingAdvance, setSavingAdvance] = useState(false);
-  const [editingAdvance, setEditingAdvance] = useState(null);
-  const [deleteAdvanceDialog, setDeleteAdvanceDialog] = useState(null);
-  const [deletingAdvance, setDeletingAdvance] = useState(false);
-
-  const [reportStartDate, setReportStartDate] = useState(() => {
-    const now = new Date();
-    return toDateKey(new Date(now.getFullYear(), now.getMonth(), 1));
-  });
-  const [reportEndDate, setReportEndDate] = useState(() => toDateKey(new Date()));
-
-  // Employee salary data used to build the whole-employee report.
-  const [allEmployeeSalaryRows, setAllEmployeeSalaryRows] = useState([]);
-  const [allEmployeeSalaryLoading, setAllEmployeeSalaryLoading] = useState(false);
-
-  const [
-    error,
-    setError,
-  ] = useState('');
-
-  const [
-    success,
-    setSuccess,
-  ] = useState('');
-
-  const [
-    optimisticAbsent,
-    setOptimisticAbsent,
-  ] = useState({});
-
-  const [
-    optimisticRemoved,
-    setOptimisticRemoved,
-  ] = useState({});
-
-  const [
-    selectedDate,
-    setSelectedDate,
-  ] = useState(null);
-
-  const [
-    absentReason,
-    setAbsentReason,
-  ] = useState('');
-
-  const [
-    absentEndDate,
-    setAbsentEndDate,
-  ] = useState('');
-
-  const [
-    showAbsentEndDate,
-    setShowAbsentEndDate,
-  ] = useState(false);
-
-  const [
-    absentModal,
-    setAbsentModal,
-  ] = useState(false);
-
-  const [
-    savingAbsent,
-    setSavingAbsent,
-  ] = useState(false);
-
-  const [
-    detailsDate,
-    setDetailsDate,
-  ] = useState(null);
-
-  const [
-    detailsInfo,
-    setDetailsInfo,
-  ] = useState(null);
-
-  const [
-    detailsModal,
-    setDetailsModal,
-  ] = useState(false);
-
-  const [
-    revertingAbsent,
-    setRevertingAbsent,
-  ] = useState(false);
-
-  /*
-   * Current employee
-   */
-  const employee = useMemo(() => {
-    return employees.find(
-      (item) =>
-        String(item._id) ===
-        String(selectedEmployee)
-    );
-  }, [
-    employees,
-    selectedEmployee,
-  ]);
-
-  /*
-   |--------------------------------------------------------------------------
-   | Load employees
-   |--------------------------------------------------------------------------
-   */
-
-  const loadEmployees = async () => {
-    try {
-      /*
-       * Adjust this endpoint only if your
-       * Personal Information route uses
-       * another path.
-       */
-      const data =
-        await apiRequest(
-          `/users?machineType=${currentMachine}`
-        );
-
-      const allUsers = extractList(data, [
-        'users',
-        'records',
-        'personalUsers',
-        'employees',
-        'data',
-      ]);
-
-      // Attendance & Salary is only for employees.
-      // Brokers must not appear in this dropdown.
-      // Keep the broker records in the database; only filter them here.
-      const list = allUsers.filter((item) => {
-        const type = String(
-          item?.type ||
-          item?.userType ||
-          item?.role ||
-          ''
-        )
-          .trim()
-          .toLowerCase();
-
-        return type !== 'broker' && type !== 'partner';
-      });
-
-      setEmployees(list);
-
-      /*
-       * Keep currently selected employee
-       */
-      if (
-        selectedEmployee &&
-        list.some(
-          (item) =>
-            String(item._id) ===
-            String(selectedEmployee)
-        )
-      ) {
-        return;
-      }
-
-      setSelectedEmployee('');
-    } catch (err) {
-      console.error(
-        'Employee loading error:',
-        err
-      );
-
-      setError(
-        err.message ||
-          'Unable to load employees'
-      );
-    }
-  };
-
-
-  /*
-   |--------------------------------------------------------------------------
-   | Load attendance
-   |--------------------------------------------------------------------------
-   */
-
-  const loadAttendance = async () => {
-    if (!selectedEmployee) {
-      setAttendanceRecords([]);
-      return;
-    }
-
-    try {
-      setLoading(true);
-
-      const data =
-        await apiRequest(
-          `/attendance?employeeId=${selectedEmployee}&machineType=${currentMachine}&limit=500`
-        );
-
-      const records = extractList(data, [
-        'records',
-        'attendance',
-        'data',
-        'items',
-      ]).map(normalizeAttendanceRecord);
-
-      setAttendanceRecords(records);
-    } catch (err) {
-      console.error(
-        'Attendance loading error:',
-        err
-      );
-
-      setError(
-        err.message ||
-          'Unable to load attendance'
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-
-  const loadAdvances = async () => {
-    if (!selectedEmployee) {
-      setAdvances([]);
-      return;
-    }
-    try {
-      const data = await apiRequest(
-        `/salary-advances?employeeId=${selectedEmployee}&machineType=${currentMachine}&limit=500`
-      );
-      setAdvances(extractList(data, ['records', 'advances', 'data', 'items']));
-    } catch (err) {
-      console.warn('Advance loading:', err?.message || err);
-      setAdvances([]);
-    }
-  };
-
-  useEffect(() => {
-    loadEmployees();
-  }, [currentMachine]);
-
-  useEffect(() => {
-    loadAttendance();
-    loadAdvances();
-  }, [
-    selectedEmployee,
-    currentMachine,
-  ]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadAllEmployeeSalary = async () => {
-      if (!employees.length) {
-        setAllEmployeeSalaryRows([]);
-        setAllEmployeeSalaryLoading(false);
-        return;
-      }
-
-      setAllEmployeeSalaryLoading(true);
-
-      const rows = await Promise.all(
-        employees.map(async (item) => {
-          const employeeId = item?._id;
-
-          try {
-            const [attendanceData, advanceData] =
-              await Promise.all([
-                apiRequest(
-                  `/attendance?employeeId=${employeeId}&machineType=${currentMachine}&limit=500`
-                ),
-                apiRequest(
-                  `/salary-advances?employeeId=${employeeId}&machineType=${currentMachine}&limit=500`
-                ),
-              ]);
-
-            const attendance = extractList(
-              attendanceData,
-              [
-                'records',
-                'attendance',
-                'data',
-                'items',
-              ]
-            ).map(normalizeAttendanceRecord);
-
-            const employeeAdvances =
-              extractList(
-                advanceData,
-                [
-                  'records',
-                  'advances',
-                  'data',
-                  'items',
-                ]
-              );
-
-            return {
-              employee: item,
-              salary: calculateEmployeeRangeSalary(
-                item,
-                attendance,
-                employeeAdvances,
-                reportStartDate,
-                reportEndDate
-              ),
-              attendance,
-              advances: employeeAdvances,
-              failed: false,
-            };
-          } catch (err) {
-            console.warn(
-              `Unable to load salary data for ${item?.name || 'employee'}:`,
-              err?.message || err
-            );
-
-            return {
-              employee: item,
-              salary: calculateEmployeeRangeSalary(
-                item,
-                [],
-                [],
-                reportStartDate,
-                reportEndDate
-              ),
-              attendance: [],
-              advances: [],
-              failed: true,
-            };
-          }
-        })
-      );
-
-      if (!cancelled) {
-        setAllEmployeeSalaryRows(rows);
-        setAllEmployeeSalaryLoading(false);
-      }
-    };
-
-    loadAllEmployeeSalary();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [employees, currentMachine, reportStartDate, reportEndDate]);
-
-  useEffect(() => {
-    setOptimisticAbsent({});
-    setOptimisticRemoved({});
-  }, [selectedEmployee]);
-
-  useEffect(() => {
-    setEmployeeEndDate(getEmployeeEndDateKey(employee));
-  }, [employee]);
-
-  /*
-   |--------------------------------------------------------------------------
-   | Build absent date map
-   |--------------------------------------------------------------------------
-   */
-
-  const absentMap = useMemo(() => {
-    const map = {};
-
-    for (const record of attendanceRecords) {
-      if (
-        normalizeStatus(record?.status) === 'absent' &&
-        record?.date
+    if (
+      Array.isArray(
+        record?.absentDates
+      )
+    ) {
+      for (
+        const item of record.absentDates
       ) {
         const key =
-          toDateKey(record.date);
-
-        if (key) {
-          map[key] = {
-            id: record._id || null,
-            reason:
-              record.notes ||
-              record.reason ||
-              '',
-            recordId:
-              record._id || null,
-          };
-        }
-      }
-
-      const dates =
-        Array.isArray(record?.absentDates)
-          ? record.absentDates
-          : [];
-
-      for (const item of dates) {
-        const key =
-          toDateKey(
+          getEmployeeDateKey(
             item?.date || item
           );
 
-        if (!key) continue;
-
-        map[key] = {
-          id: item?._id || null,
-          reason:
-            item?.reason ||
-            item?.notes ||
-            '',
-          recordId:
-            record._id || null,
-        };
+        if (
+          key &&
+          rangeSet.has(key)
+        ) {
+          absentKeys.add(key);
+        }
       }
     }
+  }
 
-    /*
-     * Apply the optimistic overlay: dates just saved as absent (not
-     * yet confirmed by a fresh loadAttendance()) get added, and dates
-     * just reverted to present get removed — even if they still show
-     * up as absent in the last-fetched attendanceRecords.
-     */
-    for (const [key, info] of Object.entries(optimisticAbsent)) {
-      if (!optimisticRemoved[key]) {
-        map[key] = info;
-      }
-    }
+  const absentDays =
+    absentKeys.size;
 
-    for (const key of Object.keys(optimisticRemoved)) {
-      delete map[key];
-    }
+  const presentDays = Math.max(
+    totalDays - absentDays,
+    0
+  );
 
-    return map;
-  }, [attendanceRecords, optimisticAbsent, optimisticRemoved]);
+  const monthlySalary =
+    safeNum(employee?.salary);
 
-  /*
-   |--------------------------------------------------------------------------
-   | Salary calculations
-   |--------------------------------------------------------------------------
-   */
+  const dailySalary =
+    monthlySalary / 30;
 
-  const salarySummary = useMemo(() => {
-    if (!employee) {
-      return {
-        monthsWorked: 0,
-        totalDays: 0,
-        presentDays: 0,
-        absentDays: 0,
-        grossSalary: 0,
-        workedSalary: 0,
-        absentDeduction: 0,
-        advance: 0,
-        finalSalary: 0,
-        endDate: '',
-      };
-    }
+  const grossSalary =
+    dailySalary * totalDays;
 
-    const todayKey = toDateKey(new Date());
-    const joiningKey = employee.date
-      ? toDateKey(new Date(employee.date))
-      : todayKey;
+  const absentDeduction =
+    dailySalary * absentDays;
 
-    const employeeEndKey = getEmployeeEndDateKey(employee);
-
-    let endKey = todayKey;
-    if (employeeEndKey && employeeEndKey < endKey) {
-      endKey = employeeEndKey;
-    }
-
-    const startKey =
-      joiningKey && joiningKey > todayKey
-        ? todayKey
-        : joiningKey || todayKey;
-
-    if (endKey < startKey) {
-      return {
-        monthsWorked: 0,
-        totalDays: 0,
-        presentDays: 0,
-        absentDays: 0,
-        grossSalary: 0,
-        workedSalary: 0,
-        absentDeduction: 0,
-        advance: 0,
-        finalSalary: 0,
-        endDate: employeeEndKey || '',
-      };
-    }
-
-    const rangeDates = getDateRange(startKey, endKey);
-    const rangeSet = new Set(rangeDates);
-
-    const absentDates = Object.keys(absentMap).filter((key) =>
-      rangeSet.has(key)
-    );
-
-    const totalDays = rangeDates.length;
-    const absentDays = absentDates.length;
-    const presentDays = Math.max(totalDays - absentDays, 0);
-
-    const monthlySalary = Number(employee.salary) || 0;
-    const dailySalary = monthlySalary / 30;
-    const grossSalary = dailySalary * totalDays;
-    const absentDeduction = dailySalary * absentDays;
-
-    const totalAdvance = advances.reduce(
+  const currentMonthAdvances =
+    advances.reduce(
       (sum, item) => {
-        const rawDate = getAdvanceDateValue(item);
-        const advanceKey = rawDate
-          ? toDateKey(new Date(rawDate))
-          : item?.month
-            ? `${item.month}-01`
-            : '';
+        const rawDate =
+          item?.date ||
+          item?.advanceDate ||
+          item?.paymentDate ||
+          item?.transactionDate ||
+          item?.createdAt ||
+          null;
+
+        const advanceKey =
+          rawDate
+            ? getEmployeeDateKey(
+                rawDate
+              )
+            : item?.month
+              ? `${item.month}-01`
+              : '';
 
         if (
           advanceKey &&
           advanceKey >= startKey &&
           advanceKey <= endKey
         ) {
-          return sum + (Number(item?.advanceAmount) || 0);
+          return (
+            sum +
+            safeNum(
+              item?.advanceAmount ??
+                item?.amount
+            )
+          );
         }
 
         return sum;
@@ -1049,3247 +442,3889 @@ export default function Attendance() {
       0
     );
 
-    const workedSalary = Math.max(
-      grossSalary - absentDeduction,
+  const salaryBeforeAdvance =
+    Math.max(
+      grossSalary -
+        absentDeduction,
       0
     );
 
-    const finalSalary =
-      workedSalary - totalAdvance;
+  const currentSalary =
+    salaryBeforeAdvance -
+    currentMonthAdvances;
 
-    const startDate = parseDateKey(startKey);
-    const endDate = parseDateKey(endKey);
-
-    const monthsWorked = Math.max(
-      1,
-      (
-        (endDate.getFullYear() - startDate.getFullYear()) * 12
-      ) +
-        (endDate.getMonth() - startDate.getMonth()) +
-        1
-    );
-
-    return {
-      monthsWorked,
-      totalDays,
-      presentDays,
-      absentDays,
-      grossSalary,
-      workedSalary,
-      absentDeduction,
-      advance: totalAdvance,
-      finalSalary,
-      endDate: employeeEndKey || '',
-    };
-  }, [
+  return {
     employee,
-    absentMap,
-    advances,
-  ]);
-
-
-  /*
-   |--------------------------------------------------------------------------
-   | Calendar
-   |--------------------------------------------------------------------------
-   */
-
-  const calendarDays = useMemo(() => {
-    const year =
-      currentMonth.getFullYear();
-
-    const month =
-      currentMonth.getMonth();
-
-    const total =
-      daysInMonth(
-        year,
-        month
-      );
-
-    const first =
-      firstDayOfMonth(
-        year,
-        month
-      );
-
-    const cells = [];
-
-    for (
-      let i = 0;
-      i < first;
-      i++
-    ) {
-      cells.push(null);
-    }
-
-    for (
-      let day = 1;
-      day <= total;
-      day++
-    ) {
-      cells.push(
-        new Date(
-          year,
-          month,
-          day
-        )
-      );
-    }
-
-    return cells;
-  }, [currentMonth]);
-
-  /*
-   |--------------------------------------------------------------------------
-   | Calendar navigation
-   |--------------------------------------------------------------------------
-   */
-
-  const previousMonth = () => {
-    setCurrentMonth(
-      new Date(
-        currentMonth.getFullYear(),
-        currentMonth.getMonth() - 1,
-        1
-      )
-    );
+    monthlySalary,
+    totalDays,
+    presentDays,
+    absentDays,
+    grossSalary,
+    absentDeduction,
+    advance:
+      currentMonthAdvances,
+    currentSalary,
+    startDate: startKey,
+    endDate: endKey,
   };
+};
 
-  const nextMonth = () => {
-    const next =
-      new Date(
-        currentMonth.getFullYear(),
-        currentMonth.getMonth() + 1,
-        1
-      );
+/* =========================================================
+   PERIOD OPTIONS
+========================================================= */
 
-    setCurrentMonth(next);
-  };
+const PERIOD_OPTIONS = [
+  {
+    value: 'all',
+    label: 'All',
+  },
+  {
+    value: 'week',
+    label: 'Week',
+  },
+  {
+    value: 'month',
+    label: 'Month',
+  },
+  {
+    value: 'year',
+    label: 'Year',
+  },
+];
 
-  /*
-   |--------------------------------------------------------------------------
-   | Click calendar date
-   |--------------------------------------------------------------------------
-   */
+/* =========================================================
+   CARD CONFIG
+========================================================= */
 
-  const handleDateClick = (date) => {
-    if (!employee || !date) return;
+const CARD_CONFIG = {
+  totalBorewellPoints: {
+    label: 'Points',
+    color: '#0f172a',
+    icon: <WaterDropIcon />,
+    hasPeriodFilter: true,
 
-    const key = toDateKey(date);
-    const todayKey = toDateKey(new Date());
-    const joiningKey = employee.date ? toDateKey(new Date(employee.date)) : null;
-
-    if (joiningKey && key < joiningKey) {
-      setError('This date is before the employee joining date.');
-      return;
-    }
-
-    if (key > todayKey) {
-      setError('Future dates cannot be marked absent.');
-      return;
-    }
-
-    if (absentMap[key]) {
-      setDetailsDate(date);
-      setDetailsInfo(absentMap[key]);
-      setDetailsModal(true);
-      return;
-    }
-
-    setSelectedDate(date);
-    setAbsentReason('');
-    setAbsentEndDate('');
-    setShowAbsentEndDate(false);
-    setAbsentModal(true);
-  };
-
-  const saveAbsent = async () => {
-    if (!selectedEmployee) {
-      setError('Please select an employee.');
-      return;
-    }
-
-    if (!selectedDate) {
-      setError('Valid absence date is required.');
-      return;
-    }
-
-    const startDateKey = toDateKey(selectedDate);
-    const endDateKey = showAbsentEndDate && absentEndDate ? absentEndDate : startDateKey;
-    const todayKey = toDateKey(new Date());
-    const joiningKey = employee?.date ? toDateKey(new Date(employee.date)) : null;
-
-    if (joiningKey && startDateKey < joiningKey) {
-      setError('Absence cannot be before the employee joining date.');
-      return;
-    }
-    if (endDateKey > todayKey) {
-      setError('Absence end date cannot be in the future.');
-      return;
-    }
-    if (endDateKey < startDateKey) {
-      setError('End date cannot be before the start date.');
-      return;
-    }
-
-    const dateKeys = getDateRange(startDateKey, endDateKey);
-    if (!dateKeys.length) {
-      setError('Please select a valid date range.');
-      return;
-    }
-
-    const candidateDates = dateKeys.filter((dateKey) => !absentMap[dateKey]);
-    if (!candidateDates.length) {
-      setError('All dates in this range are already marked absent.');
-      return;
-    }
-
-    try {
-      setSavingAbsent(true);
-      setError('');
-
-      let savedCount = 0;
-      let skippedCount = dateKeys.length - candidateDates.length;
-      const newlyAbsent = {};
-
-      for (const dateKey of candidateDates) {
-        try {
-          /*
-           * IMPORTANT: this must hit POST /attendance/absent, which
-           * appends a single date to the employee's existing absence
-           * list for that month/machine (and 409s if it's a duplicate).
-           *
-           * The previous version called POST /attendance (the bulk
-           * create/replace route) with a { date, status } body that
-           * route doesn't read. That route's absentDates defaults to
-           * [] whenever it's omitted, so every "mark absent" click was
-           * silently overwriting and wiping the whole month's absence
-           * history instead of adding to it — and the new date was
-           * never actually saved either.
-           */
-          await apiRequest('/attendance/absent', {
-            method: 'POST',
-            body: JSON.stringify({
-              employeeId: selectedEmployee,
-              absenceDate: dateKey,
-              machineType: currentMachine,
-              reason: absentReason.trim(),
-            }),
-          });
-
-          newlyAbsent[dateKey] = {
-            id: null,
-            reason: absentReason.trim(),
-            recordId: null,
-          };
-          savedCount += 1;
-        } catch (err) {
-          const message = String(err?.message || '');
-          if (/duplicate|already exists|attendance already exists|already marked|already absent|conflict/i.test(message)) {
-            skippedCount += 1;
-            continue;
-          }
-          throw err;
-        }
-      }
-
-      if (Object.keys(newlyAbsent).length) {
-        setOptimisticAbsent((current) => ({
-          ...current,
-          ...newlyAbsent,
-        }));
-      }
-
-      const startDate = parseDateKey(startDateKey);
-      const endDate = parseDateKey(endDateKey);
-      const rangeMessage = dateKeys.length === 1
-        ? `${formatDate(selectedDate)} marked absent.`
-        : `${savedCount} day(s) marked absent from ${formatDate(startDate)} to ${formatDate(endDate)}.`;
-
-      setSuccess(skippedCount > 0 ? `${rangeMessage} ${skippedCount} existing day(s) skipped.` : rangeMessage);
-
-      await loadAttendance();
-
-      // Real data now includes these dates — safe to drop the overlay.
-      setOptimisticAbsent((current) => {
-        const next = { ...current };
-        Object.keys(newlyAbsent).forEach((key) => delete next[key]);
-        return next;
-      });
-
-      setConfirmAbsentModal(false);
-      setAbsentModal(false);
-      setSelectedDate(null);
-      setAbsentReason('');
-      setAbsentEndDate('');
-      setShowAbsentEndDate(false);
-    } catch (err) {
-      console.error('Save absent error:', err);
-      setError(err?.message || 'Unable to mark absent.');
-    } finally {
-      setSavingAbsent(false);
-    }
-  };
-
-  const removeAbsent = async (key) => {
-    if (!selectedEmployee || !key) return;
-
-    const date = parseDateKey(key);
-    try {
-      setRevertingAbsent(true);
-      setError('');
-
-      // Instant feedback: hide the red marker right away, before the
-      // request even resolves.
-      setOptimisticRemoved((current) => ({
-        ...current,
-        [key]: true,
-      }));
-
-      await apiRequest('/attendance/present', {
-        method: 'POST',
-        body: JSON.stringify({
-          employeeId: selectedEmployee,
-          absenceDate: key,
-          machineType: currentMachine,
-        }),
-      });
-
-      setSuccess(`${formatDate(date)} changed to present.`);
-      setDetailsModal(false);
-      setDetailsDate(null);
-      setDetailsInfo(null);
-      await loadAttendance();
-
-      // Real data no longer has this date — safe to drop the overlay.
-      setOptimisticRemoved((current) => {
-        const next = { ...current };
-        delete next[key];
-        return next;
-      });
-    } catch (err) {
-      // Request failed — undo the optimistic hide so the date goes
-      // back to showing as absent.
-      setOptimisticRemoved((current) => {
-        const next = { ...current };
-        delete next[key];
-        return next;
-      });
-      console.error('Remove absent error:', err);
-      setError(err?.message || 'Unable to change date to present.');
-    } finally {
-      setRevertingAbsent(false);
-    }
-  };
-
-
-
-  const saveEmployeeEndDate = async () => {
-    if (!employee?._id) {
-      setError('Please select an employee.');
-      return;
-    }
-
-    const joiningKey = employee.date
-      ? toDateKey(new Date(employee.date))
-      : '';
-
-    if (employeeEndDate && joiningKey && employeeEndDate < joiningKey) {
-      setError('End date cannot be before the employee joining date.');
-      return;
-    }
-
-    const todayKey = toDateKey(new Date());
-
-    if (employeeEndDate && employeeEndDate > todayKey) {
-      setError('End date cannot be in the future.');
-      return;
-    }
-
-    try {
-      setSavingEmployeeEndDate(true);
-      setError('');
-
-      await apiRequest(`/users/${employee._id}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          // The users API uses machine separation on updates.
-          // Send the current machine together with the end date.
-          machineType: currentMachine,
-          endDate: employeeEndDate || null,
-        }),
-      });
-
-      setEmployees((current) =>
-        current.map((item) =>
-          String(item?._id) === String(employee._id)
-            ? {
-                ...item,
-                endDate: employeeEndDate || null,
-              }
-            : item
-        )
-      );
-
-      setSuccess(
-        employeeEndDate
-          ? `End date saved for ${employee.name}. Employee is treated as terminated from ${formatDate(parseDateKey(employeeEndDate))}.`
-          : `End date removed for ${employee.name}.`
-      );
-    } catch (err) {
-      console.error('Employee end date save error:', err);
-      setError(
-        err?.message ||
-          'Unable to save employee end date. Make sure the Users update API accepts endDate.'
-      );
-    } finally {
-      setSavingEmployeeEndDate(false);
-    }
-  };
-
-  const openAddAdvance = () => {
-    setEditingAdvance(null);
-    setAdvanceAmount('');
-    setAdvancePaymentMode('cash');
-    setAdvanceNotes('');
-    setAdvanceDate(toDateKey(new Date()));
-    setError('');
-    setAdvanceModal(true);
-  };
-
-  const openEditAdvance = (item) => {
-    setEditingAdvance(item);
-    setAdvanceAmount(String(item?.advanceAmount ?? ''));
-    const rawAdvanceDate = getAdvanceDateValue(item);
-    setAdvanceDate(
-      rawAdvanceDate && !Number.isNaN(new Date(rawAdvanceDate).getTime())
-        ? toDateKey(new Date(rawAdvanceDate))
-        : item?.month
-          ? `${item.month}-01`
-          : toDateKey(new Date())
-    );
-    setAdvancePaymentMode(item?.paymentMode || 'cash');
-    setAdvanceNotes(item?.notes || '');
-    setError('');
-    setAdvanceModal(true);
-  };
-
-  const closeAdvanceModal = () => {
-    if (savingAdvance) return;
-    setAdvanceModal(false);
-    setEditingAdvance(null);
-    setAdvanceAmount('');
-    setAdvancePaymentMode('cash');
-    setAdvanceNotes('');
-    setAdvanceDate(toDateKey(new Date()));
-  };
-
-  const saveAdvance = async () => {
-    if (!selectedEmployee) {
-      setError('Please select an employee.');
-      return;
-    }
-
-    const amount = Number(advanceAmount);
-    if (!amount || amount <= 0) {
-      setError('Enter a valid advance amount.');
-      return;
-    }
-
-    if (!advanceDate) {
-      setError('Select an advance date.');
-      return;
-    }
-
-    try {
-      setSavingAdvance(true);
-      setError('');
-
-      const payload = {
-        employeeId: selectedEmployee,
-        month: advanceDate.slice(0, 7),
-        machineType: currentMachine,
-        advanceAmount: amount,
-        paymentMode: advancePaymentMode,
-        notes: advanceNotes.trim(),
-        date: advanceDate,
-      };
-
-      if (editingAdvance?._id) {
-        await apiRequest(
-          `/salary-advances/${editingAdvance._id}`,
-          {
-            method: 'PUT',
-            body: JSON.stringify(payload),
-          }
-        );
-        setSuccess('Salary advance updated successfully.');
-      } else {
-        await apiRequest('/salary-advances', {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        });
-        setSuccess('Salary advance added successfully.');
-      }
-
-      closeAdvanceModal();
-      await loadAdvances();
-    } catch (err) {
-      console.error('Advance save error:', err);
-      setError(
-        err?.message ||
-          (editingAdvance
-            ? 'Unable to update salary advance.'
-            : 'Unable to save salary advance.')
-      );
-    } finally {
-      setSavingAdvance(false);
-    }
-  };
-
-  const confirmDeleteAdvance = async () => {
-    if (!deleteAdvanceDialog?._id) return;
-
-    try {
-      setDeletingAdvance(true);
-      setError('');
-
-      await apiRequest(
-        `/salary-advances/${deleteAdvanceDialog._id}`,
+    fetch: (machineType) =>
+      api.get(
+        '/borewell-points',
         {
-          method: 'DELETE',
+          params: {
+            limit: 500,
+            machineType,
+          },
         }
+      ),
+
+    extract: (data) =>
+      data?.points || [],
+
+    columns: [
+      'Date',
+      'Party',
+      'Broker',
+      'Total',
+      'Status',
+    ],
+
+    render: (point) => [
+      dayjs(
+        point?.date
+      ).format('DD/MM/YYYY'),
+
+      point?.partyName ||
+        '—',
+
+      point?.brokerId?.name ||
+        '—',
+
+      fmtSafe(
+        point?.totalAmount
+      ),
+
+      point?.paymentStatus ||
+        'Unpaid',
+    ],
+
+    chipCol: 4,
+  },
+
+  paidAmount: {
+    label: 'Paid Amount',
+    color: '#0f172a',
+    icon: <PaidIcon />,
+    hasPeriodFilter: true,
+
+    fetch: (machineType) =>
+      api.get(
+        '/borewell-points',
+        {
+          params: {
+            limit: 500,
+            machineType,
+          },
+        }
+      ),
+
+    extract: (data) =>
+      (data?.points || []).filter(
+        (point) =>
+          point?.paymentStatus ===
+            'Paid' ||
+          point?.paymentStatus ===
+            'Partial'
+      ),
+
+    columns: [
+      'Date',
+      'Party',
+      'Broker',
+      'Total',
+      'Paid',
+      'Status',
+    ],
+
+    render: (point) => [
+      dayjs(
+        point?.date
+      ).format('DD/MM/YYYY'),
+
+      point?.partyName ||
+        '—',
+
+      point?.brokerId?.name ||
+        '—',
+
+      fmtSafe(
+        point?.totalAmount
+      ),
+
+      fmtSafe(
+        getPaidAmount(point)
+      ),
+
+      point?.paymentStatus ||
+        'Unpaid',
+    ],
+
+    chipCol: 5,
+  },
+
+  pendingAmount: {
+    label: 'Pending Amount',
+    color: '#0f172a',
+    icon: <PendingActionsIcon />,
+    hasPeriodFilter: true,
+
+    fetch: (machineType) =>
+      api.get(
+        '/borewell-points',
+        {
+          params: {
+            limit: 500,
+            machineType,
+          },
+        }
+      ),
+
+    extract: (data) =>
+      (data?.points || []).filter(
+        (point) =>
+          point?.paymentStatus ===
+            'Unpaid' ||
+          point?.paymentStatus ===
+            'Partial'
+      ),
+
+    columns: [
+      'Date',
+      'Party',
+      'Broker',
+      'Total',
+      'Pending',
+      'Status',
+    ],
+
+    render: (point) => [
+      dayjs(
+        point?.date
+      ).format('DD/MM/YYYY'),
+
+      point?.partyName ||
+        '—',
+
+      point?.brokerId?.name ||
+        '—',
+
+      fmtSafe(
+        point?.totalAmount
+      ),
+
+      fmtSafe(
+        getPendingAmount(point)
+      ),
+
+      point?.paymentStatus ||
+        'Unpaid',
+    ],
+
+    chipCol: 5,
+  },
+
+  discount: {
+    label: 'Discount',
+    color: '#0f172a',
+    icon: <DiscountIcon />,
+    hasPeriodFilter: true,
+
+    fetch: (machineType) =>
+      api.get(
+        '/borewell-points',
+        {
+          params: {
+            limit: 500,
+            machineType,
+          },
+        }
+      ),
+
+    extract: (data) =>
+      (data?.points || []).filter(
+        (point) =>
+          getDiscount(point) > 0
+      ),
+
+    columns: [
+      'Date',
+      'Party',
+      'Broker',
+      'Total',
+      'Discount',
+    ],
+
+    render: (point) => [
+      dayjs(
+        point?.date
+      ).format('DD/MM/YYYY'),
+
+      point?.partyName ||
+        '—',
+
+      point?.brokerId?.name ||
+        '—',
+
+      fmtSafe(
+        point?.totalAmount
+      ),
+
+      fmtSafe(
+        getDiscount(point)
+      ),
+    ],
+  },
+
+  diesel: {
+    label: 'Diesel',
+    color: '#0f172a',
+    icon: <LocalGasStationIcon />,
+    hasPeriodFilter: true,
+
+    fetch: (machineType) =>
+      api.get(
+        '/materials',
+        {
+          params: {
+            limit: 500,
+            machineType,
+          },
+        }
+      ),
+
+    extract: (data) =>
+      (data?.materials || []).filter(
+        (material) =>
+          isMaterialType(
+            material,
+            'diesel'
+          )
+      ),
+
+    columns: [
+      'Date',
+      'Type',
+      'Quantity',
+      'Cost/L',
+      'Total Amount',
+    ],
+
+    render: (material) => [
+      dayjs(
+        material?.date
+      ).format('DD/MM/YYYY'),
+
+      material?.type ||
+        'Diesel',
+
+      safeNum(
+        material?.quantity
+      ) || '—',
+
+      material?.costPerLiter !=
+      null
+        ? fmtSafe(
+            material.costPerLiter
+          )
+        : '—',
+
+      fmtSafe(
+        material?.totalPrice
+      ),
+    ],
+
+    totalField:
+      'totalPrice',
+  },
+
+  petrol: {
+    label: 'Petrol',
+    color: '#0f172a',
+    icon: <LocalGasStationIcon />,
+    hasPeriodFilter: true,
+
+    fetch: (machineType) =>
+      api.get(
+        '/materials',
+        {
+          params: {
+            limit: 500,
+            machineType,
+          },
+        }
+      ),
+
+    extract: (data) =>
+      (data?.materials || []).filter(
+        (material) =>
+          isMaterialType(
+            material,
+            'petrol'
+          )
+      ),
+
+    columns: [
+      'Date',
+      'Type',
+      'Quantity',
+      'Cost/L',
+      'Total Amount',
+    ],
+
+    render: (material) => [
+      dayjs(
+        material?.date
+      ).format('DD/MM/YYYY'),
+
+      material?.type ||
+        'Petrol',
+
+      safeNum(
+        material?.quantity
+      ) || '—',
+
+      material?.costPerLiter !=
+      null
+        ? fmtSafe(
+            material.costPerLiter
+          )
+        : '—',
+
+      fmtSafe(
+        material?.totalPrice
+      ),
+    ],
+
+    totalField:
+      'totalPrice',
+  },
+
+  bit: {
+    label: 'Bit',
+    color: '#0f172a',
+    icon: <ConstructionIcon />,
+    hasPeriodFilter: true,
+
+    fetch: (machineType) =>
+      api.get(
+        '/materials',
+        {
+          params: {
+            limit: 500,
+            machineType,
+          },
+        }
+      ),
+
+    extract: (data) =>
+      (data?.materials || []).filter(
+        (material) =>
+          isMaterialType(
+            material,
+            'bit'
+          )
+      ),
+
+    columns: [
+      'Date',
+      'Type',
+      'Quantity',
+      'Cost',
+      'Total Amount',
+    ],
+
+    render: (material) => [
+      dayjs(
+        material?.date
+      ).format('DD/MM/YYYY'),
+
+      material?.type ||
+        'Bit',
+
+      safeNum(
+        material?.quantity
+      ) || '—',
+
+      material?.costPerLiter !=
+      null
+        ? fmtSafe(
+            material.costPerLiter
+          )
+        : '—',
+
+      fmtSafe(
+        material?.totalPrice
+      ),
+    ],
+
+    totalField:
+      'totalPrice',
+  },
+
+  hammer: {
+    label: 'Hammer',
+    color: '#0f172a',
+    icon: <BuildIcon />,
+    hasPeriodFilter: true,
+
+    fetch: (machineType) =>
+      api.get(
+        '/materials',
+        {
+          params: {
+            limit: 500,
+            machineType,
+          },
+        }
+      ),
+
+    extract: (data) =>
+      (data?.materials || []).filter(
+        (material) =>
+          isMaterialType(
+            material,
+            'hammer'
+          )
+      ),
+
+    columns: [
+      'Date',
+      'Type',
+      'Quantity',
+      'Cost',
+      'Total Amount',
+    ],
+
+    render: (material) => [
+      dayjs(
+        material?.date
+      ).format('DD/MM/YYYY'),
+
+      material?.type ||
+        'Hammer',
+
+      safeNum(
+        material?.quantity
+      ) || '—',
+
+      material?.costPerLiter !=
+      null
+        ? fmtSafe(
+            material.costPerLiter
+          )
+        : '—',
+
+      fmtSafe(
+        material?.totalPrice
+      ),
+    ],
+
+    totalField:
+      'totalPrice',
+  },
+
+  totalEmployees: {
+    label: 'Employee',
+    color: '#0f172a',
+    icon: <PeopleIcon />,
+    hasPeriodFilter: false,
+
+    fetch: (machineType) =>
+      api.get(
+        '/users',
+        {
+          params: {
+            type: 'Employee',
+            limit: 100,
+            machineType,
+          },
+        }
+      ),
+
+    extract: (data) =>
+      data?.users || [],
+
+    columns: [
+      'Name',
+      'Phone',
+      'Salary',
+      'Date',
+    ],
+
+    render: (user) => [
+      user?.name ||
+        '—',
+
+      user?.phone ||
+        '—',
+
+      user?.salary
+        ? fmtSafe(
+            user.salary
+          )
+        : '—',
+
+      user?.date
+        ? dayjs(
+            user.date
+          ).format(
+            'DD/MM/YYYY'
+          )
+        : '—',
+    ],
+  },
+};
+
+/* =========================================================
+   DASHBOARD CARD ORDER
+========================================================= */
+
+const FIRST_ROW = [
+  {
+    key: 'totalBorewellPoints',
+    currency: false,
+  },
+
+  {
+    key: 'paidAmount',
+    currency: true,
+  },
+
+  {
+    key: 'pendingAmount',
+    currency: true,
+  },
+
+  {
+    key: 'discount',
+    currency: true,
+  },
+];
+
+const SECOND_ROW = [
+  {
+    key: 'diesel',
+    currency: true,
+  },
+
+  {
+    key: 'petrol',
+    currency: true,
+  },
+
+  {
+    key: 'bit',
+    currency: true,
+  },
+
+  {
+    key: 'hammer',
+    currency: true,
+  },
+];
+
+/* =========================================================
+   STAT CARD
+========================================================= */
+
+const StatCard = ({
+  title,
+  value,
+  icon,
+  color,
+  onClick,
+  multiline = false,
+}) => (
+  <Card
+    onClick={onClick}
+    elevation={0}
+    sx={{
+      height: '100%',
+      cursor: 'pointer',
+
+      border:
+        '1px solid #dbe3ec',
+
+      borderRadius: '12px',
+
+      bgcolor: '#fff',
+
+      transition:
+        'transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease',
+
+      '&:hover': {
+        transform:
+          'translateY(-3px)',
+
+        boxShadow:
+          `0 8px 24px ${color}22`,
+
+        borderColor:
+          `${color}66`,
+      },
+
+      '&:active': {
+        transform:
+          'translateY(-1px)',
+      },
+    }}
+  >
+    <CardContent
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+
+        gap: 1.5,
+
+        p: '14px !important',
+
+        minHeight: 74,
+      }}
+    >
+      {/* Icon */}
+      <Box
+        sx={{
+          width: 46,
+          height: 46,
+
+          borderRadius: '10px',
+
+          bgcolor: 'var(--stat-icon-bg, #f1f5f9)',
+          color: 'var(--stat-icon-color, #0f172a)',
+
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+
+          flexShrink: 0,
+
+          '& svg': {
+            fontSize: 24,
+          },
+        }}
+      >
+        {icon}
+      </Box>
+
+      {/* Text */}
+      <Box
+        sx={{
+          flex: 1,
+          minWidth: 0,
+        }}
+      >
+        <Typography
+          sx={{
+            color: '#64748b',
+
+            fontSize:
+              '0.72rem',
+
+            fontWeight: 500,
+
+            letterSpacing:
+              '0.02em',
+
+            mb: 0.25,
+
+            textTransform:
+              'none',
+          }}
+        >
+          {title}
+        </Typography>
+
+        <Typography
+          sx={{
+            color: '#0f172a',
+
+            fontWeight: 700,
+
+            fontSize:
+              multiline
+                ? '0.78rem'
+                : '1.05rem',
+
+            lineHeight:
+              multiline
+                ? 1.35
+                : 1.2,
+
+            whiteSpace:
+              multiline
+                ? 'normal'
+                : 'nowrap',
+
+            overflow:
+              multiline
+                ? 'visible'
+                : 'hidden',
+
+            textOverflow:
+              multiline
+                ? 'clip'
+                : 'ellipsis',
+          }}
+        >
+          {value}
+        </Typography>
+      </Box>
+
+      {/* Arrow */}
+      <ArrowForwardIosIcon
+        sx={{
+          fontSize: 12,
+          color: '#cbd5e1',
+        }}
+      />
+    </CardContent>
+  </Card>
+);
+
+/* =========================================================
+   CHART CARD
+========================================================= */
+
+const ChartCard = ({
+  title,
+  children,
+}) => (
+  <Card
+    elevation={0}
+    sx={{
+      height: '100%',
+
+      border:
+        '1px solid #dbe3ec',
+
+      borderRadius:
+        '14px',
+
+      bgcolor: '#fff',
+    }}
+  >
+    <CardContent
+      sx={{
+        p: '16px !important',
+      }}
+    >
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+
+          gap: 1,
+
+          mb: 1.5,
+        }}
+      >
+        <Box
+          sx={{
+            width: 3,
+            height: 16,
+
+            bgcolor: TEAL,
+
+            borderRadius: 1,
+          }}
+        />
+
+        <Typography
+          variant="subtitle2"
+          fontWeight={700}
+          sx={{
+            color:
+              'text.primary',
+          }}
+        >
+          {title}
+        </Typography>
+      </Box>
+
+      {children}
+    </CardContent>
+  </Card>
+);
+
+/* =========================================================
+   CHART LEGEND
+========================================================= */
+
+const ChartLegend = ({
+  items,
+}) => (
+  <Box
+    sx={{
+      display: 'flex',
+      gap: 1.5,
+
+      flexWrap: 'wrap',
+
+      mb: 1,
+    }}
+  >
+    {items.map(
+      ({
+        color,
+        label,
+      }) => (
+        <Box
+          key={label}
+          sx={{
+            display:
+              'flex',
+
+            alignItems:
+              'center',
+
+            gap: 0.5,
+          }}
+        >
+          <Box
+            sx={{
+              width: 9,
+              height: 9,
+
+              borderRadius:
+                '2px',
+
+              bgcolor: color,
+            }}
+          />
+
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{
+              fontSize:
+                '0.7rem',
+            }}
+          >
+            {label}
+          </Typography>
+        </Box>
+      )
+    )}
+  </Box>
+);
+
+/* =========================================================
+   SEARCH HIGHLIGHT
+========================================================= */
+
+const HighlightText = ({
+  text,
+  search,
+}) => {
+  const value =
+    String(text);
+
+  const index =
+    value
+      .toLowerCase()
+      .indexOf(
+        search.toLowerCase()
       );
 
-      setDeleteAdvanceDialog(null);
-      setSuccess('Salary advance deleted successfully.');
-      await loadAdvances();
-    } catch (err) {
-      console.error('Advance delete error:', err);
-      setError(
-        err?.message ||
-          'Unable to delete salary advance.'
-      );
-    } finally {
-      setDeletingAdvance(false);
-    }
-  };
+  if (index === -1) {
+    return <>{value}</>;
+  }
 
-  
-  /*
-   |--------------------------------------------------------------------------
-   | Individual salary WhatsApp bill
-   |--------------------------------------------------------------------------
-   */
-  const individualSalary = useMemo(() => {
-    if (!employee) return null;
+  return (
+    <>
+      {value.slice(
+        0,
+        index
+      )}
 
-    return calculateEmployeeRangeSalary(
-      employee,
-      attendanceRecords,
-      advances,
-      reportStartDate,
-      reportEndDate
+      <Box
+        component="mark"
+        sx={{
+          bgcolor:
+            `${TEAL}40`,
+
+          color:
+            'inherit',
+
+          borderRadius:
+            '3px',
+
+          px: '2px',
+
+          fontWeight: 700,
+        }}
+      >
+        {value.slice(
+          index,
+          index +
+            search.length
+        )}
+      </Box>
+
+      {value.slice(
+        index +
+          search.length
+      )}
+    </>
+  );
+};
+
+/* =========================================================
+   DETAIL DIALOG
+========================================================= */
+
+const DetailDialog = ({
+  open,
+  onClose,
+  cardKey,
+  summaryValue,
+  machineType,
+}) => {
+  const [allRows, setAllRows] =
+    useState([]);
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const [search, setSearch] =
+    useState('');
+
+  const [period, setPeriod] =
+    useState('all');
+
+  const config =
+    CARD_CONFIG[cardKey];
+
+  const load =
+    useCallback(
+      async () => {
+        if (
+          !cardKey ||
+          !config
+        ) {
+          return;
+        }
+
+        setLoading(true);
+
+        try {
+          const response =
+            await config.fetch(
+              machineType
+            );
+
+          const data =
+            response?.data ??
+            response;
+
+          const rows =
+            config.extract(
+              data
+            );
+
+          setAllRows(
+            Array.isArray(
+              rows
+            )
+              ? rows
+              : []
+          );
+        } catch (
+          error
+        ) {
+          console.error(
+            'Failed to load details:',
+            error
+          );
+
+          setAllRows([]);
+        } finally {
+          setLoading(false);
+        }
+      },
+      [
+        cardKey,
+        machineType,
+      ]
     );
+
+  useEffect(() => {
+    if (open) {
+      setSearch('');
+      setPeriod('all');
+
+      load();
+    } else {
+      setAllRows([]);
+      setSearch('');
+      setPeriod('all');
+    }
   }, [
-    employee,
-    attendanceRecords,
-    advances,
-    reportStartDate,
-    reportEndDate,
+    open,
+    load,
   ]);
 
-  const reportPeriodValid =
-    Boolean(reportStartDate) &&
-    Boolean(reportEndDate) &&
-    reportEndDate >= reportStartDate;
+  if (!config) {
+    return null;
+  }
 
-  const setQuickReportRange = (type) => {
-    const now = new Date();
-    const today = toDateKey(now);
-    const monthsBack = {
-      month: 0,
-      '2months': 1,
-      '6months': 5,
-      year: 11,
-    };
+  /* -------------------------------------------------------
+     Period
+  ------------------------------------------------------- */
 
-    if (monthsBack[type] !== undefined) {
-      setReportStartDate(
-        toDateKey(
-          new Date(
-            now.getFullYear(),
-            now.getMonth() - monthsBack[type],
-            1
-          )
+  const periodRows =
+    filterByPeriod(
+      allRows,
+      period
+    );
+
+  /* -------------------------------------------------------
+     Search
+  ------------------------------------------------------- */
+
+  const filteredRows =
+    search.trim()
+      ? periodRows.filter(
+          (row) => {
+            const cells =
+              config.render(
+                row
+              );
+
+            return cells.some(
+              (cell) =>
+                String(
+                  cell
+                )
+                  .toLowerCase()
+                  .includes(
+                    search
+                      .toLowerCase()
+                  )
+            );
+          }
         )
-      );
-      setReportEndDate(today);
-    }
-  };
+      : periodRows;
 
+  /* -------------------------------------------------------
+     Currency cards
+  ------------------------------------------------------- */
 
-  /*
-   |--------------------------------------------------------------------------
-   | Whole employee report
-   |--------------------------------------------------------------------------
-   */
+  const isCurrencyCard =
+    [
+      'paidAmount',
+      'pendingAmount',
+      'discount',
+      'diesel',
+      'petrol',
+      'bit',
+      'hammer',
+    ].includes(
+      cardKey
+    );
 
-  const reportRows = useMemo(() => {
-    return allEmployeeSalaryRows.map((row) => ({
-      ...row,
-      reportSalary: calculateEmployeeRangeSalary(
-        row.employee,
-        row.attendance || [],
-        row.advances || [],
-        reportStartDate,
-        reportEndDate
-      ),
-    }));
-  }, [allEmployeeSalaryRows, reportStartDate, reportEndDate]);
+  /* -------------------------------------------------------
+     Filtered total
+  ------------------------------------------------------- */
 
-  const reportTotals = useMemo(() => reportRows.reduce((totals, row) => {
-    const salary = row.reportSalary || {};
-    totals.totalDays += Number(salary.totalDays) || 0;
-    totals.presentDays += Number(salary.presentDays) || 0;
-    totals.absentDays += Number(salary.absentDays) || 0;
-    totals.grossSalary += Number(salary.grossSalary) || 0;
-    totals.workedSalary += Number(salary.workedSalary) || 0;
-    totals.monthlySalary += Number(row?.employee?.salary) || 0;
-    totals.absentDeduction += Number(salary.absentDeduction) || 0;
-    totals.totalAdvance += Number(salary.totalAdvance) || 0;
-    totals.finalSalary += Number(salary.finalSalary) || 0;
-    return totals;
-  }, {
-    totalDays: 0, presentDays: 0, absentDays: 0, grossSalary: 0, workedSalary: 0,
-    monthlySalary: 0, absentDeduction: 0, totalAdvance: 0, finalSalary: 0,
-  }), [reportRows]);
+  const filteredTotal =
+    filteredRows.reduce(
+      (sum, row) => {
+        if (
+          cardKey ===
+          'paidAmount'
+        ) {
+          return (
+            sum +
+            getPaidAmount(
+              row
+            )
+          );
+        }
 
-  const getReportPeriodLabel = () => {
-    const start = formatDate(parseDateKey(reportStartDate));
-    const end = formatDate(parseDateKey(reportEndDate));
-    return reportStartDate === reportEndDate ? start : `${start} to ${end}`;
-  };
+        if (
+          cardKey ===
+          'pendingAmount'
+        ) {
+          return (
+            sum +
+            getPendingAmount(
+              row
+            )
+          );
+        }
 
-  const printWholeEmployeeReport = () => {
-    if (!reportPeriodValid || !reportRows.length) {
-      setError('Please select a valid period and wait for employee data to load.');
-      return;
-    }
-    window.setTimeout(() => window.print(), 50);
-  };
+        if (
+          cardKey ===
+          'discount'
+        ) {
+          return (
+            sum +
+            getDiscount(
+              row
+            )
+          );
+        }
 
-/*
-   |--------------------------------------------------------------------------
-   | Clear notifications
-   |--------------------------------------------------------------------------
-   */
+        if (
+          [
+            'diesel',
+            'petrol',
+            'bit',
+            'hammer',
+          ].includes(
+            cardKey
+          )
+        ) {
+          return (
+            sum +
+            safeNum(
+              row?.totalPrice
+            )
+          );
+        }
+
+        return sum;
+      },
+      0
+    );
+
+  /* -------------------------------------------------------
+     Search placeholder
+  ------------------------------------------------------- */
+
+  const searchPlaceholder =
+    {
+      totalBorewellPoints:
+        'Search by party, broker, status…',
+
+      paidAmount:
+        'Search by party, broker…',
+
+      pendingAmount:
+        'Search by party, broker…',
+
+      discount:
+        'Search by party, broker…',
+
+      diesel:
+        'Search diesel records…',
+
+      petrol:
+        'Search petrol records…',
+
+      bit:
+        'Search bit records…',
+
+      hammer:
+        'Search hammer records…',
+
+      totalEmployees:
+        'Search by name, phone…',
+    }[cardKey] ||
+    'Search…';
+
+  const periodLabel =
+    {
+      all: 'All time',
+
+      week: 'This week',
+
+      month: 'This month',
+
+      year: 'This year',
+    }[period];
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      maxWidth="md"
+      fullWidth
+      PaperProps={{
+        sx: {
+          borderRadius:
+            '16px',
+
+          overflow:
+            'hidden',
+        },
+      }}
+    >
+      {/* =================================================
+          DIALOG HEADER
+      ================================================= */}
+
+      <DialogTitle
+        sx={{
+          bgcolor: '#fff',
+
+          color: '#0f172a',
+
+          p: 0,
+
+          borderBottom:
+            `3px solid ${config.color}`,
+        }}
+      >
+        <Box
+          sx={{
+            px: 3,
+            py: 2,
+
+            display: 'flex',
+
+            alignItems:
+              'center',
+
+            justifyContent:
+              'space-between',
+
+            gap: 2,
+          }}
+        >
+          {/* Left */}
+          <Box
+            sx={{
+              display:
+                'flex',
+
+              alignItems:
+                'center',
+
+              gap: 1.5,
+            }}
+          >
+            <Box
+              sx={{
+                width: 38,
+                height: 38,
+
+                borderRadius:
+                  '9px',
+
+                bgcolor:
+                  `${config.color}22`,
+
+                color:
+                  config.color,
+
+                display:
+                  'flex',
+
+                alignItems:
+                  'center',
+
+                justifyContent:
+                  'center',
+              }}
+            >
+              {config.icon}
+            </Box>
+
+            <Box>
+              <Typography
+                fontWeight={700}
+                fontSize="1rem"
+              >
+                {config.label}
+              </Typography>
+
+              <Typography
+                sx={{
+                  color:
+                    'rgba(255,255,255,0.5)',
+
+                  fontSize:
+                    '0.75rem',
+
+                  mt: 0.2,
+                }}
+              >
+                {loading
+                  ? 'Loading…'
+                  : `${
+                      machineType ===
+                      'big'
+                        ? 'Big Machine'
+                        : 'Small Machine'
+                    } · ${
+                      filteredRows.length
+                    } of ${
+                      allRows.length
+                    } records · ${
+                      periodLabel
+                    }`}
+              </Typography>
+            </Box>
+          </Box>
+
+          {/* Right */}
+          <Box
+            sx={{
+              display:
+                'flex',
+
+              alignItems:
+                'center',
+
+              gap: 2,
+            }}
+          >
+            {summaryValue && (
+              <Typography
+                sx={{
+                  color:
+                    config.color,
+
+                  fontWeight: 800,
+
+                  fontSize:
+                    '1.05rem',
+                }}
+              >
+                {summaryValue}
+              </Typography>
+            )}
+
+            <IconButton
+              size="small"
+              onClick={onClose}
+              sx={{
+                color: '#0f172a',
+              }}
+            >
+              <CloseIcon />
+            </IconButton>
+          </Box>
+        </Box>
+
+        {/* =================================================
+            FILTERS
+        ================================================= */}
+
+        <Box
+          sx={{
+            px: 3,
+            pb: 2,
+
+            display:
+              'flex',
+
+            flexDirection:
+              'column',
+
+            gap: 1.5,
+          }}
+        >
+          {config.hasPeriodFilter && (
+            <ToggleButtonGroup
+              value={period}
+              exclusive
+              onChange={(
+                _,
+                value
+              ) => {
+                if (value) {
+                  setPeriod(
+                    value
+                  );
+                }
+              }}
+              size="small"
+              sx={{
+                bgcolor:
+                  'rgba(255,255,255,0.07)',
+
+                borderRadius:
+                  '8px',
+
+                width:
+                  'fit-content',
+
+                '& .MuiToggleButton-root':
+                  {
+                    color:
+                      'rgba(255,255,255,0.55)',
+
+                    border:
+                      'none',
+
+                    borderRadius:
+                      '7px !important',
+
+                    px: 2,
+
+                    py: 0.5,
+
+                    fontSize:
+                      '0.75rem',
+
+                    fontWeight: 600,
+
+                    textTransform:
+                      'none',
+
+                    '&.Mui-selected':
+                      {
+                        bgcolor:
+                          TEAL,
+
+                        color: '#0f172a',
+
+                        '&:hover':
+                          {
+                            bgcolor:
+                              TEAL_D,
+                          },
+                      },
+
+                    '&:hover':
+                      {
+                        bgcolor:
+                          'rgba(255,255,255,0.1)',
+                      },
+                  },
+              }}
+            >
+              {PERIOD_OPTIONS.map(
+                (option) => (
+                  <ToggleButton
+                    key={
+                      option.value
+                    }
+                    value={
+                      option.value
+                    }
+                  >
+                    {
+                      option.label
+                    }
+                  </ToggleButton>
+                )
+              )}
+            </ToggleButtonGroup>
+          )}
+
+          <TextField
+            fullWidth
+            size="small"
+            placeholder={
+              searchPlaceholder
+            }
+            value={search}
+            onChange={(e) =>
+              setSearch(
+                e.target.value
+              )
+            }
+            autoComplete="off"
+            InputProps={{
+              startAdornment:
+                (
+                  <InputAdornment position="start">
+                    <SearchIcon
+                      sx={{
+                        color:
+                          'rgba(255,255,255,0.5)',
+
+                        fontSize:
+                          18,
+                      }}
+                    />
+                  </InputAdornment>
+                ),
+
+              endAdornment:
+                search ? (
+                  <InputAdornment position="end">
+                    <IconButton
+                      size="small"
+                      onClick={() =>
+                        setSearch(
+                          ''
+                        )
+                      }
+                      sx={{
+                        color:
+                          'rgba(255,255,255,0.5)',
+                      }}
+                    >
+                      <CloseIcon
+                        fontSize="small"
+                      />
+                    </IconButton>
+                  </InputAdornment>
+                ) : null,
+            }}
+            sx={{
+              '& .MuiOutlinedInput-root':
+                {
+                  bgcolor:
+                    'rgba(255,255,255,0.08)',
+
+                  borderRadius:
+                    '8px',
+
+                  color: '#0f172a',
+
+                  '& fieldset':
+                    {
+                      borderColor:
+                        'rgba(255,255,255,0.15)',
+                    },
+
+                  '&:hover fieldset':
+                    {
+                      borderColor:
+                        'rgba(30,190,165,0.5)',
+                    },
+
+                  '&.Mui-focused fieldset':
+                    {
+                      borderColor:
+                        TEAL,
+                    },
+                },
+
+              '& input':
+                {
+                  color: '#0f172a',
+                },
+
+              '& input::placeholder':
+                {
+                  color:
+                    'rgba(255,255,255,0.35)',
+
+                  opacity: 1,
+                },
+            }}
+          />
+        </Box>
+      </DialogTitle>
+
+      {/* =================================================
+          TABLE
+      ================================================= */}
+
+      <DialogContent
+        sx={{
+          p: 0,
+
+          bgcolor:
+            'background.default',
+        }}
+      >
+        {loading ? (
+          <Box
+            sx={{
+              display:
+                'flex',
+
+              justifyContent:
+                'center',
+
+              py: 7,
+            }}
+          >
+            <CircularProgress
+              sx={{
+                color:
+                  TEAL,
+              }}
+            />
+          </Box>
+        ) : filteredRows.length ===
+          0 ? (
+          <Box
+            sx={{
+              textAlign:
+                'center',
+
+              py: 7,
+
+              px: 2,
+            }}
+          >
+            <Typography
+              color="text.secondary"
+              fontWeight={600}
+            >
+              {search
+                ? `No results for "${search}"`
+                : `No records for ${periodLabel.toLowerCase()}`}
+            </Typography>
+
+            <Typography
+              variant="caption"
+              color="text.secondary"
+            >
+              {search
+                ? 'Try a different search term'
+                : 'Try a different time period'}
+            </Typography>
+          </Box>
+        ) : (
+          <TableContainer
+            component={Paper}
+            sx={{
+              boxShadow:
+                'none',
+
+              borderRadius:
+                0,
+            }}
+          >
+            <Table
+              size="small"
+              stickyHeader
+            >
+              <TableHead>
+                <TableRow>
+                  <TableCell
+                    sx={{
+                      width: 40,
+                    }}
+                  >
+                    #
+                  </TableCell>
+
+                  {config.columns.map(
+                    (column) => (
+                      <TableCell
+                        key={
+                          column
+                        }
+                        sx={{
+                          fontWeight:
+                            700,
+                        }}
+                      >
+                        {column}
+                      </TableCell>
+                    )
+                  )}
+                </TableRow>
+              </TableHead>
+
+              <TableBody>
+                {filteredRows.map(
+                  (
+                    row,
+                    index
+                  ) => {
+                    const cells =
+                      config.render(
+                        row
+                      );
+
+                    return (
+                      <TableRow
+                        key={
+                          row?._id ||
+                          row?.id ||
+                          index
+                        }
+                        hover
+                      >
+                        <TableCell
+                          sx={{
+                            color:
+                              'text.secondary',
+
+                            fontSize:
+                              '0.78rem',
+                          }}
+                        >
+                          {index +
+                            1}
+                        </TableCell>
+
+                        {cells.map(
+                          (
+                            cell,
+                            cellIndex
+                          ) => (
+                            <TableCell
+                              key={
+                                cellIndex
+                              }
+                              sx={{
+                                fontSize:
+                                  '0.82rem',
+                              }}
+                            >
+                              {config.chipCol ===
+                              cellIndex ? (
+                                <Chip
+                                  label={
+                                    cell
+                                  }
+                                  size="small"
+                                  sx={{
+                                    ...statusColor(
+                                      cell
+                                    ),
+
+                                    fontWeight:
+                                      600,
+
+                                    fontSize:
+                                      '0.7rem',
+
+                                    height:
+                                      20,
+                                  }}
+                                />
+                              ) : search &&
+                                String(
+                                  cell
+                                )
+                                  .toLowerCase()
+                                  .includes(
+                                    search.toLowerCase()
+                                  ) ? (
+                                <HighlightText
+                                  text={String(
+                                    cell
+                                  )}
+                                  search={
+                                    search
+                                  }
+                                />
+                              ) : (
+                                cell
+                              )}
+                            </TableCell>
+                          )
+                        )}
+                      </TableRow>
+                    );
+                  }
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+
+        {/* =================================================
+            DIALOG FOOTER
+        ================================================= */}
+
+        {!loading &&
+          filteredRows.length >
+            0 && (
+            <Box
+              sx={{
+                px: 3,
+                py: 1.5,
+
+                display:
+                  'flex',
+
+                alignItems:
+                  'center',
+
+                justifyContent:
+                  'space-between',
+
+                bgcolor:
+                  'background.default',
+
+                borderTop: 1,
+
+                borderColor:
+                  'divider',
+              }}
+            >
+              <Typography
+                variant="caption"
+                color="text.secondary"
+              >
+                {filteredRows.length <
+                allRows.length
+                  ? `${filteredRows.length} of ${allRows.length} records`
+                  : `${allRows.length} total records`}
+              </Typography>
+
+              {isCurrencyCard && (
+                <Box
+                  sx={{
+                    bgcolor:
+                      NAVY,
+
+                    borderRadius:
+                      '10px',
+
+                    px: 3,
+                    py: 1.2,
+
+                    display:
+                      'flex',
+
+                    alignItems:
+                      'center',
+
+                    gap: 2,
+                  }}
+                >
+                  <Typography
+                    sx={{
+                      color:
+                        'rgba(255,255,255,0.6)',
+
+                      fontSize:
+                        '0.78rem',
+                    }}
+                  >
+                    {period !==
+                      'all' ||
+                    search
+                      ? 'Filtered Total'
+                      : 'Total'}
+                  </Typography>
+
+                  <Typography
+                    sx={{
+                      color:
+                        TEAL,
+
+                      fontWeight:
+                        800,
+
+                      fontSize:
+                        '1.05rem',
+                    }}
+                  >
+                    {period !==
+                      'all' ||
+                    search
+                      ? fmtSafe(
+                          filteredTotal
+                        )
+                      : summaryValue}
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          )}
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+/* =========================================================
+   DASHBOARD
+========================================================= */
+
+const Dashboard = () => {
+  const dispatch =
+    useDispatch();
+
+  const {
+    stats,
+    charts,
+    loading,
+  } = useSelector(
+    (state) =>
+      state.dashboard
+  );
+
+  const [
+    activeCard,
+    setActiveCard,
+  ] = useState(null);
+
+  const [
+    dialogOpen,
+    setDialogOpen,
+  ] = useState(false);
+
+  const [
+    materialRows,
+    setMaterialRows,
+  ] = useState([]);
+
+  const [
+    pointRows,
+    setPointRows,
+  ] = useState([]);
+
+  const [
+    employeeRows,
+    setEmployeeRows,
+  ] = useState([]);
+
+  const [
+    salaryAdvanceRows,
+    setSalaryAdvanceRows,
+  ] = useState([]);
+
+  const [
+    employeeSalaryRows,
+    setEmployeeSalaryRows,
+  ] = useState([]);
+
+  const {
+    currentMachine,
+  } = useMachine();
+
+  const isBig = currentMachine === 'big';
+  const isSmall = currentMachine === 'small';
+
+  /* =======================================================
+     FETCH DASHBOARD STATS
+  ======================================================= */
 
   useEffect(() => {
     if (
-      !error &&
-      !success
+      currentMachine ===
+        'big' ||
+      currentMachine ===
+        'small'
+    ) {
+      dispatch(
+        fetchDashboardStats(
+          currentMachine
+        )
+      );
+    }
+  }, [
+    dispatch,
+    currentMachine,
+  ]);
+
+  /* =======================================================
+     FETCH MATERIALS
+  ======================================================= */
+
+  useEffect(() => {
+    if (
+      currentMachine !==
+        'big' &&
+      currentMachine !==
+        'small'
     ) {
       return;
     }
 
-    const timer =
-      setTimeout(() => {
-        setError('');
-        setSuccess('');
-      }, 4000);
+    const loadMaterials =
+      async () => {
+        try {
+          const response =
+            await api.get(
+              '/materials',
+            {
+              params: {
+                limit: 500,
+                machineType:
+                  currentMachine,
+              },
+            }
+          );
 
-    return () =>
-      clearTimeout(timer);
+          const data =
+            response?.data ??
+            response;
+
+          setMaterialRows(
+            data?.materials ||
+              []
+          );
+        } catch (
+          error
+        ) {
+          console.error(
+            'Failed to load materials:',
+            error
+          );
+
+          setMaterialRows(
+            []
+          );
+        }
+      };
+
+    loadMaterials();
   }, [
-    error,
-    success,
+    currentMachine,
   ]);
 
-  /*
-   |--------------------------------------------------------------------------
-   | Month absent count / list
-   |--------------------------------------------------------------------------
-   */
+  /* =======================================================
+     FETCH POINTS
+  ======================================================= */
 
-  const monthAbsentDates =
-    useMemo(() => {
-      const prefix =
-        monthKey(
-          currentMonth
+  useEffect(() => {
+    if (
+      currentMachine !==
+        'big' &&
+      currentMachine !==
+        'small'
+    ) {
+      return;
+    }
+
+    const loadPoints =
+      async () => {
+        try {
+          const response =
+            await api.get(
+              '/borewell-points',
+            {
+              params: {
+                limit: 500,
+                machineType:
+                  currentMachine,
+              },
+            }
+          );
+
+          const data =
+            response?.data ??
+            response;
+
+          setPointRows(
+            data?.points ||
+              []
+          );
+        } catch (
+          error
+        ) {
+          console.error(
+            'Failed to load points:',
+            error
+          );
+
+          setPointRows([]);
+        }
+      };
+
+    loadPoints();
+  }, [
+    currentMachine,
+  ]);
+
+  /* =======================================================
+     FETCH EMPLOYEES / SALARY ADVANCES / ATTENDANCE
+  ======================================================= */
+
+  useEffect(() => {
+    if (
+      currentMachine !==
+        'big' &&
+      currentMachine !==
+        'small'
+    ) {
+      setEmployeeRows([]);
+      setSalaryAdvanceRows([]);
+      setEmployeeSalaryRows([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadEmployeesAndSalary =
+      async () => {
+        try {
+          const employeeResponse =
+            await api.get(
+              '/users',
+              {
+                params: {
+                  type: 'Employee',
+                  limit: 500,
+                  machineType:
+                    currentMachine,
+                },
+              }
+            );
+
+          const employeeData =
+            employeeResponse?.data ??
+            employeeResponse;
+
+          const users =
+            Array.isArray(
+              employeeData?.users
+            )
+              ? employeeData.users
+              : Array.isArray(
+                  employeeData
+                )
+              ? employeeData
+              : [];
+
+          /*
+           * Attendance and salary advances are loaded separately for
+           * EACH employee. The previous dashboard loaded all advances
+           * for the machine once and then deducted that same advance
+           * total from every employee. That made the salary collapse
+           * to ₹0 when the combined advance amount was larger than an
+           * individual employee's salary.
+           *
+           * Attendance & Salary uses the employee-specific endpoints,
+           * so the dashboard must use the same rule.
+           */
+          const salaryResults =
+            await Promise.all(
+              users.map(
+                async (employee) => {
+                  const employeeId =
+                    employee?._id ||
+                    employee?.id;
+
+                  if (!employeeId) {
+                    return {
+                      salary: calculateCurrentEmployeeSalary(
+                        employee,
+                        [],
+                        []
+                      ),
+                      advances: [],
+                    };
+                  }
+
+                  try {
+                    const [
+                      attendanceResponse,
+                      advanceResponse,
+                    ] = await Promise.all([
+                      api.get(
+                        '/attendance',
+                        {
+                          params: {
+                            employeeId,
+                            machineType:
+                              currentMachine,
+                            limit: 500,
+                          },
+                        }
+                      ),
+                      api.get(
+                        '/salary-advances',
+                        {
+                          params: {
+                            employeeId,
+                            machineType:
+                              currentMachine,
+                            limit: 500,
+                          },
+                        }
+                      ),
+                    ]);
+
+                    const attendanceData =
+                      attendanceResponse?.data ??
+                      attendanceResponse;
+
+                    const advanceData =
+                      advanceResponse?.data ??
+                      advanceResponse;
+
+                    const attendanceRecords =
+                      extractAttendanceRows(
+                        attendanceData
+                      );
+
+                    const employeeAdvances =
+                      Array.isArray(
+                        advanceData?.records
+                      )
+                        ? advanceData.records
+                        : Array.isArray(
+                            advanceData?.advances
+                          )
+                        ? advanceData.advances
+                        : Array.isArray(
+                            advanceData?.data
+                          )
+                        ? advanceData.data
+                        : Array.isArray(
+                            advanceData?.items
+                          )
+                        ? advanceData.items
+                        : Array.isArray(
+                            advanceData
+                          )
+                        ? advanceData
+                        : [];
+
+                    return {
+                      salary:
+                        calculateCurrentEmployeeSalary(
+                          employee,
+                          attendanceRecords,
+                          employeeAdvances
+                        ),
+                      advances:
+                        employeeAdvances,
+                    };
+                  } catch (employeeSalaryError) {
+                    console.error(
+                      `Failed to load salary data for ${
+                        employee?.name ||
+                        'employee'
+                      }:`,
+                      employeeSalaryError
+                    );
+
+                    /*
+                     * If the attendance/advance request fails, do not
+                     * invent deductions. Show the salary based on the
+                     * employee record and the dates we can calculate.
+                     */
+                    return {
+                      salary:
+                        calculateCurrentEmployeeSalary(
+                          employee,
+                          [],
+                          []
+                        ),
+                      advances: [],
+                    };
+                  }
+                }
+              )
+            );
+
+          const salaryRows =
+            salaryResults.map(
+              (result) => result.salary
+            );
+
+          const advances =
+            salaryResults.flatMap(
+              (result) => result.advances || []
+            );
+
+          if (cancelled) {
+            return;
+          }
+
+          setEmployeeRows(
+            users
+          );
+
+          setSalaryAdvanceRows(
+            advances
+          );
+
+          setEmployeeSalaryRows(
+            salaryRows
+          );
+        } catch (error) {
+          if (cancelled) {
+            return;
+          }
+
+          console.error(
+            'Failed to load employee/salary data:',
+            error
+          );
+
+          setEmployeeRows([]);
+          setSalaryAdvanceRows([]);
+          setEmployeeSalaryRows([]);
+        }
+      };
+
+    loadEmployeesAndSalary();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    currentMachine,
+  ]);
+
+  /* =======================================================
+     CARD CLICK
+  ======================================================= */
+
+  const handleCardClick =
+    (key) => {
+      setActiveCard(key);
+      setDialogOpen(true);
+    };
+
+  /* =======================================================
+     MACHINE NOT SELECTED
+  ======================================================= */
+
+  if (!currentMachine) {
+    return (
+      <Box
+        sx={{
+          display:
+            'flex',
+
+          justifyContent:
+            'center',
+
+          mt: 8,
+
+          px: 2,
+        }}
+      >
+        <Card
+          elevation={0}
+          sx={{
+            maxWidth: 520,
+
+            width: '100%',
+
+            border:
+              '1px solid #dbe3ec',
+
+            borderRadius:
+              '14px',
+          }}
+        >
+          <CardContent
+            sx={{
+              textAlign:
+                'center',
+
+              py: 5,
+            }}
+          >
+            <DashboardIcon
+              sx={{
+                fontSize: 42,
+
+                color: '#0f172a',
+
+                mb: 1,
+              }}
+            />
+
+            <Typography
+              variant="h6"
+              fontWeight={700}
+            >
+              Select a machine
+            </Typography>
+
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{
+                mt: 1,
+              }}
+            >
+              Select Big Machine
+              or Small Machine
+              to view its
+              dashboard.
+            </Typography>
+          </CardContent>
+        </Card>
+      </Box>
+    );
+  }
+
+  /* =======================================================
+     LOADING
+  ======================================================= */
+
+  if (
+    loading ||
+    !stats
+  ) {
+    return (
+      <Box
+        sx={{
+          display:
+            'flex',
+
+          justifyContent:
+            'center',
+
+          mt: 8,
+        }}
+      >
+        <CircularProgress
+          sx={{
+            color: '#0f172a',
+          }}
+        />
+      </Box>
+    );
+  }
+
+  /* =======================================================
+     DASHBOARD VALUES
+  ======================================================= */
+
+  const points =
+    stats?.totalBorewellPoints ??
+    stats?.points ??
+    0;
+
+  const paidAmount =
+    stats?.paidAmount ??
+    0;
+
+  /*
+   * Pending Amount must come from borewell point payments.
+   * Do not use the salary pending value here.
+   *
+   * Unpaid point:
+   *   pending = totalAmount
+   *
+   * Partial point:
+   *   pending = totalAmount - paidAmount
+   *
+   * This keeps the dashboard card consistent with the
+   * Pending Amount detail dialog and the Points page.
+   */
+  const pendingAmount =
+    pointRows.reduce(
+      (sum, point) =>
+        sum +
+        getPendingAmount(point),
+      0
+    );
+
+  /* -------------------------------------------------------
+     Discount
+  ------------------------------------------------------- */
+
+  const discountFromStats =
+    stats?.discount ??
+    stats?.discountAmount;
+
+  const discount =
+    discountFromStats !=
+    null
+      ? safeNum(
+          discountFromStats
+        )
+      : pointRows.reduce(
+          (
+            sum,
+            point
+          ) =>
+            sum +
+            getDiscount(
+              point
+            ),
+          0
         );
 
-      return Object.keys(
-        absentMap
-      )
+  /* -------------------------------------------------------
+     Material TOTAL AMOUNTS
+  ------------------------------------------------------- */
+
+  const getMaterialTotal =
+    (type) =>
+      materialRows
         .filter(
-          (key) =>
-            key.startsWith(prefix)
+          (material) =>
+            isMaterialType(
+              material,
+              type
+            )
         )
-        .sort();
-    }, [
-      currentMonth,
-      absentMap,
-    ]);
+        .reduce(
+          (
+            sum,
+            material
+          ) =>
+            sum +
+            safeNum(
+              material?.totalPrice
+            ),
+          0
+        );
+
+  const diesel =
+    stats?.diesel !=
+    null
+      ? safeNum(
+          stats.diesel
+        )
+      : getMaterialTotal(
+          'diesel'
+        );
+
+  const petrol =
+    stats?.petrol !=
+    null
+      ? safeNum(
+          stats.petrol
+        )
+      : getMaterialTotal(
+          'petrol'
+        );
+
+  const bit =
+    stats?.bit !=
+    null
+      ? safeNum(
+          stats.bit
+        )
+      : getMaterialTotal(
+          'bit'
+        );
+
+  const hammer =
+    stats?.hammer !=
+    null
+      ? safeNum(
+          stats.hammer
+        )
+      : getMaterialTotal(
+          'hammer'
+        );
+
+  const getMaterialQuantity =
+    (type) =>
+      materialRows
+        .filter(
+          (material) =>
+            isMaterialType(
+              material,
+              type
+            )
+        )
+        .reduce(
+          (
+            sum,
+            material
+          ) =>
+            sum +
+            safeNum(
+              material?.quantity
+            ),
+          0
+        );
+
+  const bitQuantity =
+    getMaterialQuantity('bit');
+
+  const hammerQuantity =
+    getMaterialQuantity('hammer');
 
   /*
-   |--------------------------------------------------------------------------
-   | UI
-   |--------------------------------------------------------------------------
+   * Current salary is the amount payable for the current month up to
+   * today, after each employee's own absent-day deduction and current
+   * salary advances.
+   *
+   * Do not use:
+   *   employeeRows.reduce((sum, employee) => sum + employee.salary)
+   *
+   * That only adds full monthly salaries and ignores attendance.
    */
+  const totalSalary =
+    employeeSalaryRows.reduce(
+      (sum, row) =>
+        sum +
+        safeNum(
+          row?.currentSalary
+        ),
+      0
+    );
+
+  const totalMonthlySalary =
+    employeeRows.reduce(
+      (sum, employee) =>
+        sum +
+        safeNum(
+          employee?.salary
+        ),
+      0
+    );
+
+  /*
+   * WORKED SALARY
+   * ----------------
+   * Worked Salary must be the salary earned for PRESENT / WORKED days,
+   * before salary advances are deducted.
+   *
+   * currentSalary = worked salary - salary advances
+   *
+   * Therefore:
+   *   worked salary = currentSalary + salary advances
+   *
+   * Example from the Salary Report:
+   *   Employee 1 = ₹6,500.00
+   *   Employee 2 = ₹6,500.00
+   *   ...
+   *   Total Worked Salary = ₹63,500.00
+   *
+   * Advances are shown separately below and are NOT removed from
+   * Worked Salary.
+   */
+  const totalAbsentDeduction =
+    employeeSalaryRows.reduce(
+      (sum, row) =>
+        sum +
+        safeNum(
+          row?.absentDeduction
+        ),
+      0
+    );
+
+  const totalCurrentSalaryAdvance =
+    employeeSalaryRows.reduce(
+      (sum, row) =>
+        sum +
+        safeNum(
+          row?.advance
+        ),
+      0
+    );
+
+  /*
+   * Worked Salary is the earned salary before salary advances.
+   * currentSalary already has the employee's advances deducted,
+   * so add the advances back for the Worked Salary figure.
+   */
+  const totalWorkedSalary =
+    totalSalary + totalCurrentSalaryAdvance;
+
+  /*
+   * Pending salary comes from Attendance & Salary.
+   * currentSalary is already calculated after absent deduction
+   * and the employee's current-month salary advances.
+   */
+  const salaryPendingAmount =
+    Math.max(
+      totalSalary,
+      0
+    );
+
+  /*
+   * Salary advances are separate from borewell customer
+   * payments. The old dashboard incorrectly displayed
+   * partial borewell payments as "Advance", which is why
+   * the Payment Summary showed 0 even when salary advances
+   * existed.
+   */
+  const employees =
+    employeeRows.length;
+
+  /* =======================================================
+     MACHINE SUMMARY
+  ======================================================= */
+
+  const sumPointField = (field) =>
+    pointRows.reduce(
+      (sum, point) =>
+        sum + safeNum(point?.[field]),
+      0
+    );
+
+  /*
+   * MACHINE PIPE STOCK / USAGE
+   *
+   * Materials stores the number of pipes purchased/available.
+   * Points stores the actual feet used. One pipe = 20 ft.
+   *
+   * Example:
+   *   Material stock = 17 pipes
+   *   Total feet used = 214 ft
+   *   Pipes used = ceil(214 / 20) = 11
+   *   Remaining = 17 - 11 = 6
+   *
+   * The dashboard intentionally shows the material stock in the
+   * card title and the remaining/used feet below it, matching the
+   * physical stock sheet used by the business.
+   */
+  const getPipeQuantity = (feet) =>
+    feet > 0
+      ? Math.ceil(feet / 20)
+      : 0;
+
+  const getPipeStockQuantity = (kind) => {
+    const aliases = {
+      outer: [
+        'pipe outer',
+        'outer pipe',
+        'outer',
+      ],
+      inner: [
+        'pipe inner',
+        'inner pipe',
+        'inner',
+      ],
+      smallInner: [
+        'pipe small',
+        'small pipe',
+        'small inner',
+        'small inner pipe',
+      ],
+      ji: [
+        'pipe j1',
+        'pipe ji',
+        'ji pipe',
+        'ji inner',
+        'ji',
+      ],
+    };
+
+    const names = aliases[kind] || [];
+
+    return materialRows
+      .filter((material) => {
+        const type = getMaterialType(material);
+
+        if (kind === 'inner') {
+          // Do not count Small Inner as normal Inner.
+          if (
+            type.includes('small inner') ||
+            type.includes('pipe small')
+          ) {
+            return false;
+          }
+        }
+
+        return names.some((name) =>
+          type === name ||
+          type.includes(name)
+        );
+      })
+      .reduce(
+        (sum, material) =>
+          sum + safeNum(material?.quantity),
+        0
+      );
+  };
+
+  const getPipeSummary = (feet, stockQuantity) => {
+    const usedPipes = getPipeQuantity(feet);
+    const remaining = Math.max(
+      safeNum(stockQuantity) - usedPipes,
+      0
+    );
+
+    return {
+      stockQuantity: safeNum(stockQuantity),
+      usedPipes,
+      remaining,
+    };
+  };
+
+  const outerFeet = isBig
+    ? sumPointField('plasticOuterFeet')
+    : sumPointField('outerPipeFeet');
+
+  const innerFeet = isBig
+    ? sumPointField('plasticInnerFeet')
+    : sumPointField('innerPipeFeet');
+
+  const smallInnerFeet =
+    sumPointField('smallPipeFeet');
+
+  const jiFeet =
+    sumPointField('jiInnerFeet');
+
+  const outerSummary =
+    getPipeSummary(
+      outerFeet,
+      getPipeStockQuantity('outer')
+    );
+
+  const innerSummary =
+    getPipeSummary(
+      innerFeet,
+      getPipeStockQuantity('inner')
+    );
+
+  const smallInnerSummary =
+    getPipeSummary(
+      smallInnerFeet,
+      getPipeStockQuantity('smallInner')
+    );
+
+  const jiSummary =
+    getPipeSummary(
+      jiFeet,
+      getPipeStockQuantity('ji')
+    );
+
+  const pipeCards = isBig
+    ? [
+        {
+          key: 'bigOuter',
+          title: `Outer (${outerSummary.stockQuantity})`,
+          usedPipes: outerSummary.usedPipes,
+          remaining: outerSummary.remaining,
+          totalFeet: outerFeet,
+          icon: <WaterDropIcon />,
+          color: '#0f172a',
+        },
+        {
+          key: 'bigInner',
+          title: `Inner (${innerSummary.stockQuantity})`,
+          usedPipes: innerSummary.usedPipes,
+          remaining: innerSummary.remaining,
+          totalFeet: innerFeet,
+          icon: <WaterDropIcon />,
+          color: '#0f172a',
+        },
+        {
+          key: 'bigJI',
+          title: `JI (${jiSummary.stockQuantity})`,
+          usedPipes: jiSummary.usedPipes,
+          remaining: jiSummary.remaining,
+          totalFeet: jiFeet,
+          icon: <WaterDropIcon />,
+          color: '#0f172a',
+        },
+      ]
+    : [
+        {
+          key: 'smallOuter',
+          title: `Outer (${outerSummary.stockQuantity})`,
+          usedPipes: outerSummary.usedPipes,
+          remaining: outerSummary.remaining,
+          totalFeet: outerFeet,
+          icon: <WaterDropIcon />,
+          color: '#0f172a',
+        },
+        {
+          key: 'smallInner',
+          title: `Inner (${innerSummary.stockQuantity})`,
+          usedPipes: innerSummary.usedPipes,
+          remaining: innerSummary.remaining,
+          totalFeet: innerFeet,
+          icon: <WaterDropIcon />,
+          color: '#0f172a',
+        },
+        {
+          key: 'smallInnerPipe',
+          title: `Small Inner (${smallInnerSummary.stockQuantity})`,
+          usedPipes: smallInnerSummary.usedPipes,
+          remaining: smallInnerSummary.remaining,
+          totalFeet: smallInnerFeet,
+          icon: <WaterDropIcon />,
+          color: '#0f172a',
+        },
+      ];
+
+  /* =======================================================
+     CHART DATA
+  ======================================================= */
+
+  const expenseData = {
+    labels:
+      charts?.monthlyExpense?.map(
+        (item) =>
+          item.month
+      ) || [],
+
+    datasets: [
+      {
+        label:
+          'Monthly Expense (₹)',
+
+        data:
+          charts?.monthlyExpense?.map(
+            (item) =>
+              item.amount
+          ) || [],
+
+        backgroundColor:
+          NAVY,
+
+        borderRadius: 5,
+      },
+    ],
+  };
+
+  const workData = {
+    labels:
+      charts?.borewellWork?.map(
+        (item) =>
+          item.month
+      ) || [],
+
+    datasets: [
+      {
+        label:
+          'Borewell Works',
+
+        data:
+          charts?.borewellWork?.map(
+            (item) =>
+              item.count
+          ) || [],
+
+        backgroundColor:
+          TEAL,
+
+        borderRadius: 5,
+      },
+    ],
+  };
+
+  const paymentData = {
+    labels:
+      charts?.paymentStatus?.map(
+        (item) =>
+          item.status
+      ) || [],
+
+    datasets: [
+      {
+        data:
+          charts?.paymentStatus?.map(
+            (item) =>
+              item.count
+          ) || [],
+
+        backgroundColor: [
+          '#4caf50',
+          '#ef4444',
+          '#f59e0b',
+        ],
+
+        borderWidth: 0,
+      },
+    ],
+  };
+
+  const barOptions =
+    (yFormatter) => ({
+      responsive: true,
+
+      maintainAspectRatio:
+        false,
+
+      plugins: {
+        legend: {
+          display: false,
+        },
+
+        tooltip: {
+          callbacks: {
+            label:
+              (context) =>
+                ` ${context.dataset.label}: ${context.parsed.y}`,
+          },
+        },
+      },
+
+      scales: {
+        x: {
+          grid: {
+            display: false,
+          },
+
+          ticks: {
+            font: {
+              size: 11,
+            },
+
+            autoSkip:
+              false,
+          },
+        },
+
+        y: {
+          beginAtZero: true,
+
+          grid: {
+            color: '#0f172a',
+          },
+
+          ticks: {
+            font: {
+              size: 11,
+            },
+
+            callback:
+              yFormatter,
+          },
+        },
+      },
+    });
+
+  const doughnutOptions =
+    {
+      responsive: true,
+
+      maintainAspectRatio:
+        false,
+
+      cutout: '65%',
+
+      plugins: {
+        legend: {
+          display: false,
+        },
+      },
+    };
+
+  /* =======================================================
+     CARD DATA
+  ======================================================= */
+
+  const firstRowCards = [
+    {
+      key:
+        'totalBorewellPoints',
+
+      title: 'Points',
+
+      value: points,
+
+      icon:
+        <WaterDropIcon />,
+
+      color: '#0f172a',
+    },
+
+    {
+      key:
+        'paidAmount',
+
+      title:
+        'Paid Amount',
+
+      value:
+        fmt(paidAmount),
+
+      icon:
+        <PaidIcon />,
+
+      color: '#0f172a',
+    },
+
+    {
+      key:
+        'pendingAmount',
+
+      title:
+        'Pending Amount',
+
+      value:
+        fmt(pendingAmount),
+
+      icon:
+        <PendingActionsIcon />,
+
+      color: '#0f172a',
+    },
+
+    {
+      key:
+        'discount',
+
+      title:
+        'Discount',
+
+      value:
+        fmt(discount),
+
+      icon:
+        <DiscountIcon />,
+
+      color: '#0f172a',
+    },
+  ];
+
+  const secondRowCards = [
+    {
+      key: 'diesel',
+
+      title:
+        'Diesel',
+
+      value:
+        fmt(diesel),
+
+      icon:
+        <LocalGasStationIcon />,
+
+      color: '#0f172a',
+    },
+
+    {
+      key: 'petrol',
+
+      title:
+        'Petrol',
+
+      value:
+        fmt(petrol),
+
+      icon:
+        <LocalGasStationIcon />,
+
+      color: '#0f172a',
+    },
+
+    {
+      key: 'bit',
+
+      title:
+        `Bit (${bitQuantity})`,
+
+      value:
+        fmt(bit),
+
+      icon:
+        <ConstructionIcon />,
+
+      color: '#0f172a',
+    },
+
+    {
+      key: 'hammer',
+
+      title:
+        `Hammer (${hammerQuantity})`,
+
+      value:
+        fmt(hammer),
+
+      icon:
+        <BuildIcon />,
+
+      color: '#0f172a',
+    },
+  ];
+
+  /* =======================================================
+     RENDER
+  ======================================================= */
 
   return (
-    <div className="attendance-page">
-      <style>{`
-        * {
-          box-sizing: border-box;
-        }
-
-        .attendance-page {
-          min-height: 100%;
-          padding: 32px;
-          background: #eef2f7;
-          color: #16283c;
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        }
-
-        .attendance-container {
-          max-width: 1360px;
-          margin: 0 auto;
-        }
-
-        /* ---------------- Header ---------------- */
-
-        .page-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 24px;
-          gap: 16px;
-          flex-wrap: wrap;
-        }
-
-        .page-title {
-          margin: 0;
-          font-size: 28px;
-          font-weight: 800;
-          letter-spacing: -0.01em;
-        }
-
-        .page-subtitle {
-          margin: 6px 0 0;
-          color: #64758a;
-          font-size: 14px;
-        }
-
-        .machine-badge {
-          background: #d9f7ef;
-          color: #067a63;
-          padding: 8px 16px;
-          border-radius: 999px;
-          font-size: 12px;
-          font-weight: 800;
-          letter-spacing: 0.04em;
-          white-space: nowrap;
-        }
-
-        /* ---------------- Shared card ---------------- */
-
-        .card {
-          background: white;
-          border: 1px solid #e1e8f0;
-          border-radius: 16px;
-          box-shadow: 0 1px 2px rgba(16, 35, 56, .04);
-        }
-
-        /* ---------------- Employee picker ---------------- */
-
-        .employee-card {
-          padding: 20px 24px;
-          margin-bottom: 20px;
-        }
-
-        .field-label {
-          display: block;
-          font-size: 13px;
-          font-weight: 700;
-          color: #40536a;
-          margin-bottom: 8px;
-          text-transform: uppercase;
-          letter-spacing: 0.03em;
-        }
-
-        .select-input {
-          width: 100%;
-          max-width: 480px;
-          height: 46px;
-          padding: 0 14px;
-          border: 1px solid #d3dce6;
-          border-radius: 10px;
-          background: white;
-          font-size: 15px;
-          color: #17324d;
-          outline: none;
-          transition: border-color .15s, box-shadow .15s;
-        }
-
-        .select-input:focus,
-        .text-input:focus,
-        .textarea:focus {
-          border-color: #14b8a6;
-          box-shadow: 0 0 0 3px rgba(20, 184, 166, .14);
-        }
-
-        .employee-info {
-          display: grid;
-          grid-template-columns: 1.4fr 1fr 1fr;
-          gap: 20px;
-          margin-top: 20px;
-          padding-top: 20px;
-          border-top: 1px solid #eef2f6;
-        }
-
-        .employee-name {
-          font-size: 19px;
-          font-weight: 800;
-        }
-
-        .employee-type {
-          margin-top: 3px;
-          color: #6c7d92;
-          font-size: 13px;
-        }
-
-        .info-label {
-          color: #8393a5;
-          font-size: 12px;
-          font-weight: 700;
-          text-transform: uppercase;
-          letter-spacing: 0.03em;
-        }
-
-        .info-value {
-          margin-top: 6px;
-          font-size: 17px;
-          font-weight: 750;
-        }
-
-        /* ---------------- Empty state ---------------- */
-
-        .empty-state {
-          padding: 64px 32px;
-          text-align: center;
-        }
-
-        .empty-state-icon {
-          font-size: 40px;
-          margin-bottom: 12px;
-        }
-
-        .empty-state h2 {
-          margin: 0 0 6px;
-          font-size: 19px;
-        }
-
-        .empty-state p {
-          margin: 0;
-          color: #7a8d9f;
-          font-size: 14px;
-        }
-
-        /* ---------------- Main layout ---------------- */
-
-        .main-grid {
-          display: grid;
-          grid-template-columns: 420px 1fr;
-          gap: 20px;
-          align-items: start;
-        }
-
-        .summary-card {
-          padding: 22px 24px;
-        }
-
-        .section-title {
-          margin: 0;
-          font-size: 18px;
-          font-weight: 800;
-        }
-
-        .section-subtitle {
-          color: #7b8d9e;
-          margin-top: 3px;
-          font-size: 13px;
-        }
-
-        .summary-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 10px;
-          margin-top: 18px;
-        }
-
-        .summary-box {
-          padding: 14px 16px;
-          border-radius: 12px;
-          border: 1px solid #e6ecf2;
-          background: #f8fafc;
-        }
-
-        .summary-box.green {
-          background: #f1fdf8;
-          border-color: #bfeeda;
-        }
-
-        .summary-box.red {
-          background: #fef4f4;
-          border-color: #f6c9c9;
-        }
-
-        .summary-label {
-          font-size: 12px;
-          font-weight: 700;
-          color: #6c7e90;
-        }
-
-        .summary-value {
-          margin-top: 6px;
-          font-size: 22px;
-          font-weight: 850;
-        }
-
-        .summary-box.green .summary-value {
-          color: #0a9b68;
-        }
-
-        .summary-box.red .summary-value {
-          color: #d63b3b;
-        }
-
-        .salary-lines {
-          margin-top: 20px;
-          border-top: 1px solid #eef2f6;
-          border-bottom: 1px solid #eef2f6;
-          padding: 14px 0;
-        }
-
-        .salary-line {
-          display: flex;
-          justify-content: space-between;
-          gap: 20px;
-          padding: 6px 0;
-          font-size: 14px;
-          color: #536a7f;
-        }
-
-        .salary-line strong {
-          color: #152e46;
-          font-weight: 750;
-        }
-
-        .salary-line.deduction strong {
-          color: #d72d2d;
-        }
-
-        .salary-final {
-          margin-top: 16px;
-          padding: 18px 20px;
-          border: 1px solid #a3ece0;
-          background: #eefdf8;
-          border-radius: 14px;
-        }
-
-        .salary-final-label {
-          color: #10796e;
-          font-size: 12px;
-          font-weight: 800;
-          text-transform: uppercase;
-          letter-spacing: 0.03em;
-        }
-
-        .salary-final-value {
-          margin-top: 6px;
-          color: #087d73;
-          font-size: 28px;
-          font-weight: 900;
-        }
-
-        .salary-final-value.negative {
-          color: #d72d2d;
-        }
-
-        .calendar-card {
-          padding: 22px 24px;
-        }
-
-        .calendar-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          gap: 16px;
-          flex-wrap: wrap;
-        }
-
-        .calendar-info {
-          margin-top: 8px;
-          padding: 10px 14px;
-          background: #f3f8fb;
-          border: 1px solid #e2edf3;
-          border-radius: 10px;
-          color: #4b6478;
-          font-size: 13px;
-        }
-
-        .calendar-info strong {
-          color: #16283c;
-        }
-
-        .month-controls {
-          display: flex;
-          align-items: center;
-          gap: 14px;
-        }
-
-        .month-name {
-          min-width: 140px;
-          text-align: center;
-          font-size: 16px;
-          font-weight: 800;
-        }
-
-        .month-button {
-          width: 34px;
-          height: 34px;
-          border: 1px solid #dce5ed;
-          background: white;
-          border-radius: 9px;
-          cursor: pointer;
-          font-size: 17px;
-          color: #34536d;
-          line-height: 1;
-        }
-
-        .month-button:hover {
-          background: #f1f7fa;
-        }
-
-        .calendar-weekdays,
-        .calendar-grid {
-          display: grid;
-          grid-template-columns: repeat(7, 1fr);
-          gap: 6px;
-        }
-
-        .calendar-weekdays {
-          margin-top: 20px;
-        }
-
-        .calendar-grid {
-          margin-top: 6px;
-        }
-
-        .weekday {
-          text-align: center;
-          color: #8192a2;
-          font-size: 11px;
-          font-weight: 800;
-          text-transform: uppercase;
-          letter-spacing: 0.03em;
-          padding-bottom: 4px;
-        }
-
-        .calendar-day {
-          aspect-ratio: 1;
-          border: 1px solid #dceee7;
-          background: #f4fbf8;
-          border-radius: 10px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          font-weight: 700;
-          font-size: 14px;
-          color: #12805f;
-          transition: transform .12s, box-shadow .12s;
-          padding: 0;
-        }
-
-        .calendar-day:hover:not(:disabled) {
-          transform: translateY(-1px);
-          box-shadow: 0 3px 8px rgba(16, 35, 56, .1);
-        }
-
-        .calendar-day.empty {
-          border: 0;
-          background: transparent;
-          cursor: default;
-        }
-
-        .calendar-day.absent {
-          background: #fdeaea;
-          border-color: #f3a9a9;
-          color: #c62828;
-        }
-
-        .calendar-day.today {
-          box-shadow: inset 0 0 0 2px #0bb5a5;
-        }
-
-        .calendar-day.absent.today {
-          box-shadow: inset 0 0 0 2px #c62828;
-        }
-
-        .calendar-day.before-joining,
-        .calendar-day.future {
-          background: #f5f7f9;
-          border-color: #edf0f3;
-          color: #b6c0ca;
-          cursor: not-allowed;
-        }
-
-        .calendar-legend {
-          display: flex;
-          justify-content: center;
-          gap: 26px;
-          margin-top: 20px;
-          padding-top: 16px;
-          border-top: 1px solid #eef2f6;
-        }
-
-        .legend-item {
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          font-size: 12px;
-          font-weight: 600;
-          color: #63788b;
-        }
-
-        .legend-dot {
-          width: 10px;
-          height: 10px;
-          border-radius: 3px;
-        }
-
-        .legend-dot.present {
-          background: #1abb8f;
-        }
-
-        .legend-dot.absent {
-          background: #e04747;
-        }
-
-        .month-absent {
-          margin-top: 14px;
-          text-align: center;
-          color: #b23a3a;
-          font-size: 12px;
-          font-weight: 700;
-        }
-
-        /* ---------------- Alerts ---------------- */
-
-        .alert {
-          position: fixed;
-          top: 22px;
-          right: 22px;
-          z-index: 1000;
-          padding: 14px 18px;
-          border-radius: 12px;
-          color: white;
-          font-weight: 650;
-          font-size: 14px;
-          box-shadow: 0 10px 30px rgba(0,0,0,.18);
-          max-width: 380px;
-        }
-
-        .alert.error {
-          background: #d92f2f;
-        }
-
-        .alert.success {
-          background: #0f9d75;
-        }
-
-
-        /* ---------------- Modals ---------------- */
-
-        .modal-backdrop {
-          position: fixed;
-          inset: 0;
-          background: rgba(9, 22, 36, .55);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 900;
-          padding: 20px;
-        }
-
-        .modal {
-          width: 100%;
-          max-width: 480px;
-          background: white;
-          border-radius: 16px;
-          padding: 26px;
-          box-shadow: 0 25px 70px rgba(0,0,0,.28);
-        }
-
-        .modal.wide {
-          max-width: 600px;
-        }
-
-        .modal-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          margin-bottom: 18px;
-          gap: 12px;
-        }
-
-        .modal-title {
-          margin: 0;
-          font-size: 20px;
-          font-weight: 800;
-        }
-
-        .modal-date {
-          margin-top: 5px;
-          color: #657a8e;
-          font-size: 13px;
-        }
-
-        .close-button {
-          width: 32px;
-          height: 32px;
-          flex-shrink: 0;
-          border: 0;
-          border-radius: 50%;
-          background: #f1f4f7;
-          cursor: pointer;
-          font-size: 18px;
-          color: #52697d;
-          line-height: 1;
-        }
-
-        .close-button:hover {
-          background: #e7ecf1;
-        }
-
-        .text-label {
-          display: block;
-          margin-bottom: 7px;
-          font-weight: 700;
-          font-size: 13px;
-          color: #40536a;
-        }
-
-        .textarea,
-        .text-input {
-          width: 100%;
-          border: 1px solid #d3dce6;
-          border-radius: 10px;
-          padding: 12px 13px;
-          font-size: 14px;
-          outline: none;
-          font-family: inherit;
-        }
-
-        .textarea {
-          min-height: 110px;
-          resize: vertical;
-        }
-
-        .modal-actions {
-          display: flex;
-          justify-content: flex-end;
-          gap: 10px;
-          margin-top: 20px;
-        }
-
-        .button {
-          height: 42px;
-          padding: 0 16px;
-          border-radius: 10px;
-          border: 1px solid #d7e0e8;
-          background: white;
-          font-weight: 700;
-          font-size: 14px;
-          cursor: pointer;
-          transition: background .15s;
-        }
-
-        .button:hover:not(:disabled) {
-          background: #f4f7fa;
-        }
-
-        .button.primary {
-          border: 0;
-          background: #d92f2f;
-          color: white;
-        }
-
-        .button.primary:hover:not(:disabled) {
-          background: #c22626;
-        }
-
-        .button.green {
-          border: 0;
-          background: #0ba784;
-          color: white;
-        }
-
-        .button.green:hover:not(:disabled) {
-          background: #099270;
-        }
-
-        .button.danger {
-          border: 0;
-          background: #d92f2f;
-          color: white;
-        }
-
-        .button.danger:hover:not(:disabled) {
-          background: #c22626;
-        }
-
-        .button:disabled {
-          opacity: .5;
-          cursor: not-allowed;
-        }
-
-
-
-        .advance-button {
-          width: 100%; height: 44px; margin-top: 14px; border: 0;
-          border-radius: 10px; background: #16324c; color: white;
-          font-weight: 750; font-size: 14px; cursor: pointer;
-        }
-        .advance-button:hover { background: #1f4463; }
-        .advance-section { margin-top: 22px; }
-        .advance-title-row { display: flex; justify-content: space-between; align-items: center; min-height: 32px; }
-        .advance-count { min-width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: #f1f5f9; color: #64748b; font-size: 12px; font-weight: 800; }
-        .advance-list { margin-top: 8px; }
-        .advance-item { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; column-gap: 18px; min-height: 68px; padding: 10px 0; border-bottom: 1px solid #eef2f6; font-size: 14px; }
-        .advance-item:last-child { border-bottom: 0; }
-        .advance-item-main { min-width: 0; }
-        .advance-note { color: #243b53; font-size: 14px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .advance-date { color: #8798a8; font-size: 12px; margin-top: 4px; line-height: 1.2; }
-        .advance-item-right { display: contents; }
-        .advance-amount { color: #b96a0f; font-weight: 850; white-space: nowrap; text-align: right; min-width: 108px; }
-        .advance-actions { display: flex; align-items: center; justify-content: center; gap: 7px; min-width: 76px; }
-        .advance-action-button { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #e2e8f0; background: #fff; cursor: pointer; border-radius: 8px; padding: 0; transition: background .15s ease, border-color .15s ease, transform .15s ease; }
-        .advance-action-button:hover:not(:disabled) { transform: translateY(-1px); }
-        .advance-action-button svg { width: 16px; height: 16px; }
-        .advance-edit-button { color: #2563eb; }
-        .advance-edit-button:hover:not(:disabled) { background: #eff6ff; border-color: #bfdbfe; }
-        .advance-delete-button { color: #dc2626; }
-        .advance-delete-button:hover:not(:disabled) { background: #fef2f2; border-color: #fecaca; }
-        .advance-action-button:disabled { opacity: .5; cursor: not-allowed; }
-        .delete-advance-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 14px; }
-        .delete-advance-label { color: #64748b; font-size: 11px; font-weight: 800; letter-spacing: .05em; margin-bottom: 5px; }
-        .delete-advance-amount { color: #b91c1c; font-size: 25px; font-weight: 900; }
-        .delete-advance-meta { color: #64748b; font-size: 12px; margin-top: 4px; }
-        .delete-advance-notes { color: #334155; font-size: 13px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #e2e8f0; }
-        .modal-warning { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; border-radius: 10px; padding: 12px 14px; font-size: 13px; line-height: 1.5; margin-bottom: 18px; }
-        .empty-advance { padding: 12px 0; color: #8495a5; font-size: 13px; }
-        .advance-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-
-        /* Absent details popup */
-
-        .details-reason-box {
-          padding: 16px;
-          border-radius: 12px;
-          background: #fdf5f5;
-          border: 1px solid #f3caca;
-          margin-bottom: 4px;
-        }
-
-        .details-reason-label {
-          font-size: 11px;
-          font-weight: 800;
-          text-transform: uppercase;
-          letter-spacing: 0.04em;
-          color: #b23a3a;
-          margin-bottom: 6px;
-        }
-
-        .details-reason-text {
-          font-size: 14px;
-          color: #3c2222;
-          line-height: 1.5;
-          white-space: pre-wrap;
-        }
-
-        .details-reason-empty {
-          font-size: 14px;
-          color: #9aa7b3;
-          font-style: italic;
-        }
-
-        .details-status-pill {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 5px 12px;
-          border-radius: 999px;
-          background: #fdeaea;
-          color: #c62828;
-          font-size: 12px;
-          font-weight: 800;
-          margin-bottom: 16px;
-        }
-
-        /* ---------------- Individual WhatsApp salary bill ---------------- */
-
-        .report-card {
-          margin-bottom: 20px;
-          padding: 22px 24px;
-        }
-
-        .report-under-title {
-  margin-top: 4px;
-  margin-bottom: 3px;
-  font-size: 15px;
-  line-height: 1.3;
-  font-weight: 700;
-  color: #0f766e;
-}
-
-.report-header {
-          display:flex;
-          justify-content:space-between;
-          align-items:flex-start;
-          gap:16px;
-          flex-wrap:wrap;
-        }
-
-        .report-controls {
-          display:grid;
-          grid-template-columns:1.3fr 1fr 1fr;
-          gap:14px;
-          margin-top:18px;
-        }
-
-        .report-field {
-          min-width:0;
-        }
-
-        .report-quick-buttons {
-          display:flex;
-          flex-wrap:wrap;
-          gap:8px;
-          margin-top:14px;
-        }
-
-        .report-quick-button {
-          border:1px solid #d7e0e8;
-          background:#fff;
-          color:#35536d;
-          border-radius:9px;
-          padding:8px 12px;
-          font-size:12px;
-          font-weight:750;
-          cursor:pointer;
-        }
-
-        .report-quick-button:hover {
-          background:#f4f8fa;
-        }
-
-        .individual-bill-preview {
-          margin-top:20px;
-          padding:20px;
-          border:1px solid #e4ebf1;
-          border-radius:14px;
-          background:#fbfdfd;
-        }
-
-        .individual-bill-heading {
-          display:flex;
-          justify-content:space-between;
-          align-items:flex-start;
-          gap:14px;
-          padding-bottom:16px;
-          border-bottom:1px solid #e8eef2;
-        }
-
-        .individual-bill-heading h3 {
-          margin:0;
-          color:#17324d;
-          font-size:20px;
-          font-weight:850;
-        }
-
-        .individual-bill-heading div {
-          margin-top:5px;
-          color:#718397;
-          font-size:13px;
-        }
-
-        .individual-bill-machine {
-          margin-top:0 !important;
-          padding:7px 11px;
-          border-radius:999px;
-          background:#eef8f5;
-          color:#087d73 !important;
-          font-size:11px !important;
-          font-weight:800;
-          white-space:nowrap;
-        }
-
-        .individual-summary-grid {
-          display:grid;
-          grid-template-columns:repeat(4, 1fr);
-          gap:10px;
-          margin-top:16px;
-        }
-
-        .individual-summary-box {
-          padding:13px 14px;
-          background:#f7fafc;
-          border:1px solid #e5ebf1;
-          border-radius:11px;
-        }
-
-        .individual-summary-box span {
-          display:block;
-          color:#718397;
-          font-size:11px;
-          font-weight:800;
-          text-transform:uppercase;
-        }
-
-        .individual-summary-box strong {
-          display:block;
-          margin-top:5px;
-          color:#17324d;
-          font-size:19px;
-          font-weight:850;
-        }
-
-        .individual-summary-box.absent strong {
-          color:#d63b3b;
-        }
-
-        .individual-summary-box.final {
-          background:#eefdf8;
-          border-color:#b9e9df;
-        }
-
-        .individual-summary-box.final strong {
-          color:#087d73;
-        }
-
-        .individual-salary-lines {
-          margin-top:16px;
-          padding:14px 0;
-          border-top:1px solid #e8eef2;
-          border-bottom:1px solid #e8eef2;
-        }
-
-        .individual-salary-lines > div {
-          display:flex;
-          justify-content:space-between;
-          gap:20px;
-          padding:7px 0;
-          color:#536a7f;
-          font-size:14px;
-        }
-
-        .individual-salary-lines strong {
-          color:#17324d;
-        }
-
-        .negative-value {
-          color:#d63b3b !important;
-        }
-
-        .whatsapp-button {
-          background:#18a957 !important;
-          color:white !important;
-          border-color:#18a957 !important;
-        }
-
-        .whatsapp-button:hover {
-          background:#128c47 !important;
-        }
-
-        .whatsapp-note {
-          margin-top:10px;
-          color:#7a8d9f;
-          font-size:12px;
-        }
-
-        .individual-bill-empty {
-          margin-top:18px;
-          padding:18px;
-          border:1px dashed #d8e2ea;
-          border-radius:12px;
-          text-align:center;
-          color:#7b8d9e;
-          font-size:13px;
-        }
-
-        /* ---------------- Whole employee report ---------------- */
-        .partner-report-preview { margin-top:20px; padding:20px; border:1px solid #e4ebf1; border-radius:14px; background:#fbfdfd; }
-        .partner-report-title-row { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; padding-bottom:16px; border-bottom:1px solid #e8eef2; }
-        .partner-report-title-row h3 { margin:0; font-size:24px; font-weight:850; color:#17324d; }
-        .partner-report-title-row div { margin-top:5px; color:#718397; font-size:13px; }
-        .report-summary-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:16px; }
-        .report-summary-box { padding:13px 14px; border:1px solid #dce4ea; background:#fff; }
-        .report-summary-label { color:#718397; font-size:11px; font-weight:700; }
-        .report-summary-value { margin-top:5px; color:#17324d; font-size:19px; font-weight:850; }
-        .report-table-wrap { margin-top:18px; overflow-x:auto; }
-        .report-table { width:100%; border-collapse:collapse; min-width:980px; background:#fff; }
-        .report-table th,.report-table td { border:1px solid #bfc5ca; padding:9px 10px; text-align:left; font-size:12px; white-space:nowrap; }
-        .report-table th { background:#f7f8f9; color:#17202a; font-weight:800; }
-        .report-total-row td { font-weight:800; background:#fafafa; }
-        .print-report { display:none; }
-        @media print {
-          body * { visibility:hidden !important; }
-          .print-report,.print-report * { visibility:visible !important; }
-          .print-report { display:block !important; position:absolute; left:0; top:0; width:100%; padding:22px 30px; background:#fff; color:#111; font-family:Arial,Helvetica,sans-serif; }
-          .print-report-title { margin:0 0 8px; font-size:28px; font-weight:800; }
-          .report-print-period { margin-bottom:20px; font-size:14px; }
-          .print-summary { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:20px; }
-          .print-summary-box { border:1px solid #bfc5ca; padding:10px; }
-          .print-summary-label { font-size:11px; }
-          .print-summary-value { margin-top:4px; font-size:17px; font-weight:800; }
-          .print-report table { width:100%; border-collapse:collapse; font-size:10px; }
-          .print-report th,.print-report td { border:1px solid #aaa; padding:7px 6px; text-align:left; white-space:nowrap; }
-          .print-report th,.print-total td { font-weight:800; }
-          @page { size:landscape; margin:10mm; }
-        }
-
-        .selected-report-person {
-          min-height:46px;
-          display:flex;
-          align-items:center;
-          padding:0 14px;
-          border:1px solid #d3dce6;
-          border-radius:10px;
-          background:#f8fafc;
-          color:#17324d;
-          font-size:15px;
-          font-weight:700;
-        }
-
-
-        .salary-action-row {
-          display: flex;
-          align-items: flex-end;
-          gap: 10px;
-          flex-wrap: wrap;
-          margin-top: 16px;
-        }
-
-        .compact-attendance {
-          display: flex;
-          gap: 8px;
-          flex: 1 1 180px;
-        }
-
-        .compact-attendance-item {
-          min-width: 72px;
-          padding: 8px 11px;
-          border: 1px solid #e6edf2;
-          border-radius: 10px;
-          background: #f8fafc;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-        }
-
-        .compact-attendance-item span {
-          font-size: 11px;
-          font-weight: 700;
-          color: #718397;
-        }
-
-        .compact-attendance-item strong {
-          font-size: 15px;
-        }
-
-        .compact-attendance-item.present strong {
-          color: #0a9b68;
-        }
-
-        .compact-attendance-item.absent strong {
-          color: #d63b3b;
-        }
-
-        .end-date-control {
-          display: flex;
-          align-items: flex-end;
-          gap: 6px;
-        }
-
-        .end-date-control label {
-          position: absolute;
-          margin-bottom: 34px;
-          font-size: 10px;
-          font-weight: 800;
-          color: #718397;
-          text-transform: uppercase;
-          letter-spacing: .04em;
-        }
-
-        .compact-date-input {
-          width: 145px;
-          min-width: 145px;
-          height: 40px;
-        }
-
-        .end-date-save-button,
-        .advance-icon-button {
-          width: 40px;
-          height: 40px;
-          border: 0;
-          border-radius: 10px;
-          cursor: pointer;
-          font-size: 20px;
-          font-weight: 800;
-        }
-
-        .end-date-save-button {
-          background: #e8f8f3;
-          color: #087d73;
-        }
-
-        .end-date-save-button:disabled,
-        .advance-icon-button:disabled {
-          opacity: .55;
-          cursor: not-allowed;
-        }
-
-        .advance-icon-button {
-          background: #17344f;
-          color: #fff;
-          font-size: 24px;
-          line-height: 1;
-        }
-
-        .advance-icon-button:hover:not(:disabled) {
-          background: #0f2940;
-        }
-
-        .after-end-date {
-          background: #f1f3f5 !important;
-          border-color: #e1e5e8 !important;
-          color: #aab4bd !important;
-          cursor: not-allowed !important;
-        }
-
-        /* ---------------- Responsive ---------------- */
-
-        @media (max-width: 1100px) {
-          .main-grid {
-            grid-template-columns: 1fr;
-          }
-        }
-
-        @media (max-width: 700px) {
-          .report-controls { grid-template-columns:1fr; }
-          .individual-summary-grid { grid-template-columns:1fr 1fr; }
-          .individual-bill-heading { flex-direction:column; }
-          .attendance-page {
-            padding: 16px;
-          }
-
-          .employee-info {
-            grid-template-columns: 1fr;
-          }
-
-          .summary-grid {
-            grid-template-columns: 1fr 1fr;
-          }
-
-          .advance-form-grid {
-            grid-template-columns: 1fr;
-          }
-          .advance-item {
-            grid-template-columns: minmax(0, 1fr) auto;
-            row-gap: 7px;
-            min-height: 64px;
-          }
-          .advance-item-right {
-            display: contents;
-          }
-          .advance-amount {
-            grid-column: 2;
-            grid-row: 1;
-            min-width: auto;
-          }
-          .advance-actions {
-            grid-column: 2;
-            grid-row: 2;
-            justify-content: flex-end;
-            min-width: auto;
-          }
-
-          .alert {
-            left: 16px;
-            right: 16px;
-            max-width: none;
-          }
-        }
-
-      `}</style>
-
-      <div className="attendance-container">
-
-        {/* Header */}
-        <div className="page-header">
-          <div>
-            <h1 className="page-title">
-              Attendance & Salary
-            </h1>
-
-            <p className="page-subtitle">
-              Mark only absent days —
-              every other date is
-              automatically present.
-            </p>
-          </div>
-
-          <div className="machine-badge">
-            {currentMachine === 'big'
-              ? 'BIG MACHINE'
-              : 'SMALL MACHINE'}
-          </div>
-        </div>
-
-        {/* Error */}
-        {error && (
-          <div className="alert error">
-            {error}
-          </div>
-        )}
-
-        {/* Success */}
-        {success && (
-          <div className="alert success">
-            {success}
-          </div>
-        )}
-
-        {/* Employee selection */}
-        <div className="card employee-card">
-
-          <label className="field-label">
-            Employee
-          </label>
-
-          <select
-            className="select-input"
-            value={
-              selectedEmployee
-            }
-            onChange={(event) => {
-              const nextId = event.target.value;
-              setSelectedEmployee(nextId);
-
-              const nextEmployee = employees.find(
-                (item) => String(item?._id) === String(nextId)
-              );
-              const nextEndDate = getEmployeeEndDateKey(nextEmployee);
-
-              setReportEndDate(
-                nextEndDate || toDateKey(new Date())
-              );
+    <Box>
+      {/* =================================================
+          PAGE HEADER
+      ================================================= */}
+
+      {/* <PageHeader
+        title="Dashboard"
+        subtitle=""
+        icon={
+          <DashboardIcon />
+        }
+      /> */}
+
+      <Box
+        sx={{
+          width: '100%',
+        }}
+      >
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            mb: 1.5,
+          }}
+        >
+          <Typography
+            sx={{
+              fontSize: '1.25rem',
+              fontWeight: 800,
+              color: '#0f172a',
             }}
           >
-            <option value="">
-              Select Employee
-            </option>
-
-            {employees.map(
-              (item) => (
-                <option
-                  key={item._id}
-                  value={item._id}
-                >
-                  {item.name}
-                </option>
-              )
-            )}
-          </select>
-
-          {employee && (
-            <div className="employee-info">
-
-              <div>
-                <div className="employee-name">
-                  {employee.name}
-                </div>
-
-                <div className="employee-type">
-                  {employee.type ||
-                    'Employee'}
-                </div>
-              </div>
-
-              <div>
-                <div className="info-label">
-                  Joining Date
-                </div>
-
-                <div className="info-value">
-                  {employee.date
-                    ? formatDate(
-                        new Date(
-                          employee.date
-                        )
-                      )
-                    : '-'}
-                </div>
-              </div>
-
-              <div>
-                <div className="info-label">
-                  Monthly Salary
-                </div>
-
-                <div className="info-value">
-                  {formatMoney(
-                    employee.salary
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <div className="info-label">
-                  End Date
-                </div>
-
-                <div className="info-value">
-                  {getEmployeeEndDateKey(employee)
-                    ? formatDate(
-                        parseDateKey(
-                          getEmployeeEndDateKey(employee)
-                        )
-                      )
-                    : 'Active'}
-                </div>
-              </div>
-
-            </div>
-          )}
-        </div>
-
-        {/* ==========================================================
-            WHOLE EMPLOYEE REPORT FOR PARTNER
-            ========================================================== */}
-        <div className="card report-card partner-report-card">
-          <div className="report-header">
-            <div>
-              <h2 className="section-title">Employee Salary Report</h2>
-              <div className="report-under-title">Attendance &amp; Salary</div>
-              <div className="section-subtitle">Select a date range to view the complete salary report.</div>
-            </div>
-          </div>
-
-          <div className="report-controls partner-report-controls">
-            <div className="report-field">
-              <label className="text-label">From Date</label>
-              <input type="date" className="text-input" value={reportStartDate} max={reportEndDate || toDateKey(new Date())} onChange={(event) => setReportStartDate(event.target.value)} />
-            </div>
-            <div className="report-field">
-              <label className="text-label">To Date</label>
-              <input type="date" className="text-input" value={reportEndDate} min={reportStartDate || undefined} max={toDateKey(new Date())} onChange={(event) => setReportEndDate(event.target.value)} />
-            </div>
-          </div>
-
-          <div className="report-quick-buttons">
-            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('month')}>This Month</button>
-            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('2months')}>Last 2 Months</button>
-            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('6months')}>Last 6 Months</button>
-            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('year')}>Last 12 Months</button>
-          </div>
-
-          {reportPeriodValid && (
-            <div className="partner-report-preview">
-              <div className="partner-report-title-row">
-                <div>
-                  <h3>Employee Salary Report</h3>
-                  <div>Period: {getReportPeriodLabel()} • {currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}</div>
-                </div>
-              </div>
-
-              <div className="report-summary-grid">
-                <div className="report-summary-box"><div className="report-summary-label">Employees</div><div className="report-summary-value">{reportRows.length}</div></div>
-                <div className="report-summary-box"><div className="report-summary-label">Present Days</div><div className="report-summary-value">{reportTotals.presentDays}</div></div>
-                <div className="report-summary-box"><div className="report-summary-label">Absent Days</div><div className="report-summary-value">{reportTotals.absentDays}</div></div>
-                <div className="report-summary-box"><div className="report-summary-label">Total Worked Salary</div><div className="report-summary-value">{formatMoney(reportTotals.workedSalary)}</div></div>
-                <div className="report-summary-box"><div className="report-summary-label">Final Payable</div><div className="report-summary-value">{formatMoney(reportTotals.finalSalary)}</div></div>
-              </div>
-
-              <div className="report-table-wrap">
-                <table className="report-table">
-                  <thead><tr><th>S.No</th><th>Name</th><th>Joining Date</th><th>Total Days</th><th>Present</th><th>Absent</th><th>Monthly Salary</th><th>Worked Salary</th><th>Total Advance</th><th>Final Salary</th></tr></thead>
-                  <tbody>
-                    {reportRows.map((row, index) => {
-                      const item = row.employee; const salary = row.reportSalary || {};
-                      return <tr key={item?._id || index}><td>{index + 1}</td><td>{item?.name || 'Unnamed Employee'}</td><td>{item?.date ? formatDate(new Date(item.date)) : '-'}</td><td>{salary.totalDays}</td><td>{salary.presentDays}</td><td>{salary.absentDays}</td><td>{formatMoney(Number(item?.salary) || 0)}</td><td>{formatMoney(salary.workedSalary)}</td><td>{formatMoney(salary.totalAdvance)}</td><td>{formatMoney(salary.finalSalary)}</td></tr>;
-                    })}
-                    <tr className="report-total-row"><td colSpan={3}><strong>TOTAL</strong></td><td><strong>{reportTotals.totalDays}</strong></td><td><strong>{reportTotals.presentDays}</strong></td><td><strong>{reportTotals.absentDays}</strong></td><td><strong>{formatMoney(reportTotals.monthlySalary)}</strong></td><td><strong>{formatMoney(reportTotals.workedSalary)}</strong></td><td><strong>{formatMoney(reportTotals.totalAdvance)}</strong></td><td><strong>{formatMoney(reportTotals.finalSalary)}</strong></td></tr>
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="report-actions">
-                <button type="button" className="button" onClick={printWholeEmployeeReport} disabled={allEmployeeSalaryLoading || !reportRows.length}>Print / Save as PDF</button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {reportPeriodValid && reportRows.length > 0 && (
-          <div className="print-report">
-            <div style={{ textAlign: 'center', fontSize: '13px', fontWeight: 700, marginBottom: '8px' }}>Thalacauvery Borewell</div>
-            <h1 className="report-print-title">Employee Salary Report</h1>
-            <div className="report-print-period">Period: {getReportPeriodLabel()} • {currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}</div>
-            <div className="print-summary">
-              <div className="print-summary-box"><div className="print-summary-label">Employees</div><div className="print-summary-value">{reportRows.length}</div></div>
-              <div className="print-summary-box"><div className="print-summary-label">Present Days</div><div className="print-summary-value">{reportTotals.presentDays}</div></div>
-              <div className="print-summary-box"><div className="print-summary-label">Absent Days</div><div className="print-summary-value">{reportTotals.absentDays}</div></div>
-              <div className="print-summary-box"><div className="print-summary-label">Total Worked Salary</div><div className="print-summary-value">{formatMoney(reportTotals.workedSalary)}</div></div>
-              <div className="print-summary-box"><div className="print-summary-label">Final Payable</div><div className="print-summary-value">{formatMoney(reportTotals.finalSalary)}</div></div>
-            </div>
-            <table><thead><tr><th>S.No</th><th>Name</th><th>Joining Date</th><th>Total Days</th><th>Present</th><th>Absent</th><th>Monthly Salary</th><th>Worked Salary</th><th>Total Advance</th><th>Final Salary</th></tr></thead><tbody>
-              {reportRows.map((row,index)=>{const item=row.employee;const salary=row.reportSalary||{};return <tr key={item?._id||index}><td>{index+1}</td><td>{item?.name||'Unnamed Employee'}</td><td>{item?.date?formatDate(new Date(item.date)):'-'}</td><td>{salary.totalDays}</td><td>{salary.presentDays}</td><td>{salary.absentDays}</td><td>{formatMoney(Number(item?.salary) || 0)}</td><td>{formatMoney(salary.workedSalary)}</td><td>{formatMoney(salary.totalAdvance)}</td><td>{formatMoney(salary.finalSalary)}</td></tr>})}
-              <tr className="print-total"><td colSpan={3}>TOTAL</td><td>{reportTotals.totalDays}</td><td>{reportTotals.presentDays}</td><td>{reportTotals.absentDays}</td><td>{formatMoney(reportTotals.monthlySalary)}</td><td>{formatMoney(reportTotals.workedSalary)}</td><td>{formatMoney(reportTotals.totalAdvance)}</td><td>{formatMoney(reportTotals.finalSalary)}</td></tr>
-            </tbody></table>
-          </div>
-        )}
-
-        {/* ==========================================================
-            EMPLOYEE SALARY BILL
-            ========================================================== */}
-        <div className="card report-card">
-          <div className="report-header">
-            <div>
-              <h2 className="section-title">Salary Bill</h2>
-              <div className="section-subtitle">
-                Salary bill for the selected employee and period.
-              </div>
-            </div>
-          </div>
-
-          <div className="report-controls individual-report-controls">
-            <div className="report-field">
-              <label className="text-label">Employee</label>
-              <div className="selected-report-person">
-                {employee?.name || 'Select an employee above'}
-              </div>
-            </div>
-
-            <div className="report-field">
-              <label className="text-label">From Date</label>
-              <input
-                type="date"
-                className="text-input"
-                value={reportStartDate}
-                max={reportEndDate || toDateKey(new Date())}
-                onChange={(event) => setReportStartDate(event.target.value)}
-              />
-            </div>
-
-            <div className="report-field">
-              <label className="text-label">To Date</label>
-              <input
-                type="date"
-                className="text-input"
-                value={reportEndDate}
-                min={reportStartDate || undefined}
-                max={getEmployeeEndDateKey(employee) || toDateKey(new Date())}
-                onChange={(event) => setReportEndDate(event.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="report-quick-buttons">
-            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('month')}>
-              This Month
-            </button>
-            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('2months')}>
-              Last 2 Months
-            </button>
-            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('6months')}>
-              Last 6 Months
-            </button>
-            <button type="button" className="report-quick-button" onClick={() => setQuickReportRange('year')}>
-              Last 12 Months
-            </button>
-          </div>
-
-          {employee && individualSalary && reportPeriodValid && (
-            <div className="individual-bill-preview">
-              <div className="individual-bill-heading">
-                <div>
-                  <h3>Salary Bill</h3>
-                  <div>
-                    Period: {formatDate(parseDateKey(individualSalary.startDate || reportStartDate))} to{' '}
-                    {formatDate(parseDateKey(individualSalary.endDate || reportEndDate))}
-                  </div>
-                  <div>
-                    Joining Date: {employee?.date
-                      ? formatDate(new Date(employee.date))
-                      : '-'}
-                  </div>
-                  {getEmployeeEndDateKey(employee) && (
-                    <div>
-                      End Date: {formatDate(parseDateKey(getEmployeeEndDateKey(employee)))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="individual-bill-machine">
-                  {currentMachine === 'big' ? 'Big Machine' : 'Small Machine'}
-                </div>
-              </div>
-
-              <div className="individual-summary-grid">
-                <div className="individual-summary-box">
-                  <span>Total Days</span>
-                  <strong>{individualSalary.totalDays}</strong>
-                </div>
-                <div className="individual-summary-box">
-                  <span>Present</span>
-                  <strong>{individualSalary.presentDays}</strong>
-                </div>
-                <div className="individual-summary-box absent">
-                  <span>Absent</span>
-                  <strong>{individualSalary.absentDays}</strong>
-                </div>
-                <div className="individual-summary-box final">
-                  <span>Final Salary</span>
-                  <strong>{formatMoney(individualSalary.finalSalary)}</strong>
-                </div>
-              </div>
-
-              <div className="individual-salary-lines">
-                <div>
-                  <span>Monthly Salary</span>
-                  <strong>{formatMoney(Number(employee?.salary) || 0)}</strong>
-                </div>
-                <div>
-                  <span>Worked Salary</span>
-                  <strong>{formatMoney(individualSalary.workedSalary)}</strong>
-                </div>
-                <div>
-                  <span>Salary Advance</span>
-                  <strong className="negative-value">
-                    {formatMoney(individualSalary.totalAdvance)}
-                  </strong>
-                </div>
-              </div>
-
-            </div>
-          )}
-
-          {!employee && (
-            <div className="individual-bill-empty">
-              Select one employee to prepare the salary bill.
-            </div>
-          )}
-        </div>
-
-
-
-
-
-        {!employee ? (
-          <div className="card empty-state">
-            <div className="empty-state-icon">
-              📅
-            </div>
-
-            <h2>
-              Select an employee
-            </h2>
-
-            <p>
-              Choose an employee above
-              to manage attendance and salary.
-            </p>
-          </div>
-        ) : (
-
-          <div className="main-grid">
-
-            {/* LEFT */}
-            <div>
-
-              <div className="card summary-card">
-
-                <h2 className="section-title">
-                  Salary Summary
-                </h2>
-
-                <div className="section-subtitle">
-                  {employee.name}
-                </div>
-
-                <div className="summary-grid">
-
-                  <div className="summary-box">
-                    <div className="summary-label">
-                      Months Worked
-                    </div>
-
-                    <div className="summary-value">
-                      {
-                        salarySummary.monthsWorked
-                      }
-                    </div>
-                  </div>
-
-                  <div className="summary-box">
-                    <div className="summary-label">
-                      Total Days
-                    </div>
-
-                    <div className="summary-value">
-                      {
-                        salarySummary.totalDays
-                      }
-                    </div>
-                  </div>
-
-                </div>
-
-                <div className="salary-lines">
-
-                  <div className="salary-line">
-                    <span>Monthly Salary</span>
-                    <strong>
-                      {formatMoney(Number(employee?.salary) || 0)}
-                    </strong>
-                  </div>
-
-                  <div className="salary-line deduction">
-                    <span>Absent Deduction</span>
-                    <strong>
-                      -{' '}
-                      {formatMoney(salarySummary.absentDeduction)}
-                    </strong>
-                  </div>
-
-                  <div className="salary-line deduction">
-                    <span>Total Advance</span>
-                    <strong>
-                      -{' '}
-                      {formatMoney(salarySummary.advance)}
-                    </strong>
-                  </div>
-
-                </div>
-
-                <div className="salary-final">
-
-                  <div className="salary-final-label">
-                    Final Salary
-                  </div>
-
-                  <div className="salary-final-value">
-                    {formatMoney(
-                      salarySummary.finalSalary
-                    )}
-                  </div>
-
-                </div>
-
-
-                <div className="salary-action-row">
-                  <div className="compact-attendance">
-                    <div className="compact-attendance-item present">
-                      <span>Present</span>
-                      <strong>{salarySummary.presentDays}</strong>
-                    </div>
-                    <div className="compact-attendance-item absent">
-                      <span>Absent</span>
-                      <strong>{salarySummary.absentDays}</strong>
-                    </div>
-                  </div>
-
-                  <div className="end-date-control">
-                    <label htmlFor="employee-end-date">End Date</label>
-                    <input
-                      id="employee-end-date"
-                      type="date"
-                      className="text-input compact-date-input"
-                      value={employeeEndDate}
-                      min={
-                        employee?.date
-                          ? toDateKey(new Date(employee.date))
-                          : undefined
-                      }
-                      max={toDateKey(new Date())}
-                      onChange={(event) =>
-                        setEmployeeEndDate(event.target.value)
-                      }
-                      disabled={savingEmployeeEndDate}
-                    />
-                    <button
-                      type="button"
-                      className="end-date-save-button"
-                      onClick={saveEmployeeEndDate}
-                      disabled={savingEmployeeEndDate}
-                      title="Save employee end date"
-                      aria-label="Save employee end date"
-                    >
-                      {savingEmployeeEndDate ? '…' : '✓'}
-                    </button>
-                  </div>
-
-                  <button
-                    type="button"
-                    className="advance-icon-button"
-                    onClick={openAddAdvance}
-                    disabled={savingAdvance}
-                    title="Add Salary Advance"
-                    aria-label="Add Salary Advance"
-                  >
-                    ＋
-                  </button>
-                </div>
-
-                <div className="advance-section">
-                  <div className="advance-title-row">
-                    <h3 className="section-title">Advances</h3>
-                    <span className="advance-count">{advances.length}</span>
-                  </div>
-                  <div className="advance-list">
-                    {advances.length === 0 ? (
-                      <div className="empty-advance">No salary advances recorded.</div>
-                    ) : advances.map((item) => (
-                      <div className="advance-item" key={item._id || `${item.date}-${item.advanceAmount}`}>
-                        <div className="advance-item-main">
-                          <div className="advance-note">
-                            {item.notes || item.paymentMode || 'Salary Advance'}
-                          </div>
-                          <div className="advance-date">
-                            {formatAdvanceDate(item)}
-                          </div>
-                        </div>
-
-                        <div className="advance-item-right">
-                          <div className="advance-amount">
-                            - {formatMoney(item.advanceAmount)}
-                          </div>
-
-                          <div className="advance-actions">
-                            <button
-                              type="button"
-                              className="advance-action-button advance-edit-button"
-                              onClick={() => openEditAdvance(item)}
-                              disabled={savingAdvance || deletingAdvance}
-                              title="Edit salary advance"
-                              aria-label="Edit salary advance"
-                            >
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                <path d="M12 20h9" />
-                                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                              </svg>
-                            </button>
-
-                            <button
-                              type="button"
-                              className="advance-action-button advance-delete-button"
-                              onClick={() => setDeleteAdvanceDialog(item)}
-                              disabled={savingAdvance || deletingAdvance}
-                              title="Delete salary advance"
-                              aria-label="Delete salary advance"
-                            >
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                <path d="M3 6h18" />
-                                <path d="M8 6V4h8v2" />
-                                <path d="M19 6l-1 14H6L5 6" />
-                                <path d="M10 11v5" />
-                                <path d="M14 11v5" />
-                              </svg>
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-              </div>
-
-            </div>
-
-            {/* RIGHT */}
-            <div>
-
-              <div className="card calendar-card">
-
-                <div className="calendar-header">
-
-                  <div>
-                    <h2 className="section-title">
-                      Attendance Calendar
-                    </h2>
-
-                    <div className="section-subtitle">
-                      Click a date to mark or
-                      review absence.
-                    </div>
-                  </div>
-
-                  <div className="month-controls">
-
-                    <button
-                      className="month-button"
-                      onClick={
-                        previousMonth
-                      }
-                      aria-label="Previous month"
-                    >
-                      ‹
-                    </button>
-
-                    <div className="month-name">
-                      {currentMonth.toLocaleDateString(
-                        'en-IN',
-                        {
-                          month:
-                            'long',
-                          year:
-                            'numeric',
-                        }
-                      )}
-                    </div>
-
-                    <button
-                      className="month-button"
-                      onClick={
-                        nextMonth
-                      }
-                      aria-label="Next month"
-                    >
-                      ›
-                    </button>
-
-                  </div>
-
-                </div>
-
-                <div className="calendar-info">
-                  Every date is automatically{' '}
-                  <strong>Present</strong>.
-                  Click an open date to mark it
-                  absent, or click a red date to
-                  see why and revert it.
-                </div>
-
-                <div className="calendar-weekdays">
-                  {[
-                    'Sun',
-                    'Mon',
-                    'Tue',
-                    'Wed',
-                    'Thu',
-                    'Fri',
-                    'Sat',
-                  ].map(
-                    (day) => (
-                      <div
-                        className="weekday"
-                        key={day}
-                      >
-                        {day}
-                      </div>
-                    )
-                  )}
-                </div>
-
-                <div className="calendar-grid">
-
-                  {calendarDays.map(
-                    (
-                      date,
-                      index
-                    ) => {
-
-                      if (!date) {
-                        return (
-                          <div
-                            className="calendar-day empty"
-                            key={
-                              `empty-${index}`
-                            }
-                          />
-                        );
-                      }
-
-                      const key =
-                        toDateKey(
-                          date
-                        );
-
-                      const isAbsent =
-                        Boolean(
-                          absentMap[
-                            key
-                          ]
-                        );
-
-                      const today =
-                        toDateKey(
-                          new Date()
-                        ) === key;
-
-                      const future =
-                        key >
-                        toDateKey(
-                          new Date()
-                        );
-
-                      const joining =
-                        employee.date
-                          ? toDateKey(
-                              new Date(
-                                employee.date
-                              )
-                            )
-                          : null;
-
-                      const beforeJoining =
-                        joining &&
-                        key <
-                          joining;
-
-                      const employeeEndKey =
-                        getEmployeeEndDateKey(employee);
-
-                      const afterEmployeeEnd =
-                        employeeEndKey &&
-                        key > employeeEndKey;
-
-                      return (
-                        <button
-                          key={key}
-                          type="button"
-                          className={[
-                            'calendar-day',
-                            isAbsent
-                              ? 'absent'
-                              : '',
-                            today
-                              ? 'today'
-                              : '',
-                            future
-                              ? 'future'
-                              : '',
-                            beforeJoining
-                              ? 'before-joining'
-                              : '',
-                            afterEmployeeEnd
-                              ? 'after-end-date'
-                              : '',
-                          ]
-                            .filter(Boolean)
-                            .join(
-                              ' '
-                            )}
-                          disabled={
-                            future ||
-                            beforeJoining ||
-                            Boolean(afterEmployeeEnd)
-                          }
-                          title={
-                            afterEmployeeEnd
-                              ? 'Employee terminated — no attendance after end date'
-                              : isAbsent
-                                ? 'Absent — click for details'
-                                : 'Present — click to mark absent'
-                          }
-                          onClick={() =>
-                            handleDateClick(
-                              date
-                            )
-                          }
-                        >
-                          {date.getDate()}
-                        </button>
-                      );
-                    }
-                  )}
-
-                </div>
-
-                <div className="calendar-legend">
-
-                  <div className="legend-item">
-                    <span className="legend-dot present" />
-                    Present
-                  </div>
-
-                  <div className="legend-item">
-                    <span className="legend-dot absent" />
-                    Absent
-                  </div>
-
-                </div>
-
-                <div className="month-absent">
-                  {monthAbsentDates.length}{' '}
-                  absent day
-                  {monthAbsentDates.length !==
-                  1
-                    ? 's'
-                    : ''}{' '}
-                  in{' '}
-                  {currentMonth.toLocaleDateString(
-                    'en-IN',
-                    {
-                      month:
-                        'long',
-                    }
-                  )}
-                </div>
-
-              </div>
-
-            </div>
-
-          </div>
-        )}
-
-      </div>
-
-      {/* ============================================================
-          MARK ABSENT MODAL (present day -> absent)
-          ============================================================ */}
-
-      {absentModal &&
-        selectedDate && (
-          <div
-            className="modal-backdrop"
-            onMouseDown={(event) => {
-              if (
-                event.target ===
-                event.currentTarget
-              ) {
-                setAbsentModal(
-                  false
-                );
-              }
+            Dashboard
+          </Typography>
+
+          <Chip
+            size="small"
+            label={isBig ? 'BIG MACHINE' : 'SMALL MACHINE'}
+            sx={{
+              bgcolor: `${TEAL}18`,
+              color: TEAL_D,
+              fontWeight: 800,
+              fontSize: '0.68rem',
             }}
-          >
+          />
+        </Box>
+        {/* =================================================
+            ROW 1
+        ================================================= */}
 
-            <div className="modal">
+        <Grid
+          container
+          spacing={1.25}
+          sx={{
+            mb: 1.5,
 
-              <div className="modal-header">
+            '& > .MuiGrid-item:nth-of-type(1)': {
+              '--stat-icon-color': '#0f172a',
+              '--stat-icon-bg': '#eef0f2',
+            },
 
-                <div>
-                  <h2 className="modal-title">
-                    Mark Absent
-                  </h2>
+            '& > .MuiGrid-item:nth-of-type(2)': {
+              '--stat-icon-color': '#16a34a',
+              '--stat-icon-bg': '#eaf6ed',
+            },
 
-                  <div className="modal-date">
-                    {showAbsentEndDate && absentEndDate
-                      ? `${formatDate(selectedDate)} → ${formatDate(parseDateKey(absentEndDate))}`
-                      : formatDate(selectedDate)}
-                  </div>
-                </div>
+            '& > .MuiGrid-item:nth-of-type(3)': {
+              '--stat-icon-color': '#dc2626',
+              '--stat-icon-bg': '#fdecec',
+            },
 
-                <button
-                  className="close-button"
+            '& > .MuiGrid-item:nth-of-type(4)': {
+              '--stat-icon-color': '#7c3aed',
+              '--stat-icon-bg': '#f2eafd',
+            },
+          }}
+        >
+          {firstRowCards.map(
+            (card) => (
+              <Grid
+                item
+                xs={12}
+                sm={6}
+                md={3}
+                key={
+                  card.key
+                }
+              >
+                <StatCard
+                  title={
+                    card.title
+                  }
+                  value={
+                    card.value
+                  }
+                  icon={
+                    card.icon
+                  }
+                  color={
+                    card.color
+                  }
                   onClick={() =>
-                    setAbsentModal(
-                      false
+                    handleCardClick(
+                      card.key
                     )
                   }
-                >
-                  ×
-                </button>
+                />
+              </Grid>
+            )
+          )}
+        </Grid>
 
-              </div>
+        {/* =================================================
+            ROW 2
+        ================================================= */}
 
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '12px',
-                  marginBottom: '12px',
+        <Grid
+          container
+          spacing={1.25}
+          sx={{
+            mb: 1.5,
+
+            '& > .MuiGrid-item:nth-of-type(1)': {
+              '--stat-icon-color': '#2563eb',
+              '--stat-icon-bg': '#eaf1ff',
+            },
+
+            '& > .MuiGrid-item:nth-of-type(2)': {
+              '--stat-icon-color': '#ea580c',
+              '--stat-icon-bg': '#fff0e7',
+            },
+
+            '& > .MuiGrid-item:nth-of-type(3)': {
+              '--stat-icon-color': '#0891b2',
+              '--stat-icon-bg': '#e8f7fb',
+            },
+
+            '& > .MuiGrid-item:nth-of-type(4)': {
+              '--stat-icon-color': '#92400e',
+              '--stat-icon-bg': '#f5eee9',
+            },
+          }}
+        >
+          {secondRowCards.map(
+            (card) => (
+              <Grid
+                item
+                xs={12}
+                sm={6}
+                md={3}
+                key={
+                  card.key
+                }
+              >
+                <StatCard
+                  title={
+                    card.title
+                  }
+                  value={
+                    card.value
+                  }
+                  icon={
+                    card.icon
+                  }
+                  color={
+                    card.color
+                  }
+                  onClick={() =>
+                    handleCardClick(
+                      card.key
+                    )
+                  }
+                />
+              </Grid>
+            )
+          )}
+        </Grid>
+
+        {/* =================================================
+            MACHINE PIPE STOCK / USAGE
+            STOCK IS THE LAST SUMMARY SECTION
+        ================================================= */}
+
+        <Box
+          sx={{
+            mb: 1.5,
+            width: '100%',
+            display: 'grid',
+            gridTemplateColumns: {
+              xs: '1fr',
+              sm: 'repeat(2, minmax(0, 1fr))',
+              md: 'repeat(4, minmax(0, 1fr))',
+            },
+            gap: {
+              xs: 1,
+              sm: 1.25,
+              md: 1.25,
+            },
+            alignItems: 'stretch',
+          }}
+        >
+          {pipeCards.map((card) => (
+            <Box
+              key={card.key}
+              sx={{
+                minWidth: 0,
+                width: '100%',
+                display: 'flex',
+              }}
+            >
+              <Card
+                elevation={0}
+                sx={{
+                  height: '100%',
+                  width: '100%',
+                  border: '1px solid #dbe3ec',
+                  borderRadius: '12px',
+                  bgcolor: '#fff',
+                  boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
                 }}
               >
-                <label
-                  className="text-label"
-                  style={{ marginBottom: 0 }}
-                >
-                  Leave Period
-                </label>
-
-                <button
-                  type="button"
-                  className="button"
-                  onClick={() => {
-                    if (showAbsentEndDate) {
-                      setShowAbsentEndDate(false);
-                      setAbsentEndDate('');
-                    } else {
-                      setShowAbsentEndDate(true);
-                      setAbsentEndDate(
-                        toDateKey(selectedDate)
-                      );
-                    }
-                  }}
-                  disabled={savingAbsent}
-                  style={{
-                    padding: '7px 12px',
-                    fontSize: '13px',
+                <CardContent
+                  sx={{
+                    p: '14px !important',
+                    minHeight: 74,
                   }}
                 >
-                  {showAbsentEndDate
-                    ? 'Remove End Date'
-                    : '+ Add End Date'}
-                </button>
-              </div>
-
-              {showAbsentEndDate && (
-                <div style={{ marginBottom: '16px' }}>
-                  <label className="text-label">
-                    End Date
-                  </label>
-
-                  <input
-                    type="date"
-                    className="text-input"
-                    value={absentEndDate}
-                    min={toDateKey(selectedDate)}
-                    onChange={(event) =>
-                      setAbsentEndDate(
-                        event.target.value
-                      )
-                    }
-                    disabled={savingAbsent}
-                  />
-
-                  <div
-                    style={{
-                      marginTop: '7px',
-                      fontSize: '12px',
-                      color: '#64748b',
+                  <Typography
+                    sx={{
+                      color: '#0f172a',
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      mb: 0.8,
                     }}
                   >
-                    Every date from the start date through the end date will be marked absent.
-                  </div>
-                </div>
-              )}
+                    {card.title}
+                  </Typography>
 
-              <label className="text-label">
-                Reason / Description
-              </label>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 0.35,
+                    }}
+                  >
+                    <Typography
+                      component="div"
+                      sx={{
+                        fontSize: '0.68rem',
+                        lineHeight: 1.35,
+                        fontWeight: 700,
+                        color: '#64748b',
+                      }}
+                    >
+                      Executed ({card.usedPipes})
+                    </Typography>
 
-              <textarea
-                className="textarea"
-                placeholder="Example: Fever, going to native, personal work..."
-                value={
-                  absentReason
-                }
-                onChange={(event) =>
-                  setAbsentReason(
-                    event.target.value
-                  )
-                }
-                autoFocus
+                    <Typography
+                      component="div"
+                      sx={{
+                        fontSize: '0.68rem',
+                        lineHeight: 1.35,
+                        fontWeight: 700,
+                        color: '#64748b',
+                      }}
+                    >
+                      Total ft ({card.totalFeet})
+                    </Typography>
+
+                    <Typography
+                      component="div"
+                      sx={{
+                        fontSize: '0.68rem',
+                        lineHeight: 1.35,
+                        fontWeight: 800,
+                        color: '#dc2626',
+                      }}
+                    >
+                      Stock ({card.remaining})
+                    </Typography>
+                  </Box>
+                </CardContent>
+              </Card>
+            </Box>
+          ))}
+
+
+          <Box
+            sx={{
+              minWidth: 0,
+              width: '100%',
+              display: 'flex',
+            }}
+          >
+            <Card
+              elevation={0}
+              sx={{
+                height: '100%',
+                border: '1px solid #dbe3ec',
+                borderRadius: '12px',
+                bgcolor: '#fff',
+              }}
+            >
+              <CardContent
+                sx={{
+                  p: '14px !important',
+                  minHeight: 74,
+                }}
+              >
+                <Typography
+                  sx={{
+                    color: '#0f172a',
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    mb: 0.8,
+                  }}
+                >
+                  Payment Summary
+                </Typography>
+
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns:
+                      'repeat(3, minmax(0, 1fr))',
+                    gap: 0.75,
+                  }}
+                >
+                  {/* WORKED SALARY */}
+                  <Box>
+                    <Typography
+                      sx={{
+                        color: '#64748b',
+                        fontSize: '0.6rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Worked Salary
+                    </Typography>
+
+                    <Typography
+                      sx={{
+                        fontWeight: 800,
+                        fontSize: '0.74rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {fmt(totalWorkedSalary)}
+                    </Typography>
+                  </Box>
+
+                  {/* CURRENT SALARY */}
+                  <Box>
+                    <Typography
+                      sx={{
+                        color: '#0f172a',
+                        fontSize: '0.6rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Current Salary
+                    </Typography>
+
+                    <Typography
+                      sx={{
+                        color:
+                          totalSalary < 0
+                            ? '#b91c1c'
+                            : '#0f172a',
+                        fontWeight: 800,
+                        fontSize: '0.74rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {fmt(totalSalary)}
+                    </Typography>
+                  </Box>
+
+                  {/* SALARY ADVANCE */}
+                  <Box>
+                    <Typography
+                      sx={{
+                        color: '#0f172a',
+                        fontSize: '0.6rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Advance
+                    </Typography>
+
+                    <Typography
+                      sx={{
+                        color: '#b45309',
+                        fontWeight: 800,
+                        fontSize: '0.74rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {fmt(
+                        totalCurrentSalaryAdvance
+                      )}
+                    </Typography>
+                  </Box>
+                </Box>
+
+                <Typography
+                  sx={{
+                    mt: 0.8,
+                    color: '#64748b',
+                    fontSize: '0.62rem',
+                  }}
+                >
+                  Monthly: {fmt(totalMonthlySalary)} · Absent deduction: {fmt(totalAbsentDeduction)}
+                </Typography>
+              </CardContent>
+            </Card>
+          </Box>
+        </Box>
+
+        {/* =================================================
+            ROW 3
+            EMPLOYEE CENTER
+        ================================================= */}
+
+
+
+        {/* =================================================
+            ANALYTICS
+        ================================================= */}
+
+        <Typography
+          variant="overline"
+          sx={{
+            fontSize:
+              '0.68rem',
+
+            color: '#0f172a',
+
+            letterSpacing:
+              '0.1em',
+
+            mb: 1,
+
+            display:
+              'block',
+          }}
+        >
+          Analytics
+        </Typography>
+
+        <Grid
+          container
+          spacing={1.5}
+        >
+          {/* =============================================
+              MONTHLY EXPENSE
+          ============================================= */}
+
+          <Grid
+            item
+            xs={12}
+            md={6}
+          >
+            <ChartCard
+              title="Monthly Expense"
+            >
+              <ChartLegend
+                items={[
+                  {
+                    color: '#0f172a',
+                    label:
+                      'Expense (₹)',
+                  },
+                ]}
               />
 
-              <div className="modal-actions">
+              <Box
+                sx={{
+                  position:
+                    'relative',
 
-                <button
-                  className="button"
-                  onClick={() => {
-                    setConfirmAbsentModal(
-                      false
-                    );
-                    setAbsentModal(
-                      false
-                    );
-                    setSelectedDate(
-                      null
-                    );
-                    setAbsentReason(
-                      ''
-                    );
-                    setAbsentEndDate('');
-                    setShowAbsentEndDate(false);
-                  }}
-                  disabled={
-                    savingAbsent
-                  }
-                >
-                  Cancel
-                </button>
-
-                <button
-                  className="button primary"
-                  onClick={() => {
-                    if (!selectedDate) return;
-                    const startKey = toDateKey(selectedDate);
-                    const endKey = showAbsentEndDate && absentEndDate ? absentEndDate : startKey;
-                    if (endKey < startKey) {
-                      setError('End date cannot be before the start date.');
-                      return;
-                    }
-                    if (endKey > toDateKey(new Date())) {
-                      setError('Absence end date cannot be in the future.');
-                      return;
-                    }
-                    setAbsentModal(false);
-                    setConfirmAbsentModal(true);
-                  }}
-                  disabled={
-                    savingAbsent
-                  }
-                >
-                  Continue
-                </button>
-
-              </div>
-
-            </div>
-
-          </div>
-        )}
-
-      {/* ============================================================
-          CONFIRM ABSENCE MODAL
-          ============================================================ */}
-
-      {confirmAbsentModal &&
-        selectedDate && (
-          <div
-            className="modal-backdrop"
-            onMouseDown={(event) => {
-              if (
-                event.target ===
-                event.currentTarget
-              ) {
-                setConfirmAbsentModal(false);
-                setAbsentModal(false);
-                setSelectedDate(null);
-                setAbsentReason('');
-                setAbsentEndDate('');
-                setShowAbsentEndDate(false);
-              }
-            }}
-          >
-            <div className="modal">
-              <div className="modal-header">
-                <div>
-                  <h2 className="modal-title">
-                    Confirm Absent
-                  </h2>
-
-                  <div className="modal-date">
-                    {showAbsentEndDate &&
-                    absentEndDate
-                      ? `${formatDate(
-                          selectedDate
-                        )} → ${formatDate(
-                          parseDateKey(
-                            absentEndDate
-                          )
-                        )}`
-                      : formatDate(
-                          selectedDate
-                        )}
-                  </div>
-                </div>
-
-                <button
-                  className="close-button"
-                  onClick={() => {
-                    setConfirmAbsentModal(false);
-                    setAbsentModal(false);
-                    setSelectedDate(null);
-                    setAbsentReason('');
-                    setAbsentEndDate('');
-                    setShowAbsentEndDate(false);
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-
-              <div
-                style={{
-                  background: '#f8fafc',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '12px',
-                  padding: '16px',
-                  marginBottom: '18px',
+                  height: 240,
                 }}
               >
-                <div
-                  style={{
-                    fontSize: '12px',
-                    color: '#64748b',
-                    fontWeight: 700,
-                    marginBottom: '6px',
-                  }}
-                >
-                  ABSENCE DATE
-                </div>
+                <Bar
+                  data={
+                    expenseData
+                  }
+                  options={barOptions(
+                    (value) =>
+                      `₹${Math.round(
+                        value /
+                          1000
+                      )}k`
+                  )}
+                />
+              </Box>
+            </ChartCard>
+          </Grid>
 
-                <div
-                  style={{
-                    fontSize: '16px',
-                    color: '#0f2742',
-                    fontWeight: 800,
-                  }}
-                >
-                  {showAbsentEndDate &&
-                  absentEndDate
-                    ? `${formatDate(
-                        selectedDate
-                      )} to ${formatDate(
-                        parseDateKey(
-                          absentEndDate
-                        )
-                      )}`
-                    : formatDate(
-                        selectedDate
-                      )}
-                </div>
+          {/* =============================================
+              BOREWELL WORKS
+          ============================================= */}
 
-                <div
-                  style={{
-                    marginTop: '16px',
-                    fontSize: '12px',
-                    color: '#64748b',
-                    fontWeight: 700,
-                    marginBottom: '6px',
-                  }}
-                >
-                  REASON
-                </div>
+          <Grid
+            item
+            xs={12}
+            md={6}
+          >
+            <ChartCard
+              title="Borewell Works"
+            >
+              <ChartLegend
+                items={[
+                  {
+                    color: '#0f172a',
+                    label:
+                      'Work count',
+                  },
+                ]}
+              />
 
-                <div
-                  style={{
-                    fontSize: '14px',
-                    color: absentReason.trim()
-                      ? '#1e293b'
-                      : '#94a3b8',
-                    lineHeight: 1.5,
-                  }}
-                >
-                  {absentReason.trim() ||
-                    'No reason provided'}
-                </div>
-              </div>
+              <Box
+                sx={{
+                  position:
+                    'relative',
 
-              <div
-                style={{
-                  fontSize: '13px',
-                  color: '#64748b',
-                  marginBottom: '18px',
+                  height: 240,
                 }}
               >
-                Confirm these details to mark
-                the employee absent.
-              </div>
+                <Bar
+                  data={
+                    workData
+                  }
+                  options={barOptions(
+                    (value) =>
+                      value
+                  )}
+                />
+              </Box>
+            </ChartCard>
+          </Grid>
 
-              <div className="modal-actions">
-                <button
-                  className="button"
-                  onClick={() => {
-                    setConfirmAbsentModal(false);
-                    setAbsentModal(true);
-                  }}
-                  disabled={savingAbsent}
-                >
-                  Back
-                </button>
+          {/* =============================================
+              PAYMENT STATUS
+          ============================================= */}
 
-                <button
-                  className="button primary"
-                  onClick={saveAbsent}
-                  disabled={savingAbsent}
-                >
-                  {savingAbsent
-                    ? 'Saving...'
-                    : 'Confirm & Mark Absent'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-      {detailsModal &&
-        detailsDate && (
-          <div
-            className="modal-backdrop"
-            onMouseDown={(event) => {
-              if (
-                event.target ===
-                event.currentTarget
-              ) {
-                setDetailsModal(
-                  false
-                );
-              }
-            }}
+          <Grid
+            item
+            xs={12}
+            md={6}
           >
+            <ChartCard
+              title="Payment Status"
+            >
+              <ChartLegend
+                items={[
+                  {
+                    color: '#0f172a',
+                    label:
+                      'Paid',
+                  },
 
-            <div className="modal">
+                  {
+                    color: '#0f172a',
+                    label:
+                      'Unpaid',
+                  },
 
-              <div className="modal-header">
+                  {
+                    color: '#0f172a',
+                    label:
+                      'Partial',
+                  },
+                ]}
+              />
 
-                <div>
-                  <h2 className="modal-title">
-                    Absence Details
-                  </h2>
+              <Box
+                sx={{
+                  position:
+                    'relative',
 
-                  <div className="modal-date">
-                    {formatDateShort(
-                      detailsDate
-                    )}{' '}
-                    · {formatDate(
-                      detailsDate
-                    )}
-                  </div>
-                </div>
+                  height: 240,
 
-                <button
-                  className="close-button"
-                  onClick={() =>
-                    setDetailsModal(
-                      false
-                    )
-                  }
-                >
-                  ×
-                </button>
+                  display:
+                    'flex',
 
-              </div>
+                  justifyContent:
+                    'center',
+                }}
+              >
+                <Box
+                  sx={{
+                    width: 220,
 
-              <div className="details-status-pill">
-                ● Marked Absent
-              </div>
-
-              <div className="details-reason-box">
-                <div className="details-reason-label">
-                  Reason
-                </div>
-
-                {detailsInfo?.reason ? (
-                  <div className="details-reason-text">
-                    {detailsInfo.reason}
-                  </div>
-                ) : (
-                  <div className="details-reason-empty">
-                    No reason was recorded
-                    for this date.
-                  </div>
-                )}
-              </div>
-
-              <div className="modal-actions">
-
-                <button
-                  className="button"
-                  onClick={() => {
-                    setDetailsModal(
-                      false
-                    );
-                    setDetailsDate(
-                      null
-                    );
-                    setDetailsInfo(
-                      null
-                    );
+                    position:
+                      'relative',
                   }}
-                  disabled={
-                    revertingAbsent
-                  }
                 >
-                  Close
-                </button>
+                  <Doughnut
+                    data={
+                      paymentData
+                    }
+                    options={
+                      doughnutOptions
+                    }
+                  />
+                </Box>
+              </Box>
+            </ChartCard>
+          </Grid>
+        </Grid>
+      </Box>
 
-                <button
-                  type="button"
-                  className="button"
-                  onClick={() =>
-                    shareOnWhatsApp(
-                      buildAbsenceShareText({
-                        employeeName:
-                          employee?.name,
-                        unitLabel:
-                          currentMachine ===
-                          'big'
-                            ? 'Big Machine'
-                            : 'Small Machine',
-                        dateLabel: formatDate(
-                          detailsDate
-                        ),
-                        reason:
-                          detailsInfo?.reason,
-                      }),
-                      getEmployeePhone(
-                        employee
-                      )
-                    )
-                  }
-                >
-                  Share via WhatsApp
-                </button>
+      {/* =================================================
+          DETAIL DIALOG
+      ================================================= */}
 
-                <button
-                  className="button green"
-                  onClick={() =>
-                    removeAbsent(
-                      toDateKey(
-                        detailsDate
-                      )
-                    )
-                  }
-                  disabled={
-                    revertingAbsent
-                  }
-                >
-                  {revertingAbsent
-                    ? 'Updating...'
-                    : 'Mark as Present'}
-                </button>
-
-              </div>
-
-            </div>
-
-          </div>
-        )}
-
-
-      {deleteAdvanceDialog && (
-        <div
-          className="modal-backdrop"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !deletingAdvance) {
-              setDeleteAdvanceDialog(null);
-            }
-          }}
-        >
-          <div className="modal">
-            <div className="modal-header">
-              <div>
-                <h2 className="modal-title">Delete Salary Advance</h2>
-                <div className="modal-date">{employee?.name}</div>
-              </div>
-              <button
-                type="button"
-                className="close-button"
-                onClick={() => setDeleteAdvanceDialog(null)}
-                disabled={deletingAdvance}
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="delete-advance-box">
-              <div className="delete-advance-label">ADVANCE TO DELETE</div>
-              <div className="delete-advance-amount">
-                {formatMoney(deleteAdvanceDialog.advanceAmount)}
-              </div>
-              <div className="delete-advance-meta">
-                {formatAdvanceDate(deleteAdvanceDialog)}
-                {' • '}
-                {deleteAdvanceDialog.paymentMode || 'Cash'}
-              </div>
-              {deleteAdvanceDialog.notes && (
-                <div className="delete-advance-notes">
-                  {deleteAdvanceDialog.notes}
-                </div>
-              )}
-            </div>
-
-            <div className="modal-warning">
-              This advance will be removed from the employee's salary calculation.
-              This action cannot be undone from this screen.
-            </div>
-
-            <div className="modal-actions">
-              <button
-                type="button"
-                className="button"
-                onClick={() => setDeleteAdvanceDialog(null)}
-                disabled={deletingAdvance}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="button danger"
-                onClick={confirmDeleteAdvance}
-                disabled={deletingAdvance}
-              >
-                {deletingAdvance ? 'Deleting...' : 'Delete Advance'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-
-      {advanceModal && (
-        <div
-          className="modal-backdrop"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setAdvanceModal(false);
-          }}
-        >
-          <div className="modal wide">
-            <div className="modal-header">
-              <div>
-                <h2 className="modal-title">{editingAdvance ? 'Edit Salary Advance' : 'Add Salary Advance'}</h2>
-                <div className="modal-date">{employee?.name}</div>
-              </div>
-              <button type="button" className="close-button" onClick={closeAdvanceModal} disabled={savingAdvance}>×</button>
-            </div>
-
-            <div className="advance-form-grid">
-              <div>
-                <label className="text-label">Date</label>
-                <input type="date" className="text-input" value={advanceDate} max={toDateKey(new Date())} onChange={(event) => setAdvanceDate(event.target.value)} disabled={savingAdvance} />
-              </div>
-              <div>
-                <label className="text-label">Advance Amount</label>
-                <input type="number" min="0" step="0.01" className="text-input" placeholder="₹0.00" value={advanceAmount} onChange={(event) => setAdvanceAmount(event.target.value)} disabled={savingAdvance} autoFocus />
-              </div>
-              <div>
-                <label className="text-label">Payment Mode</label>
-                <select className="select-input" style={{ maxWidth: 'none' }} value={advancePaymentMode} onChange={(event) => setAdvancePaymentMode(event.target.value)} disabled={savingAdvance}>
-                  <option value="cash">Cash</option>
-                  <option value="gpay">GPay</option>
-                  <option value="net_banking">Net Banking</option>
-                  <option value="cheque">Cheque</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-label">Notes</label>
-                <input className="text-input" placeholder="Optional" value={advanceNotes} onChange={(event) => setAdvanceNotes(event.target.value)} disabled={savingAdvance} />
-              </div>
-            </div>
-
-            <div className="modal-actions">
-              <button type="button" className="button" onClick={closeAdvanceModal} disabled={savingAdvance}>Cancel</button>
-              <button type="button" className="button green" onClick={saveAdvance} disabled={savingAdvance}>
-                {savingAdvance ? (editingAdvance ? 'Updating...' : 'Saving...') : (editingAdvance ? 'Update Advance' : 'Save Advance')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-    </div>
+      <DetailDialog
+        open={
+          dialogOpen
+        }
+        onClose={() =>
+          setDialogOpen(
+            false
+          )
+        }
+        cardKey={
+          activeCard
+        }
+        machineType={
+          currentMachine
+        }
+        summaryValue={
+          activeCard ===
+          'totalBorewellPoints'
+            ? String(
+                points
+              )
+            : activeCard ===
+              'paidAmount'
+            ? fmt(
+                paidAmount
+              )
+            : activeCard ===
+              'pendingAmount'
+            ? fmt(
+                salaryPendingAmount
+              )
+            : activeCard ===
+              'discount'
+            ? fmt(
+                discount
+              )
+            : activeCard ===
+              'diesel'
+            ? fmt(
+                diesel
+              )
+            : activeCard ===
+              'petrol'
+            ? fmt(
+                petrol
+              )
+            : activeCard ===
+              'bit'
+            ? fmt(
+                bit
+              )
+            : activeCard ===
+              'hammer'
+            ? fmt(
+                hammer
+              )
+            : activeCard ===
+              'totalEmployees'
+            ? String(
+                employees
+              )
+            : null
+        }
+      />
+    </Box>
   );
-}
+};
+
+export default Dashboard;
