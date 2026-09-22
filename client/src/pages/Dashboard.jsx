@@ -3083,9 +3083,10 @@ const Dashboard = () => {
       0
     );
 
-  // Payment Salary = one-day salary for all employees (monthly salary / 30).
-  const totalDaySalary =
-    totalMonthlySalary / 30;
+  // Worked Salary is taken directly from totalSalary.
+  // totalSalary is calculated from each employee's currentSalary above.
+  // currentSalary already includes worked days, absent deduction, and current-month advances.
+  const totalWorkedSalary = totalSalary;
 
   const totalAbsentDeduction =
     employeeSalaryRows.reduce(
@@ -3945,7 +3946,7 @@ const Dashboard = () => {
                     gap: 0.75,
                   }}
                 >
-                  {/* PAYMENT SALARY / DAY SALARY */}
+                  {/* WORKED SALARY */}
                   <Box>
                     <Typography
                       sx={{
@@ -3954,7 +3955,7 @@ const Dashboard = () => {
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      Payment Salary
+                      Worked Salary
                     </Typography>
 
                     <Typography
@@ -3964,7 +3965,7 @@ const Dashboard = () => {
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      {fmt(totalDaySalary)}
+                      {fmt(totalWorkedSalary)}
                     </Typography>
                   </Box>
 
