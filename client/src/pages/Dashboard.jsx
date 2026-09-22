@@ -3128,8 +3128,18 @@ const Dashboard = () => {
    * currentSalary already has the employee's advances deducted,
    * so add the advances back for the Worked Salary figure.
    */
+  /*
+   * Salary Summary
+   * Worked Salary = salary earned before advances
+   * Advance      = salary advance already paid
+   * Final Salary = Worked Salary - Advance
+   */
   const totalWorkedSalary =
     totalSalary + totalCurrentSalaryAdvance;
+
+  const totalFinalSalary =
+    totalWorkedSalary -
+    totalCurrentSalaryAdvance;
 
   /*
    * Pending salary comes from Attendance & Salary.
@@ -3950,7 +3960,7 @@ const Dashboard = () => {
                   minHeight: 74,
                 }}
               >
-                <Typography
+                                <Typography
                   sx={{
                     color: '#0f172a',
                     fontSize: '0.72rem',
@@ -3958,7 +3968,7 @@ const Dashboard = () => {
                     mb: 0.8,
                   }}
                 >
-                  Payment Summary
+                  Salary Summary
                 </Typography>
 
                 <Box
@@ -3992,38 +4002,11 @@ const Dashboard = () => {
                     </Typography>
                   </Box>
 
-                  {/* CURRENT SALARY */}
+                  {/* ADVANCE */}
                   <Box>
                     <Typography
                       sx={{
-                        color: '#0f172a',
-                        fontSize: '0.6rem',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      Current Salary
-                    </Typography>
-
-                    <Typography
-                      sx={{
-                        color:
-                          totalSalary < 0
-                            ? '#b91c1c'
-                            : '#0f172a',
-                        fontWeight: 800,
-                        fontSize: '0.74rem',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {fmt(totalSalary)}
-                    </Typography>
-                  </Box>
-
-                  {/* SALARY ADVANCE */}
-                  <Box>
-                    <Typography
-                      sx={{
-                        color: '#0f172a',
+                        color: '#b45309',
                         fontSize: '0.6rem',
                         whiteSpace: 'nowrap',
                       }}
@@ -4039,9 +4022,34 @@ const Dashboard = () => {
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      {fmt(
-                        totalCurrentSalaryAdvance
-                      )}
+                      {fmt(totalCurrentSalaryAdvance)}
+                    </Typography>
+                  </Box>
+
+                  {/* FINAL SALARY */}
+                  <Box>
+                    <Typography
+                      sx={{
+                        color: '#0f172a',
+                        fontSize: '0.6rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Final Salary
+                    </Typography>
+
+                    <Typography
+                      sx={{
+                        color:
+                          totalFinalSalary < 0
+                            ? '#b91c1c'
+                            : '#0f172a',
+                        fontWeight: 800,
+                        fontSize: '0.74rem',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {fmt(totalFinalSalary)}
                     </Typography>
                   </Box>
                 </Box>
