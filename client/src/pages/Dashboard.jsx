@@ -4296,7 +4296,7 @@ const Dashboard = () => {
             : activeCard ===
               'pendingAmount'
             ? fmt(
-                salaryPendingAmount
+                pendingAmount
               )
             : activeCard ===
               'discount'
