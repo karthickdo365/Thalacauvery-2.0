@@ -21,7 +21,6 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 const profitLossColumns = [
   { header: 'Month', accessor: 'monthLabel' },
   { header: 'Total Points', accessor: (r) => r.totalPoints ?? 0 },
-  { header: 'Works', accessor: 'worksCount' },
   { header: 'Total Amount', accessor: (r) => r.totalAmount ?? 0 },
   { header: 'Work Revenue', accessor: (r) => r.workRevenue ?? r.revenue },
   { header: 'Material Expense', accessor: (r) => r.materialExpense },
@@ -335,7 +334,6 @@ const Reports = () => {
                       <TableRow key={row.month} hover>
                         <TableCell>{row.monthLabel}</TableCell>
                         <TableCell>{row.totalPoints}</TableCell>
-                        <TableCell>{row.worksCount}</TableCell>
                         <TableCell>{fmtINR(row.totalAmount)}</TableCell>
                         <TableCell>{fmtINR(row.workRevenue ?? row.revenue ?? 0)}</TableCell>
                         <TableCell>{fmtINR(row.materialExpense)}</TableCell>
@@ -359,7 +357,6 @@ const Reports = () => {
                       <TableCell sx={{ fontWeight: 700 }}>
                         {visibleReport.reduce((sum, row) => sum + Number(row.totalPoints ?? 0), 0)}
                       </TableCell>
-                      <TableCell sx={{ fontWeight: 700 }}>{profitLoss.totals.worksCount}</TableCell>
                       <TableCell sx={{ fontWeight: 700 }}>
                         {fmtINR(visibleReport.reduce((sum, row) => sum + Number(row.totalAmount ?? 0), 0))}
                       </TableCell>
