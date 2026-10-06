@@ -20,6 +20,7 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 
 const profitLossColumns = [
   { header: 'Month', accessor: 'monthLabel' },
+  { header: 'Total Points', accessor: (r) => r.totalPoints ?? 0 },
   { header: 'Works', accessor: 'worksCount' },
   { header: 'Work Revenue', accessor: (r) => r.workRevenue ?? r.revenue },
   { header: 'Material Expense', accessor: (r) => r.materialExpense },
@@ -50,6 +51,7 @@ const Reports = () => {
   const [tab, setTab] = useState(0);
   const [year, setYear] = useState(new Date().getFullYear());
   const [profitLoss, setProfitLoss] = useState(null);
+  const [totalPointsByMonth, setTotalPointsByMonth] = useState({});
   const [dailyReport, setDailyReport] = useState(null);
   const [selectedDate, setSelectedDate] = useState(dayjs());
   const [loading, setLoading] = useState(false);
@@ -66,6 +68,40 @@ const Reports = () => {
       toast.error('Failed to load profit/loss report');
     } finally {
       setLoading(false);
+    }
+  }, [year, currentMachine]);
+
+  const fetchTotalPoints = useCallback(async () => {
+    try {
+      const { data } = await api.get('/borewell-points', {
+        params: {
+          limit: 500,
+          machineType: currentMachine,
+        },
+      });
+
+      const points = Array.isArray(data?.points) ? data.points : [];
+
+      const counts = {};
+
+      points.forEach((point) => {
+        if (!point?.date) return;
+
+        const date = new Date(point.date);
+        if (Number.isNaN(date.getTime())) return;
+
+        const pointYear = date.getFullYear();
+        if (pointYear !== Number(year)) return;
+
+        const month = date.getMonth() + 1;
+        const key = `${pointYear}-${String(month).padStart(2, '0')}`;
+
+        counts[key] = (counts[key] || 0) + 1;
+      });
+
+      setTotalPointsByMonth(counts);
+    } catch {
+      setTotalPointsByMonth({});
     }
   }, [year, currentMachine]);
 
@@ -90,12 +126,17 @@ const Reports = () => {
   useEffect(() => {
     if (!currentMachine) return;
 
-    if (tab === 0) fetchProfitLoss();
-    else fetchDailyExpense();
+    if (tab === 0) {
+      fetchProfitLoss();
+      fetchTotalPoints();
+    } else {
+      fetchDailyExpense();
+    }
   }, [
     tab,
     currentMachine,
     fetchProfitLoss,
+    fetchTotalPoints,
     fetchDailyExpense,
   ]);
 
@@ -127,13 +168,23 @@ const Reports = () => {
 
   // Show only months with actual business activity.
   // Months containing only the old blanket salary value are hidden from the report.
-  const visibleReport = profitLoss
-    ? profitLoss.report.filter((r) =>
-        Number(r.worksCount ?? 0) > 0 ||
-        Number(r.workRevenue ?? r.revenue ?? 0) !== 0 ||
-        Number(r.materialExpense ?? 0) !== 0
-      )
+  const reportWithPoints = profitLoss
+    ? profitLoss.report.map((row) => {
+        const key = `${year}-${String(row.month).padStart(2, '0')}`;
+
+        return {
+          ...row,
+          totalPoints: totalPointsByMonth[key] ?? 0,
+        };
+      })
     : [];
+
+  const visibleReport = reportWithPoints.filter((r) =>
+    Number(r.totalPoints ?? 0) > 0 ||
+    Number(r.worksCount ?? 0) > 0 ||
+    Number(r.workRevenue ?? r.revenue ?? 0) !== 0 ||
+    Number(r.materialExpense ?? 0) !== 0
+  );
 
   const chartData = profitLoss ? {
     labels: visibleReport.map((r) => r.monthLabel),
@@ -233,7 +284,11 @@ const Reports = () => {
                   </TextField>
                 </Grid>
                 <Grid item>
-                  <ExportButton data={visibleReport} columns={profitLossColumns} filename={`profit_loss_${year}`} />
+                  <ExportButton
+                    data={visibleReport}
+                    columns={profitLossColumns}
+                    filename={`profit_loss_${year}`}
+                  />
                 </Grid>
               </Grid>
               {chartData && (
@@ -244,7 +299,11 @@ const Reports = () => {
 
           <Card>
             <CardContent>
-              <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: '10px' }}>
+              <TableContainer
+                component={Paper}
+                variant="outlined"
+                sx={{ borderRadius: '10px', overflowX: 'auto' }}
+              >
                 <Table size="small">
                   <TableHead>
                     <TableRow>
@@ -257,6 +316,7 @@ const Reports = () => {
                     {visibleReport.map((row) => (
                       <TableRow key={row.month} hover>
                         <TableCell>{row.monthLabel}</TableCell>
+                        <TableCell>{row.totalPoints}</TableCell>
                         <TableCell>{row.worksCount}</TableCell>
                         <TableCell>{fmtINR(row.workRevenue ?? row.revenue ?? 0)}</TableCell>
                         <TableCell>{fmtINR(row.materialExpense)}</TableCell>
@@ -277,6 +337,9 @@ const Reports = () => {
 
                     <TableRow sx={{ bgcolor: 'action.hover' }}>
                       <TableCell sx={{ fontWeight: 700 }}>Total</TableCell>
+                      <TableCell sx={{ fontWeight: 700 }}>
+                        {visibleReport.reduce((sum, row) => sum + Number(row.totalPoints ?? 0), 0)}
+                      </TableCell>
                       <TableCell sx={{ fontWeight: 700 }}>{profitLoss.totals.worksCount}</TableCell>
                       <TableCell sx={{ fontWeight: 700 }}>
                         {fmtINR(profitLoss.totals.workRevenue ?? profitLoss.totals.revenue ?? 0)}
