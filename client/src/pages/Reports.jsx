@@ -22,6 +22,7 @@ const profitLossColumns = [
   { header: 'Month', accessor: 'monthLabel' },
   { header: 'Total Points', accessor: (r) => r.totalPoints ?? 0 },
   { header: 'Works', accessor: 'worksCount' },
+  { header: 'Total Amount', accessor: (r) => r.totalAmount ?? 0 },
   { header: 'Work Revenue', accessor: (r) => r.workRevenue ?? r.revenue },
   { header: 'Material Expense', accessor: (r) => r.materialExpense },
   { header: 'Salary Expense', accessor: (r) => r.salaryExpense },
@@ -96,7 +97,22 @@ const Reports = () => {
         const month = date.getMonth() + 1;
         const key = `${pointYear}-${String(month).padStart(2, '0')}`;
 
-        counts[key] = (counts[key] || 0) + 1;
+        if (!counts[key]) {
+          counts[key] = {
+            totalPoints: 0,
+            totalAmount: 0,
+          };
+        }
+
+        counts[key].totalPoints += 1;
+
+        // Point amount is the borewell point's total amount.
+        counts[key].totalAmount += Number(
+          point?.totalAmount ??
+          point?.amount ??
+          point?.pointAmount ??
+          0
+        );
       });
 
       setTotalPointsByMonth(counts);
@@ -174,13 +190,15 @@ const Reports = () => {
 
         return {
           ...row,
-          totalPoints: totalPointsByMonth[key] ?? 0,
+          totalPoints: totalPointsByMonth[key]?.totalPoints ?? 0,
+          totalAmount: totalPointsByMonth[key]?.totalAmount ?? 0,
         };
       })
     : [];
 
   const visibleReport = reportWithPoints.filter((r) =>
     Number(r.totalPoints ?? 0) > 0 ||
+    Number(r.totalAmount ?? 0) !== 0 ||
     Number(r.worksCount ?? 0) > 0 ||
     Number(r.workRevenue ?? r.revenue ?? 0) !== 0 ||
     Number(r.materialExpense ?? 0) !== 0
@@ -318,6 +336,7 @@ const Reports = () => {
                         <TableCell>{row.monthLabel}</TableCell>
                         <TableCell>{row.totalPoints}</TableCell>
                         <TableCell>{row.worksCount}</TableCell>
+                        <TableCell>{fmtINR(row.totalAmount)}</TableCell>
                         <TableCell>{fmtINR(row.workRevenue ?? row.revenue ?? 0)}</TableCell>
                         <TableCell>{fmtINR(row.materialExpense)}</TableCell>
                         <TableCell>{fmtINR(row.salaryExpense)}</TableCell>
@@ -341,6 +360,9 @@ const Reports = () => {
                         {visibleReport.reduce((sum, row) => sum + Number(row.totalPoints ?? 0), 0)}
                       </TableCell>
                       <TableCell sx={{ fontWeight: 700 }}>{profitLoss.totals.worksCount}</TableCell>
+                      <TableCell sx={{ fontWeight: 700 }}>
+                        {fmtINR(visibleReport.reduce((sum, row) => sum + Number(row.totalAmount ?? 0), 0))}
+                      </TableCell>
                       <TableCell sx={{ fontWeight: 700 }}>
                         {fmtINR(profitLoss.totals.workRevenue ?? profitLoss.totals.revenue ?? 0)}
                       </TableCell>
