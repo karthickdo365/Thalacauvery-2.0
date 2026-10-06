@@ -31,6 +31,8 @@ import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import WaterDropIcon from '@mui/icons-material/WaterDrop';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
+import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import * as XLSX from 'xlsx';
 
 import { DatePicker } from '@mui/x-date-pickers';
 
@@ -72,6 +74,33 @@ const SERVICE_TYPES = [
 const BIG_PIPES_NO_JI_OUTER = BIG_PIPES.filter(
   ({ rateKey }) => rateKey !== 'jiOuter'
 );
+
+
+// ============================================================
+// PAYMENT HELPERS
+// ============================================================
+
+const getPendingAmount = (point) => {
+  const totalAmount = toNum(point?.totalAmount);
+  const paymentStatus = String(
+    point?.paymentStatus || 'Unpaid'
+  );
+
+  if (paymentStatus === 'Paid') {
+    return 0;
+  }
+
+  if (paymentStatus === 'Unpaid') {
+    return Math.max(0, totalAmount);
+  }
+
+  const paidAmount = toNum(point?.paidAmount);
+
+  return Math.max(
+    0,
+    totalAmount - paidAmount
+  );
+};
 
 
 // ============================================================
@@ -391,6 +420,9 @@ const BorewellBills = () => {
 
   const [agentRates, setAgentRates] =
     useState(null);
+
+  const [isExporting, setIsExporting] =
+    useState(false);
 
 
   // ==========================================================
@@ -827,6 +859,8 @@ const BorewellBills = () => {
                 point?.jiInnerFeet,
                 point?.depthFeet,
                 point?.totalAmount,
+                point?.paidAmount,
+                getPendingAmount(point),
               ];
 
               return searchableValues.some(
@@ -877,6 +911,274 @@ const BorewellBills = () => {
         currentMachine,
       ]
     );
+
+
+  // ==========================================================
+  // EXPORT EXCEL
+  // ==========================================================
+
+  const fetchAllPointsForExport =
+    useCallback(
+      async () => {
+        if (
+          currentMachine !== 'big' &&
+          currentMachine !== 'small'
+        ) {
+          return [];
+        }
+
+        const allPoints = [];
+        let pageNumber = 1;
+        const fetchLimit = 500;
+
+        while (true) {
+          const {
+            data,
+          } = await api.get(
+            '/borewell-points',
+            {
+              params: {
+                search: '',
+                page: pageNumber,
+                limit: fetchLimit,
+                machineType: currentMachine,
+              },
+            }
+          );
+
+          const batch =
+            data?.points ||
+            data?.bills ||
+            [];
+
+          allPoints.push(...batch);
+
+          const serverTotal =
+            Number(data?.total || 0);
+
+          if (
+            batch.length < fetchLimit ||
+            allPoints.length >= serverTotal
+          ) {
+            break;
+          }
+
+          pageNumber += 1;
+        }
+
+        return allPoints;
+      },
+      [currentMachine]
+    );
+
+
+  const handleExportExcel =
+    async () => {
+      setIsExporting(true);
+
+      try {
+        let exportPoints =
+          await fetchAllPointsForExport();
+
+        const trimmedSearch =
+          String(search || '')
+            .trim()
+            .toLowerCase();
+
+        if (trimmedSearch) {
+          const normalize =
+            (value) =>
+              String(value ?? '')
+                .trim()
+                .toLowerCase();
+
+          exportPoints =
+            exportPoints.filter(
+              (point) => {
+                const brokerName =
+                  point?.brokerId?.name ||
+                  point?.brokerName ||
+                  point?.broker?.name ||
+                  '';
+
+                const searchableValues = [
+                  brokerName,
+                  point?.serviceType,
+                  point?.paymentStatus,
+                  point?.date
+                    ? dayjs(point.date).format(
+                        'DD/MM/YYYY'
+                      )
+                    : '',
+                  point?.date
+                    ? dayjs(point.date).format(
+                        'DD-MM-YYYY'
+                      )
+                    : '',
+                  point?.date
+                    ? dayjs(point.date).format(
+                        'YYYY-MM-DD'
+                      )
+                    : '',
+                  point?.outerPipeFeet,
+                  point?.innerPipeFeet,
+                  point?.smallPipeFeet,
+                  point?.plasticOuterFeet,
+                  point?.plasticInnerFeet,
+                  point?.jiInnerFeet,
+                  point?.depthFeet,
+                  point?.totalAmount,
+                  point?.paidAmount,
+                  getPendingAmount(point),
+                ];
+
+                return searchableValues.some(
+                  (value) =>
+                    normalize(value).includes(
+                      trimmedSearch
+                    )
+                );
+              }
+            );
+        }
+
+        const excelRows =
+          exportPoints.map(
+            (point, index) => {
+              const brokerName =
+                point?.brokerId?.name ||
+                point?.brokerName ||
+                point?.broker?.name ||
+                '—';
+
+              return {
+                'S.No':
+                  index + 1,
+
+                Date:
+                  point?.date
+                    ? dayjs(point.date).format(
+                        'DD/MM/YYYY'
+                      )
+                    : '—',
+
+                Broker:
+                  brokerName,
+
+                ...(isBig
+                  ? {
+                      'Outer (ft)':
+                        toNum(
+                          point?.plasticOuterFeet
+                        ) || '',
+                      'Inner (ft)':
+                        toNum(
+                          point?.plasticInnerFeet
+                        ) || '',
+                      'JI (ft)':
+                        toNum(
+                          point?.jiInnerFeet
+                        ) || '',
+                    }
+                  : {
+                      'Outer (ft)':
+                        toNum(
+                          point?.outerPipeFeet
+                        ) || '',
+                      'Inner (ft)':
+                        toNum(
+                          point?.innerPipeFeet
+                        ) || '',
+                      'Small Inner (ft)':
+                        toNum(
+                          point?.smallPipeFeet
+                        ) || '',
+                    }),
+
+                'Depth (ft)':
+                  toNum(point?.depthFeet) || '',
+
+                Type:
+                  point?.serviceType || '—',
+
+                'Total (₹)':
+                  toNum(point?.totalAmount),
+
+                'Pending Amount (₹)':
+                  getPendingAmount(point),
+
+                'Paid Amount (₹)':
+                  point?.paymentStatus === 'Paid'
+                    ? toNum(point?.totalAmount)
+                    : toNum(point?.paidAmount),
+
+                Status:
+                  point?.paymentStatus || 'Unpaid',
+              };
+            }
+          );
+
+        const worksheet =
+          XLSX.utils.json_to_sheet(
+            excelRows
+          );
+
+        worksheet['!cols'] = [
+          { wch: 7 },
+          { wch: 14 },
+          { wch: 24 },
+          { wch: 13 },
+          { wch: 13 },
+          { wch: 16 },
+          { wch: 13 },
+          { wch: 18 },
+          { wch: 15 },
+          { wch: 20 },
+          { wch: 17 },
+          { wch: 14 },
+        ];
+
+        const workbook =
+          XLSX.utils.book_new();
+
+        XLSX.utils.book_append_sheet(
+          workbook,
+          worksheet,
+          'Borewell Bills'
+        );
+
+        const machineFileName =
+          isBig
+            ? 'Big_Machine'
+            : 'Small_Machine';
+
+        const datePart =
+          dayjs().format(
+            'YYYY-MM-DD'
+          );
+
+        XLSX.writeFile(
+          workbook,
+          `Borewell_Bills_${machineFileName}_${datePart}.xlsx`
+        );
+
+        toast.success(
+          `${exportPoints.length} bill(s) exported to Excel`
+        );
+      } catch (error) {
+        console.error(
+          'Excel export failed:',
+          error
+        );
+
+        toast.error(
+          error?.message ||
+          'Failed to export Excel file'
+        );
+      } finally {
+        setIsExporting(false);
+      }
+    };
 
 
   // ==========================================================
@@ -2223,7 +2525,7 @@ const BorewellBills = () => {
             <Grid
               item
               xs={12}
-              sm={6}
+              sm={7}
             >
 
               <TextField
@@ -2261,6 +2563,47 @@ const BorewellBills = () => {
 
             </Grid>
 
+
+            <Grid
+              item
+              xs={12}
+              sm={5}
+              sx={{
+                display: 'flex',
+                justifyContent: {
+                  xs: 'stretch',
+                  sm: 'flex-end',
+                },
+              }}
+            >
+
+              <Button
+                fullWidth
+                sx={{
+                  maxWidth: {
+                    xs: '100%',
+                    sm: 190,
+                  },
+                }}
+                variant="outlined"
+                color="success"
+                startIcon={
+                  <FileDownloadIcon />
+                }
+                onClick={
+                  handleExportExcel
+                }
+                disabled={
+                  isExporting
+                }
+              >
+                {isExporting
+                  ? 'Exporting...'
+                  : 'Export Excel'}
+              </Button>
+
+            </Grid>
+
           </Grid>
 
 
@@ -2277,7 +2620,7 @@ const BorewellBills = () => {
             <Table
               size="small"
               sx={{
-                minWidth: isBig ? 1250 : 1150,
+                minWidth: isBig ? 1400 : 1300,
               }}
             >
               <TableHead>
@@ -2288,18 +2631,19 @@ const BorewellBills = () => {
                     'Broker',
                     ...(isBig
                       ? [
-                          'Outer',
-                          'Inner',
-                          'JI',
+                          'Outer (ft)',
+                          'Inner (ft)',
+                          'JI (ft)',
                         ]
                       : [
-                          'Outer',
-                          'Inner',
-                          'Small Inner',
+                          'Outer (ft)',
+                          'Inner (ft)',
+                          'Small Inner (ft)',
                         ]),
-                    'Depth',
+                    'Depth (ft)',
                     'Type',
                     'Total (₹)',
+                    'Pending Amount (₹)',
                     'Status',
                     'Actions',
                   ].map((header) => (
@@ -2382,7 +2726,7 @@ const BorewellBills = () => {
                           }}
                         >
                           {toNum(point.plasticOuterFeet) > 0
-                            ? `${point.plasticOuterFeet} ft`
+                            ? point.plasticOuterFeet
                             : '—'}
                         </TableCell>
 
@@ -2393,7 +2737,7 @@ const BorewellBills = () => {
                           }}
                         >
                           {toNum(point.plasticInnerFeet) > 0
-                            ? `${point.plasticInnerFeet} ft`
+                            ? point.plasticInnerFeet
                             : '—'}
                         </TableCell>
 
@@ -2404,7 +2748,7 @@ const BorewellBills = () => {
                           }}
                         >
                           {toNum(point.jiInnerFeet) > 0
-                            ? `${point.jiInnerFeet} ft`
+                            ? point.jiInnerFeet
                             : '—'}
                         </TableCell>
                       </>
@@ -2417,7 +2761,7 @@ const BorewellBills = () => {
                           }}
                         >
                           {toNum(point.outerPipeFeet) > 0
-                            ? `${point.outerPipeFeet} ft`
+                            ? point.outerPipeFeet
                             : '—'}
                         </TableCell>
 
@@ -2428,7 +2772,7 @@ const BorewellBills = () => {
                           }}
                         >
                           {toNum(point.innerPipeFeet) > 0
-                            ? `${point.innerPipeFeet} ft`
+                            ? point.innerPipeFeet
                             : '—'}
                         </TableCell>
 
@@ -2439,7 +2783,7 @@ const BorewellBills = () => {
                           }}
                         >
                           {toNum(point.smallPipeFeet) > 0
-                            ? `${point.smallPipeFeet} ft`
+                            ? point.smallPipeFeet
                             : '—'}
                         </TableCell>
                       </>
@@ -2453,7 +2797,7 @@ const BorewellBills = () => {
                       }}
                     >
                       {toNum(point.depthFeet) > 0
-                        ? `${point.depthFeet} ft`
+                        ? point.depthFeet
                         : '—'}
                     </TableCell>
 
@@ -2478,6 +2822,25 @@ const BorewellBills = () => {
                     >
                       {fmtINR(point.totalAmount)}
                     </TableCell>
+
+
+                    {/* PENDING AMOUNT */}
+                    <TableCell
+                      sx={{
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                        color:
+                          getPendingAmount(point) > 0
+                            ? '#dc2626'
+                            : '#16a34a',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {fmtINR(
+                        getPendingAmount(point)
+                      )}
+                    </TableCell>
+
 
                     {/* STATUS */}
                     <TableCell>
