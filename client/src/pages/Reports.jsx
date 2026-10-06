@@ -21,7 +21,7 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 const profitLossColumns = [
   { header: 'Month', accessor: 'monthLabel' },
   { header: 'Works', accessor: 'worksCount' },
-  { header: 'Revenue', accessor: (r) => r.revenue },
+  { header: 'Work Revenue', accessor: (r) => r.workRevenue ?? r.revenue },
   { header: 'Material Expense', accessor: (r) => r.materialExpense },
   { header: 'Salary Expense', accessor: (r) => r.salaryExpense },
   { header: 'Total Expense', accessor: (r) => r.totalExpense },
@@ -128,9 +128,24 @@ const Reports = () => {
   const chartData = profitLoss ? {
     labels: profitLoss.report.map((r) => r.monthLabel),
     datasets: [
-      { label: 'Revenue',  data: profitLoss.report.map((r) => r.revenue),      backgroundColor: NAVY,      borderRadius: 4 },
-      { label: 'Expenses', data: profitLoss.report.map((r) => r.totalExpense), backgroundColor: '#ef4444', borderRadius: 4 },
-      { label: 'Profit',   data: profitLoss.report.map((r) => r.profit),       backgroundColor: TEAL,      borderRadius: 4 },
+      {
+        label: 'Work Revenue',
+        data: profitLoss.report.map((r) => r.workRevenue ?? r.revenue ?? 0),
+        backgroundColor: NAVY,
+        borderRadius: 4,
+      },
+      {
+        label: 'Total Expense',
+        data: profitLoss.report.map((r) => r.totalExpense ?? 0),
+        backgroundColor: '#ef4444',
+        borderRadius: 4,
+      },
+      {
+        label: 'Profit / Loss',
+        data: profitLoss.report.map((r) => r.profit ?? 0),
+        backgroundColor: TEAL,
+        borderRadius: 4,
+      },
     ],
   } : null;
 
@@ -180,6 +195,13 @@ const Reports = () => {
               <SummaryCard label="Total Revenue" value={fmtINR(profitLoss.totals.revenue)} color="secondary.dark" />
             </Grid>
             <Grid item xs={6} sm={3}>
+              <SummaryCard
+                label="Work Revenue"
+                value={fmtINR(profitLoss.totals.workRevenue ?? profitLoss.totals.revenue ?? 0)}
+                color="secondary.dark"
+              />
+            </Grid>
+            <Grid item xs={6} sm={3}>
               <SummaryCard label="Total Expenses" value={fmtINR(profitLoss.totals.totalExpense)} color="error.main" />
             </Grid>
             <Grid item xs={6} sm={3}>
@@ -226,7 +248,7 @@ const Reports = () => {
                       <TableRow key={row.month} hover>
                         <TableCell>{row.monthLabel}</TableCell>
                         <TableCell>{row.worksCount}</TableCell>
-                        <TableCell>{fmtINR(row.revenue)}</TableCell>
+                        <TableCell>{fmtINR(row.workRevenue ?? row.revenue ?? 0)}</TableCell>
                         <TableCell>{fmtINR(row.materialExpense)}</TableCell>
                         <TableCell>{fmtINR(row.salaryExpense)}</TableCell>
                         <TableCell>{fmtINR(row.totalExpense)}</TableCell>
@@ -238,7 +260,9 @@ const Reports = () => {
                     <TableRow sx={{ bgcolor: 'action.hover' }}>
                       <TableCell sx={{ fontWeight: 700 }}>Total</TableCell>
                       <TableCell sx={{ fontWeight: 700 }}>{profitLoss.totals.worksCount}</TableCell>
-                      <TableCell sx={{ fontWeight: 700 }}>{fmtINR(profitLoss.totals.revenue)}</TableCell>
+                      <TableCell sx={{ fontWeight: 700 }}>
+                        {fmtINR(profitLoss.totals.workRevenue ?? profitLoss.totals.revenue ?? 0)}
+                      </TableCell>
                       <TableCell sx={{ fontWeight: 700 }}>{fmtINR(profitLoss.totals.materialExpense)}</TableCell>
                       <TableCell sx={{ fontWeight: 700 }}>{fmtINR(profitLoss.totals.salaryExpense)}</TableCell>
                       <TableCell sx={{ fontWeight: 700 }}>{fmtINR(profitLoss.totals.totalExpense)}</TableCell>
