@@ -125,24 +125,34 @@ const Reports = () => {
     );
   }
 
+  // Show only months with actual business activity.
+  // Months containing only the old blanket salary value are hidden from the report.
+  const visibleReport = profitLoss
+    ? profitLoss.report.filter((r) =>
+        Number(r.worksCount ?? 0) > 0 ||
+        Number(r.workRevenue ?? r.revenue ?? 0) !== 0 ||
+        Number(r.materialExpense ?? 0) !== 0
+      )
+    : [];
+
   const chartData = profitLoss ? {
-    labels: profitLoss.report.map((r) => r.monthLabel),
+    labels: visibleReport.map((r) => r.monthLabel),
     datasets: [
       {
         label: 'Work Revenue',
-        data: profitLoss.report.map((r) => r.workRevenue ?? r.revenue ?? 0),
+        data: visibleReport.map((r) => r.workRevenue ?? r.revenue ?? 0),
         backgroundColor: NAVY,
         borderRadius: 4,
       },
       {
         label: 'Total Expense',
-        data: profitLoss.report.map((r) => r.totalExpense ?? 0),
+        data: visibleReport.map((r) => r.totalExpense ?? 0),
         backgroundColor: '#ef4444',
         borderRadius: 4,
       },
       {
         label: 'Profit / Loss',
-        data: profitLoss.report.map((r) => r.profit ?? 0),
+        data: visibleReport.map((r) => r.profit ?? 0),
         backgroundColor: TEAL,
         borderRadius: 4,
       },
@@ -223,7 +233,7 @@ const Reports = () => {
                   </TextField>
                 </Grid>
                 <Grid item>
-                  <ExportButton data={profitLoss.report} columns={profitLossColumns} filename={`profit_loss_${year}`} />
+                  <ExportButton data={visibleReport} columns={profitLossColumns} filename={`profit_loss_${year}`} />
                 </Grid>
               </Grid>
               {chartData && (
@@ -244,7 +254,7 @@ const Reports = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {profitLoss.report.map((row) => (
+                    {visibleReport.map((row) => (
                       <TableRow key={row.month} hover>
                         <TableCell>{row.monthLabel}</TableCell>
                         <TableCell>{row.worksCount}</TableCell>
@@ -257,6 +267,14 @@ const Reports = () => {
                         </TableCell>
                       </TableRow>
                     ))}
+                    {visibleReport.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={7} align="center" sx={{ color: 'text.secondary', py: 3 }}>
+                          No work activity recorded for this period
+                        </TableCell>
+                      </TableRow>
+                    )}
+
                     <TableRow sx={{ bgcolor: 'action.hover' }}>
                       <TableCell sx={{ fontWeight: 700 }}>Total</TableCell>
                       <TableCell sx={{ fontWeight: 700 }}>{profitLoss.totals.worksCount}</TableCell>
