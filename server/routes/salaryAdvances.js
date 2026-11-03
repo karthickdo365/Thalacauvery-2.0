@@ -21,6 +21,26 @@ const validMachine = (value) =>
     ? value
     : null;
 
+/*
+ * Accepts 'YYYY-MM-DD' or any ISO date string.
+ * Stored at 12:00 UTC so the calendar day stays the
+ * same in every timezone (no off-by-one day shifts).
+ * Returns null when the value is missing or invalid.
+ */
+const parseAdvanceDate = (value) => {
+  if (!value) return null;
+
+  const str = String(value).slice(0, 10);
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    return null;
+  }
+
+  const d = new Date(`${str}T12:00:00.000Z`);
+
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
 
 /*
 =========================================================
@@ -61,21 +81,25 @@ router.get(
       query.machineType = mt;
     }
 
+    /*
+     * Filter by the actual advance date,
+     * not by when the record was created.
+     */
     if (startDate || endDate) {
-      query.createdAt = {};
+      query.advanceDate = {};
 
       if (startDate) {
         const start = new Date(startDate);
         start.setHours(0, 0, 0, 0);
 
-        query.createdAt.$gte = start;
+        query.advanceDate.$gte = start;
       }
 
       if (endDate) {
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
 
-        query.createdAt.$lte = end;
+        query.advanceDate.$lte = end;
       }
     }
 
@@ -99,6 +123,7 @@ router.get(
             'name type salary date phone machineType'
           )
           .sort({
+            advanceDate: -1,
             createdAt: -1,
           })
           .skip(
@@ -175,7 +200,8 @@ Body:
 
 {
   employeeId,
-  month,
+  date,            // 'YYYY-MM-DD' (advanceDate also accepted)
+  month,           // optional, derived from date when date is sent
   machineType,
   advanceAmount,
   paymentMode,
@@ -195,6 +221,7 @@ router.post(
       advanceAmount,
       paymentMode = 'cash',
       notes = '',
+      date,
     } = req.body;
 
     if (!employeeId) {
@@ -226,6 +253,26 @@ router.post(
         success: false,
         message:
           'Advance amount must be greater than zero',
+      });
+    }
+
+
+    /*
+     * Validate the date when one is supplied.
+     * If none is supplied, fall back to today.
+     */
+
+    const incomingDate =
+      date ?? req.body.advanceDate;
+
+    const parsedDate =
+      parseAdvanceDate(incomingDate);
+
+    if (incomingDate && !parsedDate) {
+      return res.status(400).json({
+        success: false,
+        message:
+          'Invalid advance date',
       });
     }
 
@@ -290,26 +337,33 @@ router.post(
 
 
     /*
-     * Month is optional from frontend.
-     * If not supplied, use current month.
+     * advanceDate: the date the user picked (or now).
+     * month: always derived from advanceDate when a date
+     * was sent, so the two can never disagree. Otherwise
+     * use the supplied month, or the current month.
      */
 
-    const currentMonth =
-      new Date()
-        .toISOString()
-        .slice(0, 7);
+    const advanceDate =
+      parsedDate || new Date();
 
-    const advanceMonth =
-      /^\d{4}-\d{2}$/.test(
-        month || ''
-      )
+    const advanceMonth = parsedDate
+      ? advanceDate
+          .toISOString()
+          .slice(0, 7)
+      : /^\d{4}-\d{2}$/.test(
+            month || ''
+          )
         ? month
-        : currentMonth;
+        : advanceDate
+            .toISOString()
+            .slice(0, 7);
 
 
     const record =
       await SalaryAdvance.create({
         employeeId,
+
+        advanceDate,
 
         month:
           advanceMonth,
@@ -462,6 +516,39 @@ router.put(
         String(
           req.body.notes || ''
         ).trim();
+    }
+
+
+    /*
+     * Date change. Runs after the month block above,
+     * so the date always wins and month stays in sync.
+     */
+
+    const incomingDate =
+      req.body.date ??
+      req.body.advanceDate;
+
+    if (incomingDate !== undefined) {
+      const parsed =
+        parseAdvanceDate(
+          incomingDate
+        );
+
+      if (!parsed) {
+        return res.status(400).json({
+          success: false,
+          message:
+            'Invalid advance date',
+        });
+      }
+
+      record.advanceDate =
+        parsed;
+
+      record.month =
+        parsed
+          .toISOString()
+          .slice(0, 7);
     }
 
 
