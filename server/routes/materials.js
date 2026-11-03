@@ -4,7 +4,9 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import Material from '../models/Material.js';
+import Material, {
+  PAYMENT_STATUSES,
+} from '../models/Material.js';
 import {
   protect,
   requireWrite,
@@ -25,140 +27,172 @@ const UPLOAD_DIR = path.join(
   '../uploads/materials'
 );
 
-fs.mkdirSync(
-  UPLOAD_DIR,
-  {
-    recursive: true,
-  }
-);
+fs.mkdirSync(UPLOAD_DIR, {
+  recursive: true,
+});
 
 // ============================================================
 // MULTER
 // ============================================================
 
-const storage =
-  multer.diskStorage({
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, UPLOAD_DIR);
+  },
 
-    destination: (
-      req,
-      file,
-      cb
-    ) => {
-      cb(
-        null,
-        UPLOAD_DIR
+  filename: (req, file, cb) => {
+    const safeName =
+      file.originalname.replace(
+        /[^\w.\-]/g,
+        '_'
       );
-    },
 
-    filename: (
-      req,
-      file,
-      cb
-    ) => {
+    cb(null, `${Date.now()}-${safeName}`);
+  },
+});
 
-      const safeName =
-        file.originalname.replace(
-          /[^\w.\-]/g,
-          '_'
-        );
+const upload = multer({
+  storage,
 
-      cb(
-        null,
-        `${Date.now()}-${safeName}`
+  limits: {
+    fileSize: 10 * 1024 * 1024,
+  },
+
+  fileFilter: (req, file, cb) => {
+    const allowed =
+      /^image\//.test(file.mimetype) ||
+      file.mimetype === 'application/pdf';
+
+    if (!allowed) {
+      return cb(
+        new Error(
+          'Only images and PDF bills are allowed'
+        )
       );
-    },
+    }
 
-  });
-
-const upload =
-  multer({
-
-    storage,
-
-    limits: {
-      fileSize:
-        10 * 1024 * 1024,
-    },
-
-    fileFilter: (
-      req,
-      file,
-      cb
-    ) => {
-
-      const allowed =
-        /^image\//.test(
-          file.mimetype
-        ) ||
-        file.mimetype ===
-          'application/pdf';
-
-      if (!allowed) {
-
-        return cb(
-          new Error(
-            'Only images and PDF bills are allowed'
-          )
-        );
-      }
-
-      cb(
-        null,
-        true
-      );
-    },
-
-  });
+    cb(null, true);
+  },
+});
 
 // ============================================================
 // ROUTER
 // ============================================================
 
-const router =
-  express.Router();
+const router = express.Router();
 
-router.use(
-  protect
-);
+router.use(protect);
 
 // ============================================================
 // HELPERS
 // ============================================================
 
-const log = (
-  req,
-  action,
-  description
-) =>
-  logActivity(
-    req,
-    {
-      action,
-      module:
-        'materials',
-      description,
-    }
-  );
+const log = (req, action, description) =>
+  logActivity(req, {
+    action,
+    module: 'materials',
+    description,
+  });
 
-const isValidMachine = (
-  machineType
-) =>
+const isValidMachine = (machineType) =>
   machineType === 'big' ||
   machineType === 'small';
 
-const getMachine = (
-  machineType
-) => {
-
-  if (
-    !isValidMachine(
-      machineType
-    )
-  ) {
+const getMachine = (machineType) => {
+  if (!isValidMachine(machineType)) {
     return null;
   }
 
   return machineType;
+};
+
+const ALLOWED_TYPES = [
+  'Diesel',
+  'Petrol',
+
+  // Big Machine
+  'Pipe Outer',
+  'Pipe J1',
+
+  // Small Machine
+  'Pipe Inner',
+  'Pipe Small',
+
+  'Pipe',
+  'Bit',
+  'Hammer',
+  'Others',
+];
+
+/*
+ * Same rule the model uses, so the route can validate the
+ * payment before anything is saved.
+ */
+const computeTotal = (source) => {
+  if (source.type === 'Others') {
+    return Number(source.amount) || 0;
+  }
+
+  return (
+    (Number(source.quantity) || 0) *
+    (Number(source.costPerLiter) || 0)
+  );
+};
+
+/*
+ * Turns a status + paid amount + total into the values that
+ * should be stored, or returns { error } when they don't fit.
+ *
+ *   paid    -> paidAmount = total
+ *   unpaid  -> paidAmount = 0
+ *   partial -> 0 < paidAmount < total
+ */
+const resolvePayment = (
+  status,
+  paidAmount,
+  total
+) => {
+  if (!PAYMENT_STATUSES.includes(status)) {
+    return {
+      error:
+        'Payment status must be paid, unpaid or partial',
+    };
+  }
+
+  if (status === 'paid') {
+    return {
+      paymentStatus: 'paid',
+      paidAmount: total,
+    };
+  }
+
+  if (status === 'unpaid') {
+    return {
+      paymentStatus: 'unpaid',
+      paidAmount: 0,
+    };
+  }
+
+  const paid = Number(paidAmount);
+
+  if (!Number.isFinite(paid) || paid <= 0) {
+    return {
+      error:
+        'Paid amount is required for a partial payment',
+    };
+  }
+
+  if (paid >= total) {
+    return {
+      error:
+        'For a partial payment the paid amount must be less than the total. Use Paid if it is fully paid.',
+    };
+  }
+
+  return {
+    paymentStatus: 'partial',
+    paidAmount: paid,
+  };
 };
 
 // ============================================================
@@ -167,174 +201,157 @@ const getMachine = (
 
 router.get(
   '/',
-  asyncHandler(
-    async (
-      req,
-      res
-    ) => {
+  asyncHandler(async (req, res) => {
+    const {
+      search,
+      startDate,
+      endDate,
+      page = 1,
+      limit = 10,
+      machineType,
+      paymentStatus,
+    } = req.query;
 
-      const {
-        search,
-        startDate,
-        endDate,
-        page = 1,
-        limit = 10,
-        machineType,
-      } = req.query;
+    // --------------------------------------------------------
+    // MACHINE VALIDATION
+    // --------------------------------------------------------
 
-      // --------------------------------------------------------
-      // MACHINE VALIDATION
-      // --------------------------------------------------------
+    const machine = getMachine(machineType);
 
-      const machine =
-        getMachine(
-          machineType
-        );
-
-      if (!machine) {
-
-        return res
-          .status(400)
-          .json({
-            success:
-              false,
-            message:
-              'machineType must be either big or small',
-          });
-      }
-
-      // --------------------------------------------------------
-      // QUERY
-      // --------------------------------------------------------
-
-      const query = {
-        machineType:
-          machine,
-      };
-
-      // --------------------------------------------------------
-      // SEARCH
-      // --------------------------------------------------------
-
-      if (search) {
-
-        query.$or = [
-
-          {
-            type: {
-              $regex:
-                search,
-              $options:
-                'i',
-            },
-          },
-
-          {
-            description: {
-              $regex:
-                search,
-              $options:
-                'i',
-            },
-          },
-
-        ];
-      }
-
-      // --------------------------------------------------------
-      // DATE FILTER
-      // --------------------------------------------------------
-
-      if (
-        startDate ||
-        endDate
-      ) {
-
-        query.date = {};
-
-        if (startDate) {
-
-          query.date.$gte =
-            new Date(
-              startDate
-            );
-        }
-
-        if (endDate) {
-
-          query.date.$lte =
-            new Date(
-              endDate
-            );
-        }
-      }
-
-      // --------------------------------------------------------
-      // PAGINATION
-      // --------------------------------------------------------
-
-      const pageNumber =
-        Math.max(
-          Number(page) || 1,
-          1
-        );
-
-      const pageLimit =
-        Math.min(
-          Math.max(
-            Number(limit) ||
-              10,
-            1
-          ),
-          100
-        );
-
-      const skip =
-        (pageNumber - 1) *
-        pageLimit;
-
-      // --------------------------------------------------------
-      // DATABASE
-      // --------------------------------------------------------
-
-      const [
-        total,
-        materials,
-      ] =
-        await Promise.all([
-
-          Material.countDocuments(
-            query
-          ),
-
-          Material.find(
-            query
-          )
-            .sort({
-              date: -1,
-              createdAt:
-                -1,
-            })
-            .skip(skip)
-            .limit(
-              pageLimit
-            )
-            .lean(),
-
-        ]);
-
-      // --------------------------------------------------------
-      // RESPONSE
-      // --------------------------------------------------------
-
-      res.json({
-        success:
-          true,
-        materials,
-        total,
+    if (!machine) {
+      return res.status(400).json({
+        success: false,
+        message:
+          'machineType must be either big or small',
       });
     }
-  )
+
+    // --------------------------------------------------------
+    // QUERY
+    // --------------------------------------------------------
+
+    const query = {
+      machineType: machine,
+    };
+
+    const andConditions = [];
+
+    // --------------------------------------------------------
+    // SEARCH
+    // --------------------------------------------------------
+
+    if (search) {
+      andConditions.push({
+        $or: [
+          {
+            type: {
+              $regex: search,
+              $options: 'i',
+            },
+          },
+          {
+            description: {
+              $regex: search,
+              $options: 'i',
+            },
+          },
+        ],
+      });
+    }
+
+    // --------------------------------------------------------
+    // PAYMENT STATUS FILTER
+    // Older records have no paymentStatus saved yet,
+    // so they are treated as unpaid.
+    // --------------------------------------------------------
+
+    if (paymentStatus) {
+      if (!PAYMENT_STATUSES.includes(paymentStatus)) {
+        return res.status(400).json({
+          success: false,
+          message:
+            'paymentStatus must be paid, unpaid or partial',
+        });
+      }
+
+      if (paymentStatus === 'unpaid') {
+        andConditions.push({
+          $or: [
+            { paymentStatus: 'unpaid' },
+            { paymentStatus: { $exists: false } },
+            { paymentStatus: null },
+          ],
+        });
+      } else {
+        andConditions.push({ paymentStatus });
+      }
+    }
+
+    if (andConditions.length) {
+      query.$and = andConditions;
+    }
+
+    // --------------------------------------------------------
+    // DATE FILTER
+    // --------------------------------------------------------
+
+    if (startDate || endDate) {
+      query.date = {};
+
+      if (startDate) {
+        query.date.$gte = new Date(startDate);
+      }
+
+      if (endDate) {
+        query.date.$lte = new Date(endDate);
+      }
+    }
+
+    // --------------------------------------------------------
+    // PAGINATION
+    // --------------------------------------------------------
+
+    const pageNumber = Math.max(
+      Number(page) || 1,
+      1
+    );
+
+    const pageLimit = Math.min(
+      Math.max(Number(limit) || 10, 1),
+      100
+    );
+
+    const skip =
+      (pageNumber - 1) * pageLimit;
+
+    // --------------------------------------------------------
+    // DATABASE
+    // --------------------------------------------------------
+
+    const [total, materials] =
+      await Promise.all([
+        Material.countDocuments(query),
+
+        Material.find(query)
+          .sort({
+            date: -1,
+            createdAt: -1,
+          })
+          .skip(skip)
+          .limit(pageLimit)
+          .lean(),
+      ]);
+
+    // --------------------------------------------------------
+    // RESPONSE
+    // --------------------------------------------------------
+
+    res.json({
+      success: true,
+      materials,
+      total,
+    });
+  })
 );
 
 // ============================================================
@@ -343,60 +360,38 @@ router.get(
 
 router.get(
   '/:id',
-  asyncHandler(
-    async (
-      req,
-      res
-    ) => {
+  asyncHandler(async (req, res) => {
+    const { machineType } = req.query;
 
-      const {
-        machineType,
-      } = req.query;
+    const machine = getMachine(machineType);
 
-      const machine =
-        getMachine(
-          machineType
-        );
-
-      if (!machine) {
-
-        return res
-          .status(400)
-          .json({
-            success:
-              false,
-            message:
-              'machineType must be either big or small',
-          });
-      }
-
-      const material =
-        await Material.findOne({
-          _id:
-            req.params.id,
-          machineType:
-            machine,
-        }).lean();
-
-      if (!material) {
-
-        return res
-          .status(404)
-          .json({
-            success:
-              false,
-            message:
-              'Material not found for this machine',
-          });
-      }
-
-      res.json({
-        success:
-          true,
-        material,
+    if (!machine) {
+      return res.status(400).json({
+        success: false,
+        message:
+          'machineType must be either big or small',
       });
     }
-  )
+
+    const material =
+      await Material.findOne({
+        _id: req.params.id,
+        machineType: machine,
+      }).lean();
+
+    if (!material) {
+      return res.status(404).json({
+        success: false,
+        message:
+          'Material not found for this machine',
+      });
+    }
+
+    res.json({
+      success: true,
+      material,
+    });
+  })
 );
 
 // ============================================================
@@ -406,135 +401,101 @@ router.get(
 router.post(
   '/',
   requireWrite,
-  upload.single(
-    'billFile'
-  ),
+  upload.single('billFile'),
 
-  asyncHandler(
-    async (
-      req,
-      res
-    ) => {
+  asyncHandler(async (req, res) => {
+    const { machineType } = req.body;
 
-      const {
-        machineType,
-      } = req.body;
+    // --------------------------------------------------------
+    // MACHINE VALIDATION
+    // --------------------------------------------------------
 
-      // --------------------------------------------------------
-      // MACHINE VALIDATION
-      // --------------------------------------------------------
+    const machine = getMachine(machineType);
 
-      const machine =
-        getMachine(
-          machineType
-        );
-
-      if (!machine) {
-
-        return res
-          .status(400)
-          .json({
-            success:
-              false,
-            message:
-              'Valid machineType is required: big or small',
-          });
-      }
-
-      // --------------------------------------------------------
-      // TYPE VALIDATION
-      // --------------------------------------------------------
-
-     const allowedTypes = [
-  'Diesel',
-  'Petrol',
-
-  // Big Machine
-  'Pipe Outer',
-  'Pipe J1',
-
-  // Small Machine
-  'Pipe Inner',
-  'Pipe Small',
-
-  'Pipe',
-  'Bit',
-  'Hammer',
-  'Others',
-];
-
-      if (
-        !allowedTypes.includes(
-          req.body.type
-        )
-      ) {
-
-        return res
-          .status(400)
-          .json({
-            success:
-              false,
-            message:
-              'Invalid material type',
-          });
-      }
-
-      // --------------------------------------------------------
-      // CREATE DATA
-      // --------------------------------------------------------
-
-      const data = {
-        ...req.body,
-
-        machineType:
-          machine,
-
-        createdBy:
-          req.user.name,
-      };
-
-      // --------------------------------------------------------
-      // BILL FILE
-      // --------------------------------------------------------
-
-      if (req.file) {
-
-        data.billFile =
-          `/uploads/materials/${req.file.filename}`;
-      }
-
-      // --------------------------------------------------------
-      // CREATE
-      // --------------------------------------------------------
-
-      const material =
-        await Material.create(
-          data
-        );
-
-      // --------------------------------------------------------
-      // ACTIVITY LOG
-      // --------------------------------------------------------
-
-      log(
-        req,
-        'create',
-        `Added ${machine} machine material: ${material.type} (₹${material.totalPrice})`
-      );
-
-      // --------------------------------------------------------
-      // RESPONSE
-      // --------------------------------------------------------
-
-      res
-        .status(201)
-        .json({
-          success:
-            true,
-          material,
-        });
+    if (!machine) {
+      return res.status(400).json({
+        success: false,
+        message:
+          'Valid machineType is required: big or small',
+      });
     }
-  )
+
+    // --------------------------------------------------------
+    // TYPE VALIDATION
+    // --------------------------------------------------------
+
+    if (!ALLOWED_TYPES.includes(req.body.type)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid material type',
+      });
+    }
+
+    // --------------------------------------------------------
+    // PAYMENT VALIDATION
+    // --------------------------------------------------------
+
+    const payment = resolvePayment(
+      req.body.paymentStatus || 'unpaid',
+      req.body.paidAmount,
+      computeTotal(req.body)
+    );
+
+    if (payment.error) {
+      return res.status(400).json({
+        success: false,
+        message: payment.error,
+      });
+    }
+
+    // --------------------------------------------------------
+    // CREATE DATA
+    // --------------------------------------------------------
+
+    const data = {
+      ...req.body,
+
+      machineType: machine,
+
+      paymentStatus: payment.paymentStatus,
+      paidAmount: payment.paidAmount,
+
+      createdBy: req.user.name,
+    };
+
+    // --------------------------------------------------------
+    // BILL FILE
+    // --------------------------------------------------------
+
+    if (req.file) {
+      data.billFile = `/uploads/materials/${req.file.filename}`;
+    }
+
+    // --------------------------------------------------------
+    // CREATE
+    // --------------------------------------------------------
+
+    const material = await Material.create(data);
+
+    // --------------------------------------------------------
+    // ACTIVITY LOG
+    // --------------------------------------------------------
+
+    log(
+      req,
+      'create',
+      `Added ${machine} machine material: ${material.type} (₹${material.totalPrice}, ${material.paymentStatus})`
+    );
+
+    // --------------------------------------------------------
+    // RESPONSE
+    // --------------------------------------------------------
+
+    res.status(201).json({
+      success: true,
+      material,
+    });
+  })
 );
 
 // ============================================================
@@ -544,157 +505,124 @@ router.post(
 router.put(
   '/:id',
   requireWrite,
-  upload.single(
-    'billFile'
-  ),
+  upload.single('billFile'),
 
-  asyncHandler(
-    async (
-      req,
-      res
-    ) => {
+  asyncHandler(async (req, res) => {
+    const { machineType } = req.body;
 
-      const {
-        machineType,
-      } = req.body;
+    // --------------------------------------------------------
+    // MACHINE VALIDATION
+    // --------------------------------------------------------
 
-      // --------------------------------------------------------
-      // MACHINE VALIDATION
-      // --------------------------------------------------------
+    const machine = getMachine(machineType);
 
-      const machine =
-        getMachine(
-          machineType
-        );
-
-      if (!machine) {
-
-        return res
-          .status(400)
-          .json({
-            success:
-              false,
-            message:
-              'Valid machineType is required: big or small',
-          });
-      }
-
-      // --------------------------------------------------------
-      // FIND MATERIAL
-      // --------------------------------------------------------
-
-      const material =
-        await Material.findOne({
-          _id:
-            req.params.id,
-
-          machineType:
-            machine,
-        });
-
-      if (!material) {
-
-        return res
-          .status(404)
-          .json({
-            success:
-              false,
-            message:
-              'Material not found for this machine',
-          });
-      }
-
-      // --------------------------------------------------------
-      // TYPE VALIDATION
-      // --------------------------------------------------------
-
-     const allowedTypes = [
-  'Diesel',
-  'Petrol',
-
-  // Big Machine
-  'Pipe Outer',
-  'Pipe J1',
-
-  // Small Machine
-  'Pipe Inner',
-  'Pipe Small',
-
-  'Pipe',
-  'Bit',
-  'Hammer',
-  'Others',
-];
-
-      if (
-        req.body.type &&
-        !allowedTypes.includes(
-          req.body.type
-        )
-      ) {
-
-        return res
-          .status(400)
-          .json({
-            success:
-              false,
-            message:
-              'Invalid material type',
-          });
-      }
-
-      // --------------------------------------------------------
-      // UPDATE
-      // --------------------------------------------------------
-
-      Object.assign(
-        material,
-        req.body
-      );
-
-      // Never allow machine type
-      // to be changed accidentally.
-
-      material.machineType =
-        machine;
-
-      // --------------------------------------------------------
-      // BILL FILE
-      // --------------------------------------------------------
-
-      if (req.file) {
-
-        material.billFile =
-          `/uploads/materials/${req.file.filename}`;
-      }
-
-      // --------------------------------------------------------
-      // SAVE
-      // --------------------------------------------------------
-
-      await material.save();
-
-      // --------------------------------------------------------
-      // ACTIVITY LOG
-      // --------------------------------------------------------
-
-      log(
-        req,
-        'update',
-        `Updated ${machine} machine material: ${material.type}`
-      );
-
-      // --------------------------------------------------------
-      // RESPONSE
-      // --------------------------------------------------------
-
-      res.json({
-        success:
-          true,
-        material,
+    if (!machine) {
+      return res.status(400).json({
+        success: false,
+        message:
+          'Valid machineType is required: big or small',
       });
     }
-  )
+
+    // --------------------------------------------------------
+    // FIND MATERIAL
+    // --------------------------------------------------------
+
+    const material =
+      await Material.findOne({
+        _id: req.params.id,
+        machineType: machine,
+      });
+
+    if (!material) {
+      return res.status(404).json({
+        success: false,
+        message:
+          'Material not found for this machine',
+      });
+    }
+
+    // --------------------------------------------------------
+    // TYPE VALIDATION
+    // --------------------------------------------------------
+
+    if (
+      req.body.type &&
+      !ALLOWED_TYPES.includes(req.body.type)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid material type',
+      });
+    }
+
+    // --------------------------------------------------------
+    // UPDATE
+    // --------------------------------------------------------
+
+    Object.assign(material, req.body);
+
+    // Never allow machine type
+    // to be changed accidentally.
+
+    material.machineType = machine;
+
+    // --------------------------------------------------------
+    // PAYMENT VALIDATION
+    // Uses the merged values, so changing the quantity or rate
+    // of a partially paid material is checked against the new
+    // total. A record with no saved status counts as unpaid.
+    // --------------------------------------------------------
+
+    const payment = resolvePayment(
+      material.paymentStatus || 'unpaid',
+      material.paidAmount,
+      computeTotal(material)
+    );
+
+    if (payment.error) {
+      return res.status(400).json({
+        success: false,
+        message: payment.error,
+      });
+    }
+
+    material.paymentStatus = payment.paymentStatus;
+    material.paidAmount = payment.paidAmount;
+
+    // --------------------------------------------------------
+    // BILL FILE
+    // --------------------------------------------------------
+
+    if (req.file) {
+      material.billFile = `/uploads/materials/${req.file.filename}`;
+    }
+
+    // --------------------------------------------------------
+    // SAVE
+    // --------------------------------------------------------
+
+    await material.save();
+
+    // --------------------------------------------------------
+    // ACTIVITY LOG
+    // --------------------------------------------------------
+
+    log(
+      req,
+      'update',
+      `Updated ${machine} machine material: ${material.type} (${material.paymentStatus})`
+    );
+
+    // --------------------------------------------------------
+    // RESPONSE
+    // --------------------------------------------------------
+
+    res.json({
+      success: true,
+      material,
+    });
+  })
 );
 
 // ============================================================
@@ -705,86 +633,60 @@ router.delete(
   '/:id',
   requireWrite,
 
-  asyncHandler(
-    async (
-      req,
-      res
-    ) => {
+  asyncHandler(async (req, res) => {
+    const { machineType } = req.query;
 
-      const {
-        machineType,
-      } = req.query;
+    // --------------------------------------------------------
+    // MACHINE VALIDATION
+    // --------------------------------------------------------
 
-      // --------------------------------------------------------
-      // MACHINE VALIDATION
-      // --------------------------------------------------------
+    const machine = getMachine(machineType);
 
-      const machine =
-        getMachine(
-          machineType
-        );
-
-      if (!machine) {
-
-        return res
-          .status(400)
-          .json({
-            success:
-              false,
-            message:
-              'machineType must be either big or small',
-          });
-      }
-
-      // --------------------------------------------------------
-      // DELETE
-      // --------------------------------------------------------
-
-      const material =
-        await Material.findOneAndDelete(
-          {
-            _id:
-              req.params.id,
-
-            machineType:
-              machine,
-          }
-        );
-
-      if (!material) {
-
-        return res
-          .status(404)
-          .json({
-            success:
-              false,
-            message:
-              'Material not found for this machine',
-          });
-      }
-
-      // --------------------------------------------------------
-      // ACTIVITY LOG
-      // --------------------------------------------------------
-
-      log(
-        req,
-        'delete',
-        `Deleted ${machine} machine material: ${material.type}`
-      );
-
-      // --------------------------------------------------------
-      // RESPONSE
-      // --------------------------------------------------------
-
-      res.json({
-        success:
-          true,
+    if (!machine) {
+      return res.status(400).json({
+        success: false,
         message:
-          'Deleted successfully',
+          'machineType must be either big or small',
       });
     }
-  )
+
+    // --------------------------------------------------------
+    // DELETE
+    // --------------------------------------------------------
+
+    const material =
+      await Material.findOneAndDelete({
+        _id: req.params.id,
+        machineType: machine,
+      });
+
+    if (!material) {
+      return res.status(404).json({
+        success: false,
+        message:
+          'Material not found for this machine',
+      });
+    }
+
+    // --------------------------------------------------------
+    // ACTIVITY LOG
+    // --------------------------------------------------------
+
+    log(
+      req,
+      'delete',
+      `Deleted ${machine} machine material: ${material.type}`
+    );
+
+    // --------------------------------------------------------
+    // RESPONSE
+    // --------------------------------------------------------
+
+    res.json({
+      success: true,
+      message: 'Deleted successfully',
+    });
+  })
 );
 
 // ============================================================
