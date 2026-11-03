@@ -51,14 +51,51 @@ import { fmtINR } from '../utils/constants';
 
 
 // ============================================================
+// PAYMENT STATUS HELPERS
+// ============================================================
+
+const PAYMENT_OPTIONS = [
+  { value: 'paid', label: 'Paid' },
+  { value: 'unpaid', label: 'Unpaid' },
+  { value: 'partial', label: 'Partial' },
+];
+
+const STATUS_COLOR = {
+  paid: 'success',
+  unpaid: 'error',
+  partial: 'warning',
+};
+
+const STATUS_LABEL = {
+  paid: 'Paid',
+  unpaid: 'Unpaid',
+  partial: 'Partial',
+};
+
+// Older records have no saved status, so they count as unpaid.
+const getStatus = (m) => m?.paymentStatus || 'unpaid';
+
+const getTotal = (m) =>
+  Number(m?.type === 'Others' ? m?.amount : m?.totalPrice) || 0;
+
+const getPaid = (m) => {
+  const status = getStatus(m);
+  if (status === 'paid') return getTotal(m);
+  if (status === 'partial') return Number(m?.paidAmount) || 0;
+  return 0;
+};
+
+const getBalance = (m) => Math.max(getTotal(m) - getPaid(m), 0);
+
+
+// ============================================================
 // EXPORT COLUMNS
 // ============================================================
 
 const exportColumns = [
   {
     header: 'Date',
-    accessor: (m) =>
-      dayjs(m.date).format('DD/MM/YYYY'),
+    accessor: (m) => dayjs(m.date).format('DD/MM/YYYY'),
   },
   {
     header: 'Type',
@@ -66,8 +103,7 @@ const exportColumns = [
   },
   {
     header: 'Description',
-    accessor: (m) =>
-      m.description || '',
+    accessor: (m) => m.description || '',
   },
   {
     header: 'Quantity',
@@ -85,6 +121,18 @@ const exportColumns = [
     header: 'Amount',
     accessor: 'amount',
   },
+  {
+    header: 'Payment Status',
+    accessor: (m) => STATUS_LABEL[getStatus(m)],
+  },
+  {
+    header: 'Paid',
+    accessor: (m) => getPaid(m),
+  },
+  {
+    header: 'Balance',
+    accessor: (m) => getBalance(m),
+  },
 ];
 
 
@@ -99,6 +147,8 @@ const getDefaultValues = () => ({
   costPerLiter: '',
   amount: '',
   description: '',
+  paymentStatus: 'unpaid',
+  paidAmount: '',
 });
 
 
@@ -147,7 +197,6 @@ const Materials = () => {
 
   const { currentMachine } = useMachine();
 
-
   const machineLabel =
     currentMachine === 'big'
       ? 'Big Machine'
@@ -163,47 +212,29 @@ const Materials = () => {
   // STATE
   // ==========================================================
 
-  const [materials, setMaterials] =
-    useState([]);
-
-  const [total, setTotal] =
-    useState(0);
-
-  const [page, setPage] =
-    useState(0);
-
-  const [rowsPerPage, setRowsPerPage] =
-    useState(10);
-
-  const [search, setSearch] =
-    useState('');
-
-  const [startDate, setStartDate] =
-    useState(null);
-
-  const [endDate, setEndDate] =
-    useState(null);
-
-  const [editId, setEditId] =
-    useState(null);
-
-  const [deleteDialog, setDeleteDialog] =
-    useState(null);
-
-  const [billFile, setBillFile] =
-    useState(null);
+  const [materials, setMaterials] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [startDate, setStartDate] = useState(null);
+  const [endDate, setEndDate] = useState(null);
+  const [editId, setEditId] = useState(null);
+  const [deleteDialog, setDeleteDialog] = useState(null);
+  const [billFile, setBillFile] = useState(null);
 
   // Bill preview popup state.
   // The bill is loaded as a Blob through the authenticated API,
   // then displayed inside this page instead of opening another tab.
-  const [billPreview, setBillPreview] =
-    useState({
-      open: false,
-      url: '',
-      type: '',
-      name: '',
-      loading: false,
-    });
+  const [billPreview, setBillPreview] = useState({
+    open: false,
+    url: '',
+    type: '',
+    name: '',
+    loading: false,
+    error: '',
+  });
 
 
   // ==========================================================
@@ -217,8 +248,7 @@ const Materials = () => {
     watch,
     control,
   } = useForm({
-    defaultValues:
-      getDefaultValues(),
+    defaultValues: getDefaultValues(),
   });
 
 
@@ -226,21 +256,15 @@ const Materials = () => {
   // WATCH VALUES
   // ==========================================================
 
-  const quantity =
-    watch('quantity');
+  const quantity = watch('quantity');
+  const costPerLiter = watch('costPerLiter');
+  const amount = watch('amount');
+  const selectedType = watch('type');
+  const selectedPaymentStatus = watch('paymentStatus');
+  const watchedPaidAmount = watch('paidAmount');
 
-  const costPerLiter =
-    watch('costPerLiter');
-
-  const amount =
-    watch('amount');
-
-  const selectedType =
-    watch('type');
-
-
-  const isOthers =
-    selectedType === 'Others';
+  const isOthers = selectedType === 'Others';
+  const isPartial = selectedPaymentStatus === 'partial';
 
 
   // ==========================================================
@@ -251,112 +275,88 @@ const Materials = () => {
     (Number(quantity) || 0) *
     (Number(costPerLiter) || 0);
 
+  const othersTotal = Number(amount) || 0;
 
-  const othersTotal =
-    Number(amount) || 0;
+  const totalPrice = isOthers ? othersTotal : normalTotal;
 
-
-  const totalPrice =
-    isOthers
-      ? othersTotal
-      : normalTotal;
+  const formBalance = Math.max(
+    totalPrice - (Number(watchedPaidAmount) || 0),
+    0
+  );
 
 
   // ==========================================================
   // FETCH MATERIALS
   // ==========================================================
 
-  const fetchMaterials =
-    useCallback(
-      async () => {
+  const fetchMaterials = useCallback(
+    async () => {
 
-        if (
-          currentMachine !== 'big' &&
-          currentMachine !== 'small'
-        ) {
+      if (
+        currentMachine !== 'big' &&
+        currentMachine !== 'small'
+      ) {
+        setMaterials([]);
+        setTotal(0);
+        return;
+      }
 
-          setMaterials([]);
-          setTotal(0);
+      try {
 
-          return;
+        const params = {
+          search,
+          page: page + 1,
+          limit: rowsPerPage,
+
+          // IMPORTANT:
+          // Only current machine.
+          machineType: currentMachine,
+        };
+
+        if (statusFilter) {
+          params.paymentStatus = statusFilter;
         }
 
-
-        try {
-
-          const params = {
-            search,
-            page: page + 1,
-            limit: rowsPerPage,
-
-            // IMPORTANT:
-            // Only current machine.
-            machineType:
-              currentMachine,
-          };
-
-
-          if (startDate) {
-
-            params.startDate =
-              startDate
-                .startOf('day')
-                .toISOString();
-
-          }
-
-
-          if (endDate) {
-
-            params.endDate =
-              endDate
-                .endOf('day')
-                .toISOString();
-
-          }
-
-
-          const { data } =
-            await api.get(
-              '/materials',
-              {
-                params,
-              }
-            );
-
-
-          setMaterials(
-            data.materials || []
-          );
-
-          setTotal(
-            data.total || 0
-          );
-
-        } catch (error) {
-
-          console.error(
-            'Fetch materials error:',
-            error
-          );
-
-          toast.error(
-            error.response?.data?.message ||
-            'Failed to fetch materials'
-          );
-
+        if (startDate) {
+          params.startDate =
+            startDate.startOf('day').toISOString();
         }
 
-      },
-      [
-        currentMachine,
-        search,
-        page,
-        rowsPerPage,
-        startDate,
-        endDate,
-      ]
-    );
+        if (endDate) {
+          params.endDate =
+            endDate.endOf('day').toISOString();
+        }
+
+        const { data } = await api.get(
+          '/materials',
+          { params }
+        );
+
+        setMaterials(data.materials || []);
+        setTotal(data.total || 0);
+
+      } catch (error) {
+
+        console.error('Fetch materials error:', error);
+
+        toast.error(
+          error.response?.data?.message ||
+          'Failed to fetch materials'
+        );
+
+      }
+
+    },
+    [
+      currentMachine,
+      search,
+      statusFilter,
+      page,
+      rowsPerPage,
+      startDate,
+      endDate,
+    ]
+  );
 
 
   // ==========================================================
@@ -364,12 +364,8 @@ const Materials = () => {
   // ==========================================================
 
   useEffect(() => {
-
     fetchMaterials();
-
-  }, [
-    fetchMaterials,
-  ]);
+  }, [fetchMaterials]);
 
 
   // ==========================================================
@@ -377,19 +373,11 @@ const Materials = () => {
   // ==========================================================
 
   useEffect(() => {
-
-    reset(
-      getDefaultValues()
-    );
-
+    reset(getDefaultValues());
     setEditId(null);
     setBillFile(null);
     setPage(0);
-
-  }, [
-    currentMachine,
-    reset,
-  ]);
+  }, [currentMachine, reset]);
 
 
   // ==========================================================
@@ -397,27 +385,15 @@ const Materials = () => {
   // ==========================================================
 
   useEffect(() => {
-
     return () => {
-
-      if (
-        billPreview.url
-      ) {
-
+      if (billPreview.url) {
         try {
-
-          URL.revokeObjectURL(
-            billPreview.url
-          );
-
+          URL.revokeObjectURL(billPreview.url);
         } catch {
           // Ignore cleanup errors.
         }
-
       }
-
     };
-
   }, [billPreview.url]);
 
 
@@ -425,254 +401,189 @@ const Materials = () => {
   // SUBMIT
   // ==========================================================
 
-  const onSubmit =
-    async (formData) => {
+  const onSubmit = async (formData) => {
 
-      if (
-        currentMachine !== 'big' &&
-        currentMachine !== 'small'
-      ) {
+    if (
+      currentMachine !== 'big' &&
+      currentMachine !== 'small'
+    ) {
+      toast.error('Please select a machine first');
+      return;
+    }
 
-        toast.error(
-          'Please select a machine first'
-        );
+    // ----------------------------------------------------------
+    // PAYMENT VALIDATION
+    // ----------------------------------------------------------
 
+    const status = formData.paymentStatus || 'unpaid';
+
+    const currentTotal =
+      formData.type === 'Others'
+        ? Number(formData.amount) || 0
+        : (Number(formData.quantity) || 0) *
+          (Number(formData.costPerLiter) || 0);
+
+    if (status === 'partial') {
+
+      const paid = Number(formData.paidAmount);
+
+      if (!paid || paid <= 0) {
+        toast.error('Enter the paid amount for a partial payment');
         return;
       }
 
-
-      try {
-
-        const form =
-          new FormData();
-
-
-        // ------------------------------------------------------
-        // DATE
-        // ------------------------------------------------------
-
-        form.append(
-          'date',
-          formData.date
-            ?.toISOString?.() ||
-          formData.date
+      if (paid >= currentTotal) {
+        toast.error(
+          'Paid amount must be less than the total. Choose Paid if it is fully paid.'
         );
+        return;
+      }
 
+    }
 
-        // ------------------------------------------------------
-        // TYPE
-        // ------------------------------------------------------
+    try {
 
-        form.append(
-          'type',
-          formData.type
-        );
+      const form = new FormData();
 
+      // ------------------------------------------------------
+      // DATE
+      // ------------------------------------------------------
 
-        // ------------------------------------------------------
-        // MACHINE
-        // NOT SHOWN IN UI.
-        // Automatically saved.
-        // ------------------------------------------------------
+      form.append(
+        'date',
+        formData.date?.toISOString?.() || formData.date
+      );
 
-        form.append(
-          'machineType',
-          currentMachine
-        );
+      // ------------------------------------------------------
+      // TYPE
+      // ------------------------------------------------------
 
+      form.append('type', formData.type);
 
-        // ------------------------------------------------------
-        // OTHERS
-        // ------------------------------------------------------
+      // ------------------------------------------------------
+      // MACHINE
+      // NOT SHOWN IN UI.
+      // Automatically saved.
+      // ------------------------------------------------------
+
+      form.append('machineType', currentMachine);
+
+      // ------------------------------------------------------
+      // PAYMENT
+      // ------------------------------------------------------
+
+      form.append('paymentStatus', status);
+
+      form.append(
+        'paidAmount',
+        String(
+          status === 'partial'
+            ? Number(formData.paidAmount) || 0
+            : 0
+        )
+      );
+
+      // ------------------------------------------------------
+      // OTHERS
+      // ------------------------------------------------------
+
+      if (formData.type === 'Others') {
+
+        if (!formData.description?.trim()) {
+          toast.error('Description is required');
+          return;
+        }
 
         if (
-          formData.type === 'Others'
+          formData.amount === '' ||
+          formData.amount === null ||
+          formData.amount === undefined
         ) {
-
-          if (
-            !formData.description?.trim()
-          ) {
-
-            toast.error(
-              'Description is required'
-            );
-
-            return;
-          }
-
-
-          if (
-            formData.amount === '' ||
-            formData.amount === null ||
-            formData.amount === undefined
-          ) {
-
-            toast.error(
-              'Amount is required'
-            );
-
-            return;
-          }
-
-
-          form.append(
-            'description',
-            formData.description.trim()
-          );
-
-
-          form.append(
-            'amount',
-            String(
-              Number(formData.amount) || 0
-            )
-          );
-
-
-          form.append(
-            'totalPrice',
-            String(
-              Number(formData.amount) || 0
-            )
-          );
-
+          toast.error('Amount is required');
+          return;
         }
 
-
-        // ------------------------------------------------------
-        // NORMAL TYPES
-        // ------------------------------------------------------
-
-        else {
-
-          form.append(
-            'quantity',
-            String(
-              Number(formData.quantity) || 0
-            )
-          );
-
-
-          form.append(
-            'costPerLiter',
-            String(
-              Number(formData.costPerLiter) || 0
-            )
-          );
-
-
-          form.append(
-            'totalPrice',
-            String(
-              (
-                Number(formData.quantity) || 0
-              ) *
-              (
-                Number(formData.costPerLiter) || 0
-              )
-            )
-          );
-
-
-          // Clear Others fields
-          form.append(
-            'description',
-            ''
-          );
-
-          form.append(
-            'amount',
-            '0'
-          );
-
-        }
-
-
-        // ------------------------------------------------------
-        // BILL
-        // ------------------------------------------------------
-
-        if (billFile) {
-
-          form.append(
-            'billFile',
-            billFile
-          );
-
-        }
-
-
-        // ------------------------------------------------------
-        // UPDATE
-        // ------------------------------------------------------
-
-        if (editId) {
-
-          await api.put(
-            `/materials/${editId}`,
-            form
-          );
-
-
-          toast.success(
-            `${machineLabel} material updated`
-          );
-
-        }
-
-
-        // ------------------------------------------------------
-        // CREATE
-        // ------------------------------------------------------
-
-        else {
-
-          await api.post(
-            '/materials',
-            form
-          );
-
-
-          toast.success(
-            `${machineLabel} material added`
-          );
-
-        }
-
-
-        // ------------------------------------------------------
-        // RESET
-        // ------------------------------------------------------
-
-        reset(
-          getDefaultValues()
-        );
-
-        setEditId(null);
-        setBillFile(null);
-
-
-        // ------------------------------------------------------
-        // REFRESH
-        // ------------------------------------------------------
-
-        fetchMaterials();
-
-      } catch (error) {
-
-        console.error(
-          'Save material error:',
-          error
-        );
-
-        toast.error(
-          error.response?.data?.message ||
-          'Operation failed'
-        );
+        form.append('description', formData.description.trim());
+        form.append('amount', String(Number(formData.amount) || 0));
+        form.append('totalPrice', String(Number(formData.amount) || 0));
 
       }
 
-    };
+      // ------------------------------------------------------
+      // NORMAL TYPES
+      // ------------------------------------------------------
+
+      else {
+
+        form.append('quantity', String(Number(formData.quantity) || 0));
+        form.append('costPerLiter', String(Number(formData.costPerLiter) || 0));
+        form.append('totalPrice', String(currentTotal));
+
+        // Clear Others fields
+        form.append('description', '');
+        form.append('amount', '0');
+
+      }
+
+      // ------------------------------------------------------
+      // BILL
+      // ------------------------------------------------------
+
+      if (billFile) {
+        form.append('billFile', billFile);
+      }
+
+      // ------------------------------------------------------
+      // UPDATE
+      // ------------------------------------------------------
+
+      if (editId) {
+
+        await api.put(`/materials/${editId}`, form);
+
+        toast.success(`${machineLabel} material updated`);
+
+      }
+
+      // ------------------------------------------------------
+      // CREATE
+      // ------------------------------------------------------
+
+      else {
+
+        await api.post('/materials', form);
+
+        toast.success(`${machineLabel} material added`);
+
+      }
+
+      // ------------------------------------------------------
+      // RESET
+      // ------------------------------------------------------
+
+      reset(getDefaultValues());
+      setEditId(null);
+      setBillFile(null);
+
+      // ------------------------------------------------------
+      // REFRESH
+      // ------------------------------------------------------
+
+      fetchMaterials();
+
+    } catch (error) {
+
+      console.error('Save material error:', error);
+
+      toast.error(
+        error.response?.data?.message ||
+        error.message ||
+        'Operation failed'
+      );
+
+    }
+
+  };
 
 
   // ==========================================================
@@ -684,453 +595,308 @@ const Materials = () => {
   // response.data directly. Therefore api.get(..., {
   // responseType: 'blob'
   // }) returns the Blob itself, NOT the Axios response object.
-  //
-  // The old code tried to use response.data again, which produced
-  // an empty/invalid Blob and caused the preview to fail.
   // ==========================================================
 
-  const handleViewBill =
-    async (material) => {
+  const handleViewBill = async (material) => {
 
-      if (!material?.billFile) {
+    if (!material?.billFile) {
+      toast.error('Bill is not available');
+      return;
+    }
 
-        toast.error(
-          'Bill is not available'
+    const filename =
+      String(material.billFile)
+        .split('/')
+        .filter(Boolean)
+        .pop();
+
+    if (!filename) {
+      toast.error('Invalid bill filename');
+      return;
+    }
+
+    // Revoke any previous preview URL before creating another one.
+    if (billPreview.url) {
+      try {
+        URL.revokeObjectURL(billPreview.url);
+      } catch {
+        // Ignore cleanup errors.
+      }
+    }
+
+    setBillPreview({
+      open: true,
+      url: '',
+      type: '',
+      name: filename,
+      loading: true,
+      error: '',
+    });
+
+    try {
+
+      const response = await api.get(
+        `/materials/bill/${encodeURIComponent(filename)}`,
+        { responseType: 'blob' }
+      );
+
+      // ------------------------------------------------------
+      // api.js returns response.data directly.
+      // In this request, response is therefore already a Blob.
+      // ------------------------------------------------------
+
+      let blob;
+
+      if (response instanceof Blob) {
+
+        blob = response;
+
+      } else if (response?.data instanceof Blob) {
+
+        // Defensive support if the Axios interceptor changes later.
+        blob = response.data;
+
+      } else {
+
+        // Defensive support for ArrayBuffer-like responses.
+        blob = new Blob(
+          [response],
+          {
+            type:
+              response?.type ||
+              'application/octet-stream',
+          }
         );
 
-        return;
       }
 
-      const filename =
-        String(
-          material.billFile
-        )
-          .split('/')
-          .filter(Boolean)
-          .pop();
+      // ------------------------------------------------------
+      // CONTENT TYPE
+      // ------------------------------------------------------
 
-      if (!filename) {
+      let contentType = blob.type || '';
 
-        toast.error(
-          'Invalid bill filename'
-        );
+      // Some servers/proxies can return an empty Blob MIME type.
+      // Fall back to the filename extension.
+      if (
+        !contentType ||
+        contentType === 'application/octet-stream'
+      ) {
 
-        return;
+        const lowerName = filename.toLowerCase();
+
+        if (lowerName.endsWith('.pdf')) {
+          contentType = 'application/pdf';
+        } else if (
+          lowerName.endsWith('.jpg') ||
+          lowerName.endsWith('.jpeg')
+        ) {
+          contentType = 'image/jpeg';
+        } else if (lowerName.endsWith('.png')) {
+          contentType = 'image/png';
+        } else if (lowerName.endsWith('.gif')) {
+          contentType = 'image/gif';
+        } else if (lowerName.endsWith('.webp')) {
+          contentType = 'image/webp';
+        }
+
       }
 
-      // Revoke any previous preview URL before creating another one.
-      if (billPreview.url) {
+      // Re-wrap the Blob with the correct MIME type if necessary.
+      if (contentType && blob.type !== contentType) {
+        blob = new Blob([blob], { type: contentType });
+      }
+
+      const blobUrl = URL.createObjectURL(blob);
+
+      setBillPreview({
+        open: true,
+        url: blobUrl,
+        type: contentType || 'application/octet-stream',
+        name: filename,
+        loading: false,
+        error: '',
+      });
+
+    } catch (error) {
+
+      console.error('View bill error:', error);
+
+      let message = 'The bill file could not be loaded.';
+
+      // api.js converts Axios errors into:
+      // { message, status, data }
+      if (error?.data instanceof Blob) {
 
         try {
 
-          URL.revokeObjectURL(
-            billPreview.url
-          );
+          const text = await error.data.text();
+
+          if (text) {
+
+            try {
+
+              const parsed = JSON.parse(text);
+              message = parsed.message || message;
+
+            } catch {
+
+              if (text.length < 300) {
+                message = text;
+              }
+
+            }
+
+          }
 
         } catch {
-          // Ignore cleanup errors.
+          // Keep default message.
         }
+
+      } else {
+
+        message =
+          error?.message ||
+          error?.response?.data?.message ||
+          message;
 
       }
 
       setBillPreview({
         open: true,
         url: '',
-        type: '',
+        type: 'error',
         name: filename,
-        loading: true,
-        error: '',
+        loading: false,
+        error: message,
       });
 
-      try {
+      toast.error(message);
 
-        const response =
-          await api.get(
-            `/materials/bill/${encodeURIComponent(filename)}`,
-            {
-              responseType: 'blob',
-            }
-          );
+    }
 
-        // ------------------------------------------------------
-        // api.js returns response.data directly.
-        // In this request, response is therefore already a Blob.
-        // ------------------------------------------------------
-
-        let blob;
-
-        if (
-          response instanceof Blob
-        ) {
-
-          blob = response;
-
-        }
-        else if (
-          response?.data instanceof Blob
-        ) {
-
-          // Defensive support if the Axios interceptor changes later.
-          blob = response.data;
-
-        }
-        else {
-
-          // Defensive support for ArrayBuffer-like responses.
-          blob =
-            new Blob(
-              [response],
-              {
-                type:
-                  response?.type ||
-                  'application/octet-stream',
-              }
-            );
-
-        }
-
-        // ------------------------------------------------------
-        // CONTENT TYPE
-        // ------------------------------------------------------
-
-        let contentType =
-          blob.type ||
-          '';
-
-        // Some servers/proxies can return an empty Blob MIME type.
-        // Fall back to the filename extension.
-        if (
-          !contentType ||
-          contentType ===
-            'application/octet-stream'
-        ) {
-
-          const lowerName =
-            filename.toLowerCase();
-
-          if (
-            lowerName.endsWith('.pdf')
-          ) {
-
-            contentType =
-              'application/pdf';
-
-          }
-          else if (
-            lowerName.endsWith('.jpg') ||
-            lowerName.endsWith('.jpeg')
-          ) {
-
-            contentType =
-              'image/jpeg';
-
-          }
-          else if (
-            lowerName.endsWith('.png')
-          ) {
-
-            contentType =
-              'image/png';
-
-          }
-          else if (
-            lowerName.endsWith('.gif')
-          ) {
-
-            contentType =
-              'image/gif';
-
-          }
-          else if (
-            lowerName.endsWith('.webp')
-          ) {
-
-            contentType =
-              'image/webp';
-
-          }
-
-        }
-
-        // Re-wrap the Blob with the correct MIME type if necessary.
-        if (
-          contentType &&
-          blob.type !== contentType
-        ) {
-
-          blob =
-            new Blob(
-              [blob],
-              {
-                type: contentType,
-              }
-            );
-
-        }
-
-        const blobUrl =
-          URL.createObjectURL(
-            blob
-          );
-
-        setBillPreview({
-          open: true,
-          url: blobUrl,
-          type:
-            contentType ||
-            'application/octet-stream',
-          name: filename,
-          loading: false,
-          error: '',
-        });
-
-      } catch (error) {
-
-        console.error(
-          'View bill error:',
-          error
-        );
-
-        let message =
-          'The bill file could not be loaded.';
-
-        // api.js converts Axios errors into:
-        // { message, status, data }
-        if (
-          error?.data instanceof Blob
-        ) {
-
-          try {
-
-            const text =
-              await error.data.text();
-
-            if (text) {
-
-              try {
-
-                const parsed =
-                  JSON.parse(text);
-
-                message =
-                  parsed.message ||
-                  message;
-
-              } catch {
-
-                if (
-                  text.length < 300
-                ) {
-
-                  message = text;
-
-                }
-
-              }
-
-            }
-
-          } catch {
-            // Keep default message.
-          }
-
-        }
-        else {
-
-          message =
-            error?.message ||
-            error?.response?.data?.message ||
-            message;
-
-        }
-
-        setBillPreview({
-          open: true,
-          url: '',
-          type: 'error',
-          name: filename,
-          loading: false,
-          error: message,
-        });
-
-        toast.error(
-          message
-        );
-
-      }
-
-    };
+  };
 
 
   // ==========================================================
   // CLOSE BILL POPUP
   // ==========================================================
 
-  const handleCloseBill =
-    () => {
+  const handleCloseBill = () => {
 
-      if (
-        billPreview.url
-      ) {
-
-        try {
-
-          URL.revokeObjectURL(
-            billPreview.url
-          );
-
-        } catch {
-          // Ignore cleanup errors.
-        }
-
+    if (billPreview.url) {
+      try {
+        URL.revokeObjectURL(billPreview.url);
+      } catch {
+        // Ignore cleanup errors.
       }
+    }
 
-      setBillPreview({
-        open: false,
-        url: '',
-        type: '',
-        name: '',
-        loading: false,
-        error: '',
-      });
+    setBillPreview({
+      open: false,
+      url: '',
+      type: '',
+      name: '',
+      loading: false,
+      error: '',
+    });
 
-    };
+  };
 
 
   // ==========================================================
   // EDIT
   // ==========================================================
 
-  const handleEdit =
-    (material) => {
+  const handleEdit = (material) => {
 
-      // Do not allow another machine's data.
-      if (
-        material.machineType &&
-        material.machineType !==
-          currentMachine
-      ) {
+    // Do not allow another machine's data.
+    if (
+      material.machineType &&
+      material.machineType !== currentMachine
+    ) {
+      toast.error('This material belongs to another machine');
+      return;
+    }
 
-        toast.error(
-          'This material belongs to another machine'
-        );
+    setEditId(material._id);
 
-        return;
-      }
+    const status = getStatus(material);
 
+    reset({
+      date: dayjs(material.date),
+      type: material.type,
+      quantity: material.quantity ?? '',
+      costPerLiter: material.costPerLiter ?? '',
+      amount: material.amount ?? '',
+      description: material.description || '',
+      paymentStatus: status,
+      paidAmount:
+        status === 'partial'
+          ? material.paidAmount ?? ''
+          : '',
+    });
 
-      setEditId(
-        material._id
-      );
+    setBillFile(null);
 
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth',
+    });
 
-      reset({
-
-        date:
-          dayjs(material.date),
-
-        type:
-          material.type,
-
-        quantity:
-          material.quantity ??
-          '',
-
-        costPerLiter:
-          material.costPerLiter ??
-          '',
-
-        amount:
-          material.amount ??
-          '',
-
-        description:
-          material.description ||
-          '',
-
-      });
-
-
-      setBillFile(null);
-
-
-      window.scrollTo({
-        top: 0,
-        behavior: 'smooth',
-      });
-
-    };
+  };
 
 
   // ==========================================================
   // DELETE
   // ==========================================================
 
-  const handleDelete =
-    async () => {
+  const handleDelete = async () => {
 
-      if (!deleteDialog) {
-        return;
-      }
+    if (!deleteDialog) {
+      return;
+    }
 
+    try {
 
-      try {
+      await api.delete(
+        `/materials/${deleteDialog}`,
+        {
+          params: {
+            machineType: currentMachine,
+          },
+        }
+      );
 
-        await api.delete(
-          `/materials/${deleteDialog}`,
-          {
-            params: {
-              machineType:
-                currentMachine,
-            },
-          }
-        );
+      toast.success(`${machineLabel} material deleted`);
 
+      setDeleteDialog(null);
 
-        toast.success(
-          `${machineLabel} material deleted`
-        );
+      fetchMaterials();
 
+    } catch (error) {
 
-        setDeleteDialog(
-          null
-        );
+      console.error('Delete material error:', error);
 
+      toast.error(
+        error.response?.data?.message ||
+        'Delete failed'
+      );
 
-        fetchMaterials();
+    }
 
-      } catch (error) {
-
-        console.error(
-          'Delete material error:',
-          error
-        );
-
-        toast.error(
-          error.response?.data?.message ||
-          'Delete failed'
-        );
-
-      }
-
-    };
+  };
 
 
   // ==========================================================
   // RESET
   // ==========================================================
 
-  const handleReset =
-    () => {
-
-      reset(
-        getDefaultValues()
-      );
-
-      setEditId(null);
-      setBillFile(null);
-
-    };
+  const handleReset = () => {
+    reset(getDefaultValues());
+    setEditId(null);
+    setBillFile(null);
+  };
 
 
   // ==========================================================
@@ -1150,19 +916,13 @@ const Materials = () => {
         subtitle={
           `${machineLabel} - Diesel, petrol, pipes, bit ,hammer and other expenses`
         }
-        icon={
-          <InventoryIcon />
-        }
+        icon={<InventoryIcon />}
         actions={
-
           <Chip
-            label={
-              machineLabel
-            }
+            label={machineLabel}
             size="small"
             color="secondary"
           />
-
         }
       /> */}
 
@@ -1173,55 +933,31 @@ const Materials = () => {
 
       {canWrite && (
 
-        <Card
-          sx={{
-            mb: 2.5,
-          }}
-        >
+        <Card sx={{ mb: 2.5 }}>
 
           <CardContent>
 
             <Box
               component="form"
-              onSubmit={
-                handleSubmit(
-                  onSubmit
-                )
-              }
+              onSubmit={handleSubmit(onSubmit)}
               noValidate
             >
 
-              <Grid
-                container
-                spacing={2}
-              >
+              <Grid container spacing={2}>
 
-                {/* ==================================================
-                    DATE
-                ================================================== */}
+                {/* DATE */}
 
-                <Grid
-                  item
-                  xs={12}
-                  sm={6}
-                  md={3}
-                >
+                <Grid item xs={12} sm={6} md={3}>
 
                   <Controller
                     name="date"
                     control={control}
-                    render={({
-                      field,
-                    }) => (
+                    render={({ field }) => (
 
                       <DatePicker
                         label="Date"
-                        value={
-                          field.value
-                        }
-                        onChange={
-                          field.onChange
-                        }
+                        value={field.value}
+                        onChange={field.onChange}
                         slotProps={{
                           textField: {
                             fullWidth: true,
@@ -1236,23 +972,14 @@ const Materials = () => {
                 </Grid>
 
 
-                {/* ==================================================
-                    TYPE
-                ================================================== */}
+                {/* TYPE */}
 
-                <Grid
-                  item
-                  xs={12}
-                  sm={6}
-                  md={3}
-                >
+                <Grid item xs={12} sm={6} md={3}>
 
                   <Controller
                     name="type"
                     control={control}
-                    render={({
-                      field,
-                    }) => (
+                    render={({ field }) => (
 
                       <TextField
                         {...field}
@@ -1262,18 +989,13 @@ const Materials = () => {
                         size="small"
                       >
 
-                        {materialTypes.map(
-                          (type) => (
+                        {materialTypes.map((type) => (
 
-                            <MenuItem
-                              key={type}
-                              value={type}
-                            >
-                              {type}
-                            </MenuItem>
+                          <MenuItem key={type} value={type}>
+                            {type}
+                          </MenuItem>
 
-                          )
-                        )}
+                        ))}
 
                       </TextField>
 
@@ -1283,9 +1005,7 @@ const Materials = () => {
                 </Grid>
 
 
-                {/* ==================================================
-                    NORMAL MATERIAL FIELDS
-                ================================================== */}
+                {/* NORMAL MATERIAL FIELDS */}
 
                 {!isOthers && (
 
@@ -1293,31 +1013,21 @@ const Materials = () => {
 
                     {/* QUANTITY */}
 
-                    <Grid
-                      item
-                      xs={12}
-                      sm={6}
-                      md={3}
-                    >
+                    <Grid item xs={12} sm={6} md={3}>
 
                       <TextField
                         fullWidth
                         label="Quantity / Liter"
                         type="number"
                         size="small"
-                        {...register(
-                          'quantity',
-                          {
-                            required: true,
-                          }
-                        )}
+                        {...register('quantity', {
+                          required: true,
+                        })}
                         inputProps={{
                           min: 0,
                           step: '0.01',
                         }}
-                        onWheel={(e) =>
-                          e.target.blur()
-                        }
+                        onWheel={(e) => e.target.blur()}
                       />
 
                     </Grid>
@@ -1325,31 +1035,21 @@ const Materials = () => {
 
                     {/* RATE */}
 
-                    <Grid
-                      item
-                      xs={12}
-                      sm={6}
-                      md={3}
-                    >
+                    <Grid item xs={12} sm={6} md={3}>
 
                       <TextField
                         fullWidth
                         label="Cost Per Liter / Unit"
                         type="number"
                         size="small"
-                        {...register(
-                          'costPerLiter',
-                          {
-                            required: true,
-                          }
-                        )}
+                        {...register('costPerLiter', {
+                          required: true,
+                        })}
                         inputProps={{
                           min: 0,
                           step: '0.01',
                         }}
-                        onWheel={(e) =>
-                          e.target.blur()
-                        }
+                        onWheel={(e) => e.target.blur()}
                       />
 
                     </Grid>
@@ -1357,22 +1057,13 @@ const Materials = () => {
 
                     {/* TOTAL */}
 
-                    <Grid
-                      item
-                      xs={12}
-                      sm={6}
-                      md={3}
-                    >
+                    <Grid item xs={12} sm={6} md={3}>
 
                       <TextField
                         fullWidth
                         label="Total Price"
                         size="small"
-                        value={
-                          fmtINR(
-                            totalPrice
-                          )
-                        }
+                        value={fmtINR(totalPrice)}
                         InputProps={{
                           readOnly: true,
                         }}
@@ -1385,9 +1076,7 @@ const Materials = () => {
                 )}
 
 
-                {/* ==================================================
-                    OTHERS FIELDS
-                ================================================== */}
+                {/* OTHERS FIELDS */}
 
                 {isOthers && (
 
@@ -1395,25 +1084,16 @@ const Materials = () => {
 
                     {/* DESCRIPTION */}
 
-                    <Grid
-                      item
-                      xs={12}
-                      sm={6}
-                      md={4}
-                    >
+                    <Grid item xs={12} sm={6} md={4}>
 
                       <TextField
                         fullWidth
                         label="Description"
                         placeholder="Enter expense description"
                         size="small"
-                        {...register(
-                          'description',
-                          {
-                            required:
-                              'Description is required',
-                          }
-                        )}
+                        {...register('description', {
+                          required: 'Description is required',
+                        })}
                       />
 
                     </Grid>
@@ -1421,31 +1101,21 @@ const Materials = () => {
 
                     {/* AMOUNT */}
 
-                    <Grid
-                      item
-                      xs={12}
-                      sm={6}
-                      md={3}
-                    >
+                    <Grid item xs={12} sm={6} md={3}>
 
                       <TextField
                         fullWidth
                         label="Amount"
                         type="number"
                         size="small"
-                        {...register(
-                          'amount',
-                          {
-                            required: true,
-                          }
-                        )}
+                        {...register('amount', {
+                          required: true,
+                        })}
                         inputProps={{
                           min: 0,
                           step: '0.01',
                         }}
-                        onWheel={(e) =>
-                          e.target.blur()
-                        }
+                        onWheel={(e) => e.target.blur()}
                       />
 
                     </Grid>
@@ -1453,22 +1123,13 @@ const Materials = () => {
 
                     {/* TOTAL */}
 
-                    <Grid
-                      item
-                      xs={12}
-                      sm={6}
-                      md={3}
-                    >
+                    <Grid item xs={12} sm={6} md={3}>
 
                       <TextField
                         fullWidth
                         label="Total Amount"
                         size="small"
-                        value={
-                          fmtINR(
-                            totalPrice
-                          )
-                        }
+                        value={fmtINR(totalPrice)}
                         InputProps={{
                           readOnly: true,
                         }}
@@ -1481,16 +1142,87 @@ const Materials = () => {
                 )}
 
 
-                {/* ==================================================
-                    UPLOAD BILL
-                ================================================== */}
+                {/* PAYMENT STATUS */}
 
-                <Grid
-                  item
-                  xs={12}
-                  sm={6}
-                  md={3}
-                >
+                <Grid item xs={12} sm={6} md={3}>
+
+                  <Controller
+                    name="paymentStatus"
+                    control={control}
+                    render={({ field }) => (
+
+                      <TextField
+                        {...field}
+                        fullWidth
+                        select
+                        label="Payment Status"
+                        size="small"
+                      >
+
+                        {PAYMENT_OPTIONS.map((option) => (
+
+                          <MenuItem
+                            key={option.value}
+                            value={option.value}
+                          >
+                            {option.label}
+                          </MenuItem>
+
+                        ))}
+
+                      </TextField>
+
+                    )}
+                  />
+
+                </Grid>
+
+
+                {/* PAID AMOUNT + BALANCE (PARTIAL ONLY) */}
+
+                {isPartial && (
+
+                  <>
+
+                    <Grid item xs={12} sm={6} md={3}>
+
+                      <TextField
+                        fullWidth
+                        label="Paid Amount"
+                        type="number"
+                        size="small"
+                        {...register('paidAmount')}
+                        inputProps={{
+                          min: 0,
+                          step: '0.01',
+                        }}
+                        onWheel={(e) => e.target.blur()}
+                      />
+
+                    </Grid>
+
+                    <Grid item xs={12} sm={6} md={3}>
+
+                      <TextField
+                        fullWidth
+                        label="Balance"
+                        size="small"
+                        value={fmtINR(formBalance)}
+                        InputProps={{
+                          readOnly: true,
+                        }}
+                      />
+
+                    </Grid>
+
+                  </>
+
+                )}
+
+
+                {/* UPLOAD BILL */}
+
+                <Grid item xs={12} sm={6} md={3}>
 
                   <Button
                     variant="outlined"
@@ -1498,12 +1230,8 @@ const Materials = () => {
                     fullWidth
                     size="small"
                     color="secondary"
-                    startIcon={
-                      <UploadFileIcon />
-                    }
-                    sx={{
-                      height: 40,
-                    }}
+                    startIcon={<UploadFileIcon />}
+                    sx={{ height: 40 }}
                   >
 
                     Upload Bill
@@ -1513,12 +1241,9 @@ const Materials = () => {
                       hidden
                       accept="image/*,.pdf"
                       onChange={(e) => {
-
                         setBillFile(
-                          e.target.files?.[0] ||
-                          null
+                          e.target.files?.[0] || null
                         );
-
                       }}
                     />
 
@@ -1531,9 +1256,7 @@ const Materials = () => {
                       variant="caption"
                       display="block"
                       noWrap
-                      sx={{
-                        mt: 0.5,
-                      }}
+                      sx={{ mt: 0.5 }}
                     >
                       {billFile.name}
                     </Typography>
@@ -1543,27 +1266,18 @@ const Materials = () => {
                 </Grid>
 
 
-                {/* ==================================================
-                    BUTTONS
-                ================================================== */}
+                {/* BUTTONS */}
 
-                <Grid
-                  item
-                  xs={12}
-                >
+                <Grid item xs={12}>
 
                   <Button
                     type="submit"
                     variant="contained"
                     color="secondary"
-                    sx={{
-                      mr: 1,
-                    }}
+                    sx={{ mr: 1 }}
                   >
 
-                    {editId
-                      ? 'Update'
-                      : 'Submit'}
+                    {editId ? 'Update' : 'Submit'}
 
                   </Button>
 
@@ -1571,9 +1285,7 @@ const Materials = () => {
                   <Button
                     variant="outlined"
                     color="inherit"
-                    onClick={
-                      handleReset
-                    }
+                    onClick={handleReset}
                   >
 
                     Reset
@@ -1601,56 +1313,33 @@ const Materials = () => {
 
         <CardContent>
 
-          {/* ==================================================
-              FILTERS
-          ================================================== */}
+          {/* FILTERS */}
 
           <Grid
             container
             spacing={2}
-            sx={{
-              mb: 2,
-            }}
+            sx={{ mb: 2 }}
             alignItems="center"
           >
 
             {/* SEARCH */}
 
-            <Grid
-              item
-              xs={12}
-              sm={4}
-            >
+            <Grid item xs={12} sm={3}>
 
               <TextField
                 fullWidth
                 size="small"
-                placeholder={
-                  `Search ${machineLabel.toLowerCase()} materials...`
-                }
-                value={
-                  search
-                }
+                placeholder={`Search ${machineLabel.toLowerCase()} materials...`}
+                value={search}
                 onChange={(e) => {
-
-                  setSearch(
-                    e.target.value
-                  );
-
+                  setSearch(e.target.value);
                   setPage(0);
-
                 }}
                 InputProps={{
                   startAdornment: (
 
-                    <InputAdornment
-                      position="start"
-                    >
-
-                      <SearchIcon
-                        fontSize="small"
-                      />
-
+                    <InputAdornment position="start">
+                      <SearchIcon fontSize="small" />
                     </InputAdornment>
 
                   ),
@@ -1660,29 +1349,50 @@ const Materials = () => {
             </Grid>
 
 
+            {/* PAYMENT STATUS FILTER */}
+
+            <Grid item xs={12} sm={2}>
+
+              <TextField
+                fullWidth
+                select
+                size="small"
+                label="Status"
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setPage(0);
+                }}
+              >
+
+                <MenuItem value="">All</MenuItem>
+
+                {PAYMENT_OPTIONS.map((option) => (
+
+                  <MenuItem
+                    key={option.value}
+                    value={option.value}
+                  >
+                    {option.label}
+                  </MenuItem>
+
+                ))}
+
+              </TextField>
+
+            </Grid>
+
+
             {/* FROM DATE */}
 
-            <Grid
-              item
-              xs={6}
-              sm={3}
-            >
+            <Grid item xs={6} sm={2}>
 
               <DatePicker
                 label="From Date"
-                value={
-                  startDate
-                }
-                onChange={(
-                  value
-                ) => {
-
-                  setStartDate(
-                    value
-                  );
-
+                value={startDate}
+                onChange={(value) => {
+                  setStartDate(value);
                   setPage(0);
-
                 }}
                 slotProps={{
                   textField: {
@@ -1697,27 +1407,14 @@ const Materials = () => {
 
             {/* TO DATE */}
 
-            <Grid
-              item
-              xs={6}
-              sm={3}
-            >
+            <Grid item xs={6} sm={2}>
 
               <DatePicker
                 label="To Date"
-                value={
-                  endDate
-                }
-                onChange={(
-                  value
-                ) => {
-
-                  setEndDate(
-                    value
-                  );
-
+                value={endDate}
+                onChange={(value) => {
+                  setEndDate(value);
                   setPage(0);
-
                 }}
                 slotProps={{
                   textField: {
@@ -1732,22 +1429,12 @@ const Materials = () => {
 
             {/* EXPORT */}
 
-            <Grid
-              item
-              xs={12}
-              sm={2}
-            >
+            <Grid item xs={12} sm={3}>
 
               <ExportButton
-                data={
-                  materials
-                }
-                columns={
-                  exportColumns
-                }
-                filename={
-                  `${currentMachine}-materials`
-                }
+                data={materials}
+                columns={exportColumns}
+                filename={`${currentMachine}-materials`}
               />
 
             </Grid>
@@ -1755,22 +1442,15 @@ const Materials = () => {
           </Grid>
 
 
-          {/* ==================================================
-              TABLE
-          ================================================== */}
+          {/* TABLE */}
 
           <TableContainer
             component={Paper}
             variant="outlined"
-            sx={{
-              borderRadius:
-                '10px',
-            }}
+            sx={{ borderRadius: '10px' }}
           >
 
-            <Table
-              size="small"
-            >
+            <Table size="small">
 
               <TableHead>
 
@@ -1783,23 +1463,16 @@ const Materials = () => {
                     'Quantity',
                     'Cost/L',
                     'Total / Amount',
+                    'Status',
                     'Bill',
-                    ...(canWrite
-                      ? ['Actions']
-                      : []),
-                  ].map(
-                    (header) => (
+                    ...(canWrite ? ['Actions'] : []),
+                  ].map((header) => (
 
-                      <TableCell
-                        key={
-                          header
-                        }
-                      >
-                        {header}
-                      </TableCell>
+                    <TableCell key={header}>
+                      {header}
+                    </TableCell>
 
-                    )
-                  )}
+                  ))}
 
                 </TableRow>
 
@@ -1810,27 +1483,20 @@ const Materials = () => {
 
                 {/* EMPTY */}
 
-                {materials.length ===
-                  0 && (
+                {materials.length === 0 && (
 
                   <TableRow>
 
                     <TableCell
-                      colSpan={
-                        canWrite
-                          ? 8
-                          : 7
-                      }
+                      colSpan={canWrite ? 9 : 8}
                       align="center"
                       sx={{
-                        color:
-                          'text.secondary',
+                        color: 'text.secondary',
                         py: 3,
                       }}
                     >
 
-                      No {machineLabel.toLowerCase()}
-                      material records found.
+                      No {machineLabel.toLowerCase()} material records found.
 
                     </TableCell>
 
@@ -1841,93 +1507,93 @@ const Materials = () => {
 
                 {/* DATA */}
 
-                {materials.map(
-                  (material) => (
+                {materials.map((material) => {
+
+                  const status = getStatus(material);
+
+                  return (
 
                     <TableRow
-                      key={
-                        material._id
-                      }
+                      key={material._id}
                       hover
                     >
 
                       {/* DATE */}
 
                       <TableCell>
-
-                        {dayjs(
-                          material.date
-                        ).format(
-                          'DD/MM/YYYY'
-                        )}
-
+                        {dayjs(material.date).format('DD/MM/YYYY')}
                       </TableCell>
 
 
                       {/* TYPE */}
 
                       <TableCell>
-
                         {material.type}
-
                       </TableCell>
 
 
                       {/* DESCRIPTION */}
 
                       <TableCell>
-
-                        {material.type ===
-                        'Others'
-                          ? (
-                            material.description ||
-                            '—'
-                          )
+                        {material.type === 'Others'
+                          ? (material.description || '—')
                           : '—'}
-
                       </TableCell>
 
 
                       {/* QUANTITY */}
 
                       <TableCell>
-
-                        {material.type ===
-                        'Others'
+                        {material.type === 'Others'
                           ? '—'
                           : material.quantity}
-
                       </TableCell>
 
 
                       {/* RATE */}
 
                       <TableCell>
-
-                        {material.type ===
-                        'Others'
+                        {material.type === 'Others'
                           ? '—'
-                          : fmtINR(
-                              material.costPerLiter
-                            )}
-
+                          : fmtINR(material.costPerLiter)}
                       </TableCell>
 
 
                       {/* TOTAL */}
 
-                      <TableCell
-                        sx={{
-                          fontWeight:
-                            600,
-                        }}
-                      >
+                      <TableCell sx={{ fontWeight: 600 }}>
+                        {fmtINR(getTotal(material))}
+                      </TableCell>
 
-                        {fmtINR(
-                          material.type ===
-                            'Others'
-                            ? material.amount
-                            : material.totalPrice
+
+                      {/* PAYMENT STATUS */}
+
+                      <TableCell>
+
+                        <Chip
+                          label={STATUS_LABEL[status]}
+                          color={STATUS_COLOR[status]}
+                          size="small"
+                          variant="outlined"
+                          sx={{ fontWeight: 600 }}
+                        />
+
+                        {status === 'partial' && (
+
+                          <Typography
+                            variant="caption"
+                            display="block"
+                            color="text.secondary"
+                            sx={{
+                              mt: 0.5,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            Paid {fmtINR(getPaid(material))}
+                            {' · '}
+                            Bal {fmtINR(getBalance(material))}
+                          </Typography>
+
                         )}
 
                       </TableCell>
@@ -1944,15 +1610,11 @@ const Materials = () => {
                             color="secondary"
                             title="View Bill"
                             onClick={() =>
-                              handleViewBill(
-                                material
-                              )
+                              handleViewBill(material)
                             }
                           >
 
-                            <VisibilityIcon
-                              fontSize="small"
-                            />
+                            <VisibilityIcon fontSize="small" />
 
                           </IconButton>
 
@@ -1975,15 +1637,11 @@ const Materials = () => {
                             size="small"
                             color="primary"
                             onClick={() =>
-                              handleEdit(
-                                material
-                              )
+                              handleEdit(material)
                             }
                           >
 
-                            <EditIcon
-                              fontSize="small"
-                            />
+                            <EditIcon fontSize="small" />
 
                           </IconButton>
 
@@ -1992,15 +1650,11 @@ const Materials = () => {
                             size="small"
                             color="error"
                             onClick={() =>
-                              setDeleteDialog(
-                                material._id
-                              )
+                              setDeleteDialog(material._id)
                             }
                           >
 
-                            <DeleteIcon
-                              fontSize="small"
-                            />
+                            <DeleteIcon fontSize="small" />
 
                           </IconButton>
 
@@ -2010,8 +1664,9 @@ const Materials = () => {
 
                     </TableRow>
 
-                  )
-                )}
+                  );
+
+                })}
 
               </TableBody>
 
@@ -2020,44 +1675,21 @@ const Materials = () => {
           </TableContainer>
 
 
-          {/* ==================================================
-              PAGINATION
-          ================================================== */}
+          {/* PAGINATION */}
 
           <TablePagination
             component="div"
-            count={
-              total
-            }
-            page={
-              page
-            }
-            onPageChange={(
-              _event,
-              newPage
-            ) => {
-
-              setPage(
-                newPage
-              );
-
+            count={total}
+            page={page}
+            onPageChange={(_event, newPage) => {
+              setPage(newPage);
             }}
-            rowsPerPage={
-              rowsPerPage
-            }
-            onRowsPerPageChange={(
-              event
-            ) => {
-
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={(event) => {
               setRowsPerPage(
-                parseInt(
-                  event.target.value,
-                  10
-                )
+                parseInt(event.target.value, 10)
               );
-
               setPage(0);
-
             }}
           />
 
@@ -2175,9 +1807,7 @@ const Materials = () => {
                 }}
               />
 
-              <Typography
-                color="text.secondary"
-              >
+              <Typography color="text.secondary">
                 Loading bill...
               </Typography>
 
@@ -2207,9 +1837,7 @@ const Materials = () => {
                 Unable to open bill
               </Typography>
 
-              <Typography
-                color="text.secondary"
-              >
+              <Typography color="text.secondary">
                 {billPreview.error ||
                   'The bill file could not be loaded.'}
               </Typography>
@@ -2289,9 +1917,7 @@ const Materials = () => {
 
               <Typography
                 variant="h6"
-                sx={{
-                  fontWeight: 600,
-                }}
+                sx={{ fontWeight: 600 }}
               >
                 Bill loaded
               </Typography>
@@ -2344,17 +1970,9 @@ const Materials = () => {
       ====================================================== */}
 
       <ConfirmDialog
-        open={
-          !!deleteDialog
-        }
-        onClose={() =>
-          setDeleteDialog(
-            null
-          )
-        }
-        onConfirm={
-          handleDelete
-        }
+        open={!!deleteDialog}
+        onClose={() => setDeleteDialog(null)}
+        onConfirm={handleDelete}
         message="Delete this material record?"
       />
 
