@@ -4,6 +4,8 @@ import mongoose from 'mongoose';
 // MATERIAL MODEL
 // ============================================================
 
+export const PAYMENT_STATUSES = ['paid', 'unpaid', 'partial'];
+
 const materialSchema = new mongoose.Schema(
   {
     // ============================================================
@@ -97,6 +99,30 @@ const materialSchema = new mongoose.Schema(
     },
 
     // ============================================================
+    // PAYMENT STATUS
+    // paid    -> paidAmount = totalPrice
+    // unpaid  -> paidAmount = 0
+    // partial -> 0 < paidAmount < totalPrice
+    // ============================================================
+
+    paymentStatus: {
+      type: String,
+      enum: PAYMENT_STATUSES,
+      default: 'unpaid',
+      index: true,
+    },
+
+    // ============================================================
+    // AMOUNT PAID SO FAR
+    // ============================================================
+
+    paidAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    // ============================================================
     // BILL FILE
     // ============================================================
 
@@ -136,8 +162,13 @@ materialSchema.index({
   date: -1,
 });
 
+materialSchema.index({
+  machineType: 1,
+  paymentStatus: 1,
+});
+
 // ============================================================
-// AUTO CALCULATE TOTAL BEFORE SAVE
+// AUTO CALCULATE TOTAL + PAYMENT BEFORE SAVE
 // ============================================================
 
 materialSchema.pre('save', function (next) {
@@ -152,6 +183,22 @@ materialSchema.pre('save', function (next) {
     // Normal material types do not use these fields
     this.amount = 0;
     this.description = '';
+  }
+
+  // ----------------------------------------------------------
+  // Keep paidAmount consistent with paymentStatus
+  // ----------------------------------------------------------
+
+  const total = Number(this.totalPrice) || 0;
+
+  if (this.paymentStatus === 'paid') {
+    this.paidAmount = total;
+  } else if (this.paymentStatus === 'partial') {
+    const paid = Number(this.paidAmount) || 0;
+    this.paidAmount = Math.min(Math.max(paid, 0), total);
+  } else {
+    this.paymentStatus = 'unpaid';
+    this.paidAmount = 0;
   }
 
   next();
@@ -198,6 +245,21 @@ materialSchema.pre(
 
       updateData.amount = 0;
       updateData.description = '';
+    }
+
+    // ----------------------------------------------------------
+    // PAYMENT
+    // ----------------------------------------------------------
+
+    if (updateData.paymentStatus === 'paid') {
+      if (updateData.totalPrice !== undefined) {
+        updateData.paidAmount =
+          updateData.totalPrice;
+      }
+    } else if (
+      updateData.paymentStatus === 'unpaid'
+    ) {
+      updateData.paidAmount = 0;
     }
 
     // ----------------------------------------------------------
